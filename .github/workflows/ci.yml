@@ -46,7 +46,16 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
       - run: npm install --silent
-      - run: npm audit --audit-level=high
+      - name: Audit frontend dependencies
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high 2>&1 | tee npm-audit.log
+      - name: Upload npm audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-npm-audit-log
+          path: frontend/npm-audit.log
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build

@@ -21,7 +21,16 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - inventory_backups:/backups
     command: sh -c "alembic upgrade head && python scripts/bootstrap_owner.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
   worker:
     build: ./backend
@@ -30,17 +39,33 @@ services:
       db:
         condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
+    volumes:
+      - inventory_backups:/backups
     command: sh -c "while true; do python scripts/process_integration_events.py --limit 25; sleep 10; done"
+    restart: unless-stopped
+
+  backup:
+    build: ./backend
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - inventory_backups:/backups
+    command: sh -c "while true; do python scripts/backup_database.py; sleep 86400; done"
     restart: unless-stopped
 
   web:
     build: ./frontend
     env_file: .env
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "3000:3000"
+    restart: unless-stopped
 
 volumes:
   inventory_postgres:
+  inventory_backups:

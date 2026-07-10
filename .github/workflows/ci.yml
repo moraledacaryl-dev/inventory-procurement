@@ -8,9 +8,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install -r requirements.txt
+      - run: pip install -q -r requirements.txt
       - run: python -m compileall -q app tests scripts
-      - run: pytest
+      - run: pytest -x -vv
       - run: APP_ENV=production DATABASE_URL=postgresql+psycopg://inventory:test@localhost/inventory JWT_SECRET=0123456789abcdef0123456789abcdef BOOTSTRAP_OWNER_PASSWORD=strong-ci-password CORS_ORIGINS=https://inventory.example.com python scripts/production_preflight.py
       - run: alembic upgrade head --sql > /tmp/migration.sql
       - run: pip check
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
-      - run: npm install
+      - run: npm install --silent
       - run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm run typecheck

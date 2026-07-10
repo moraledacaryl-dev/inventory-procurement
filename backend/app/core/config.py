@@ -13,12 +13,18 @@ class Settings(BaseSettings):
     bootstrap_owner_email: str = "owner@hiddenoasis.local"
     bootstrap_owner_name: str = "Owner"
     bootstrap_owner_password: str = "change-this-password-now"
+    max_request_bytes: int = 10_485_760
+    backup_max_age_hours: int = 48
+    trusted_hosts: list[str] | str = ["localhost","127.0.0.1","testserver"]
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins","trusted_hosts", mode="before")
     @classmethod
-    def parse_origins(cls, value):
+    def parse_lists(cls, value):
         if isinstance(value, str):
+            if value.strip().startswith('['):
+                import json
+                return json.loads(value)
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 

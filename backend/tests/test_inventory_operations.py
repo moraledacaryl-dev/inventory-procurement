@@ -49,7 +49,7 @@ def test_reservation_transfer_acknowledgement_and_availability(client):
 
 def test_cycle_count_schedule_and_expiry_report(client):
     h=auth(client); item,_,_,main,_,supplier=setup(client,h)
-    schedule=client.post('/api/v1/cycle-count-schedules',headers=h,json={'item_id':item['id'],'location_id':main['id'],'frequency_days':7,'next_count_date':'2026-07-11'}); assert schedule.status_code==201
+    schedule=client.post('/api/v1/cycle-count-schedules',headers=h,json={'item_id':item['id'],'location_id':main['id'],'frequency_days':7,'next_count_date':'2020-01-01'}); assert schedule.status_code==201
     due=client.get('/api/v1/cycle-count-schedules?due_only=true',headers=h).json(); assert len(due)==1
     lot=client.post('/api/v1/lots',headers=h,json={'item_id':item['id'],'lot_number':'EXP-001','expiry_date':'2026-07-12','supplier_id':supplier['id']}).json()
     client.post('/api/v1/lot-transactions',headers=h,json={'lot_id':lot['id'],'location_id':main['id'],'quantity':'2','unit_cost':'80','transaction_type':'receipt'})

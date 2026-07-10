@@ -8,7 +8,7 @@ User=hiddenoasis
 Group=hiddenoasis
 WorkingDirectory=/opt/inventory-procurement-online/backend
 EnvironmentFile=/etc/hiddenoasis/inventory-backend.env
-ExecStart=/opt/inventory-procurement-online/backend/.venv/bin/python scripts/process_integration_events.py --loop --limit 25 --sleep 10
+ExecStart=/bin/sh -c 'while true; do /opt/inventory-procurement-online/backend/.venv/bin/python scripts/process_integration_events.py --limit 25; sleep 10; done'
 Restart=always
 RestartSec=5
 

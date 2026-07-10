@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.inventory import Category, UnitOfMeasure, Location, Item, StockBalance, StockMovement, CountSession, CountLine
 from app.schemas.inventory import *
+from app.services.controls import add_audit, next_document_number
 from app.services.inventory import InventoryError, post_document, receipt_entries, issue_entries, transfer_entries
 router = APIRouter(tags=["inventory"])
 def conflict(exc): raise HTTPException(status_code=409, detail=str(exc))
@@ -70,31 +72,61 @@ def transfer(p:TransferCreate,db:Session=Depends(get_db),user:User=Depends(requi
 def adjustment(p:AdjustmentCreate,db:Session=Depends(get_db),user:User=Depends(require_permission("inventory.*"))):
     entries=[{"item_id":x.item_id,"location_id":p.location_id,"quantity":x.quantity_delta,"unit_cost":x.unit_cost,"reason":x.reason} for x in p.lines]
     return post("adjustment",p,entries,user,db)
+
+def current_count_entries(db:Session,session:CountSession):
+    balances={b.item_id:Decimal(b.quantity) for b in db.scalars(select(StockBalance).where(StockBalance.location_id==session.location_id).with_for_update()).all()}
+    entries=[]
+    for line in session.lines:
+        if line.counted_quantity is None: continue
+        delta=Decimal(line.counted_quantity)-balances.get(line.item_id,Decimal("0"))
+        if delta: entries.append({"item_id":line.item_id,"location_id":session.location_id,"quantity":delta,"unit_cost":0,"reason":"physical count variance"})
+    return entries
+
+def finalize_count(db:Session,session:CountSession,user:User):
+    entries=current_count_entries(db,session)
+    if entries:
+        doc=post_document(db,kind="count_adjustment",actor_id=user.id,entries=entries,reference=session.count_number,commit=False)
+        session.posted_document_id=doc.id
+    session.status="posted"
+    add_audit(db,actor_user_id=user.id,action='count.posted',entity_type='count_session',entity_id=session.id,details={'line_count':len(entries)})
+
 @router.post("/counts",response_model=CountOut,status_code=201)
 def create_count(p:CountCreate,db:Session=Depends(get_db),user:User=Depends(require_permission("counts.create"))):
     if not db.get(Location,p.location_id): raise HTTPException(422,"Location not found")
-    session=CountSession(count_number=f"COUNT-{db.query(CountSession).count()+1:06d}",location_id=p.location_id,notes=p.notes,created_by_user_id=user.id); db.add(session); db.flush()
+    session=CountSession(count_number=next_document_number(db,'COUNT'),location_id=p.location_id,notes=p.notes,blind_count=p.blind_count,approval_threshold=p.approval_threshold,created_by_user_id=user.id); db.add(session); db.flush()
     items=db.scalars(select(Item).where(Item.is_active==True,Item.track_stock==True)).all(); balances={b.item_id:b for b in db.scalars(select(StockBalance).where(StockBalance.location_id==p.location_id)).all()}
     for item in items: session.lines.append(CountLine(item_id=item.id,system_quantity=balances.get(item.id).quantity if balances.get(item.id) else 0))
-    db.commit(); db.refresh(session); return session
+    add_audit(db,actor_user_id=user.id,action='count.created',entity_type='count_session',entity_id=session.id,details={'blind_count':p.blind_count,'approval_threshold':str(p.approval_threshold)}); db.commit(); db.refresh(session); return session
 @router.get("/counts",response_model=list[CountOut])
-def list_counts(db:Session=Depends(get_db),_:User=Depends(require_permission("counts.create"))): return db.scalars(select(CountSession).options(selectinload(CountSession.lines)).order_by(CountSession.created_at.desc())).all()
+def list_counts(db:Session=Depends(get_db),_:User=Depends(require_permission("counts.create"))): return db.scalars(select(CountSession).options(selectinload(CountSession.lines)).order_by(CountSession.created_at.desc())).unique().all()
+@router.get('/counts/{count_id}/worksheet',response_model=CountWorksheet)
+def count_worksheet(count_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('counts.create'))):
+    session=db.scalar(select(CountSession).where(CountSession.id==count_id).options(selectinload(CountSession.lines)))
+    if not session: raise HTTPException(404,'Count not found')
+    return CountWorksheet(id=session.id,count_number=session.count_number,location_id=session.location_id,blind_count=session.blind_count,lines=[CountWorksheetLine(item_id=x.item_id,counted_quantity=x.counted_quantity,note=x.note) for x in session.lines])
 @router.post("/counts/{count_id}/post",response_model=CountOut)
 def post_count(count_id:str,p:CountSubmit,db:Session=Depends(get_db),user:User=Depends(require_permission("counts.submit"))):
     session=db.scalar(select(CountSession).where(CountSession.id==count_id).options(selectinload(CountSession.lines)).with_for_update())
     if not session: raise HTTPException(404,"Count not found")
-    if session.status!="open": conflict("Count is already posted")
-    submitted={x.item_id:x for x in p.lines}; entries=[]
-    current_balances={b.item_id:Decimal(b.quantity) for b in db.scalars(select(StockBalance).where(StockBalance.location_id==session.location_id).with_for_update()).all()}
+    if session.status!="open": conflict("Count is not open")
+    submitted={x.item_id:x for x in p.lines}; current={b.item_id:Decimal(b.quantity) for b in db.scalars(select(StockBalance).where(StockBalance.location_id==session.location_id).with_for_update()).all()}; max_variance=Decimal('0')
     for line in session.lines:
         if line.item_id not in submitted: continue
-        entry=submitted[line.item_id]; line.counted_quantity=entry.counted_quantity; line.note=entry.note
-        delta=Decimal(entry.counted_quantity)-current_balances.get(line.item_id,Decimal("0"))
-        if delta: entries.append({"item_id":line.item_id,"location_id":session.location_id,"quantity":delta,"unit_cost":0,"reason":"physical count variance"})
+        entry=submitted[line.item_id]; line.counted_quantity=entry.counted_quantity; line.note=entry.note; max_variance=max(max_variance,abs(Decimal(entry.counted_quantity)-current.get(line.item_id,Decimal('0'))))
     try:
-        if entries:
-            doc=post_document(db,kind="count_adjustment",actor_id=user.id,entries=entries,reference=session.count_number,commit=False)
-            session.posted_document_id=doc.id
-        session.status="posted"; db.commit(); db.refresh(session); return session
+        if Decimal(session.approval_threshold)>0 and max_variance>Decimal(session.approval_threshold):
+            session.status='pending_approval'; add_audit(db,actor_user_id=user.id,action='count.approval_requested',entity_type='count_session',entity_id=session.id,details={'max_variance':str(max_variance)})
+        else: finalize_count(db,session,user)
+        db.commit(); db.refresh(session); return session
     except (InventoryError,IntegrityError) as exc:
         db.rollback(); conflict(exc if isinstance(exc,InventoryError) else "Count could not be posted")
+@router.post('/counts/{count_id}/approve',response_model=CountOut)
+def approve_count(count_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('counts.submit'))):
+    session=db.scalar(select(CountSession).where(CountSession.id==count_id).options(selectinload(CountSession.lines)).with_for_update())
+    if not session: raise HTTPException(404,'Count not found')
+    if session.status!='pending_approval': conflict('Count is not pending approval')
+    if session.created_by_user_id==user.id: conflict('Count creator cannot approve their own variance')
+    try:
+        session.approved_by_user_id=user.id; session.approved_at=datetime.now(timezone.utc); finalize_count(db,session,user); add_audit(db,actor_user_id=user.id,action='count.approved',entity_type='count_session',entity_id=session.id); db.commit(); db.refresh(session); return session
+    except (InventoryError,IntegrityError) as exc:
+        db.rollback(); conflict(exc if isinstance(exc,InventoryError) else 'Count approval failed')

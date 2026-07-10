@@ -1,8 +1,16 @@
 from decimal import Decimal
+from app.core.security import hash_password
+from app.db.session import SessionLocal
+from app.models.user import User
 
-def auth(client):
-    r=client.post('/api/v1/auth/login',json={'email':'owner@example.com','password':'password123'})
+def auth(client,email='owner@example.com'):
+    r=client.post('/api/v1/auth/login',json={'email':email,'password':'password123'})
     return {'Authorization':f"Bearer {r.json()['access_token']}"}
+def approver(client):
+    with SessionLocal() as db:
+        if not db.query(User).filter(User.email=='count-approver@example.com').first():
+            db.add(User(email='count-approver@example.com',full_name='Count Approver',password_hash=hash_password('password123'),role='owner')); db.commit()
+    return auth(client,'count-approver@example.com')
 def setup(client,h):
     cat=client.post('/api/v1/categories',headers=h,json={'name':'Perishables'}).json()
     each=client.post('/api/v1/units',headers=h,json={'code':'EA','name':'Each'}).json()
@@ -46,3 +54,13 @@ def test_cycle_count_schedule_and_expiry_report(client):
     lot=client.post('/api/v1/lots',headers=h,json={'item_id':item['id'],'lot_number':'EXP-001','expiry_date':'2026-07-12','supplier_id':supplier['id']}).json()
     client.post('/api/v1/lot-transactions',headers=h,json={'lot_id':lot['id'],'location_id':main['id'],'quantity':'2','unit_cost':'80','transaction_type':'receipt'})
     expiring=client.get('/api/v1/reports/expiry?days=30',headers=h).json(); assert expiring and expiring[0]['lot_number']=='EXP-001'
+
+def test_blind_count_requires_independent_approval_for_large_variance(client):
+    h=auth(client); item,_,_,main,_,_=setup(client,h)
+    client.post('/api/v1/stock/receipts',headers=h,json={'location_id':main['id'],'lines':[{'item_id':item['id'],'quantity':'10','unit_cost':'80'}]})
+    count=client.post('/api/v1/counts',headers=h,json={'location_id':main['id'],'blind_count':True,'approval_threshold':'2'}).json()
+    worksheet=client.get(f"/api/v1/counts/{count['id']}/worksheet",headers=h).json(); assert 'system_quantity' not in worksheet['lines'][0]
+    submitted=client.post(f"/api/v1/counts/{count['id']}/post",headers=h,json={'lines':[{'item_id':item['id'],'counted_quantity':'5'}]}).json(); assert submitted['status']=='pending_approval'
+    self_approval=client.post(f"/api/v1/counts/{count['id']}/approve",headers=h); assert self_approval.status_code==409
+    approved=client.post(f"/api/v1/counts/{count['id']}/approve",headers=approver(client)).json(); assert approved['status']=='posted'
+    balance=client.get(f"/api/v1/stock/balances?item_id={item['id']}&location_id={main['id']}",headers=h).json()[0]; assert Decimal(balance['quantity'])==Decimal('5')

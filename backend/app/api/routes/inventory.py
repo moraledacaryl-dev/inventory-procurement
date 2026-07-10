@@ -81,7 +81,7 @@ def create_count(p:CountCreate,db:Session=Depends(get_db),user:User=Depends(requ
 def list_counts(db:Session=Depends(get_db),_:User=Depends(require_permission("counts.create"))): return db.scalars(select(CountSession).options(selectinload(CountSession.lines)).order_by(CountSession.created_at.desc())).all()
 @router.post("/counts/{count_id}/post",response_model=CountOut)
 def post_count(count_id:str,p:CountSubmit,db:Session=Depends(get_db),user:User=Depends(require_permission("counts.submit"))):
-    session=db.scalar(select(CountSession).where(CountSession.id==count_id).options(selectinload(CountSession.lines)))
+    session=db.scalar(select(CountSession).where(CountSession.id==count_id).options(selectinload(CountSession.lines)).with_for_update())
     if not session: raise HTTPException(404,"Count not found")
     if session.status!="open": conflict("Count is already posted")
     submitted={x.item_id:x for x in p.lines}; entries=[]
@@ -89,8 +89,10 @@ def post_count(count_id:str,p:CountSubmit,db:Session=Depends(get_db),user:User=D
         if line.item_id not in submitted: continue
         entry=submitted[line.item_id]; line.counted_quantity=entry.counted_quantity; line.note=entry.note; delta=Decimal(entry.counted_quantity)-Decimal(line.system_quantity)
         if delta: entries.append({"item_id":line.item_id,"location_id":session.location_id,"quantity":delta,"unit_cost":0,"reason":"physical count variance"})
-    if entries:
-        try: doc=post_document(db,kind="count_adjustment",actor_id=user.id,entries=entries,reference=session.count_number)
-        except InventoryError as exc: conflict(exc)
-        session.posted_document_id=doc.id
-    session.status="posted"; db.commit(); db.refresh(session); return session
+    try:
+        if entries:
+            doc=post_document(db,kind="count_adjustment",actor_id=user.id,entries=entries,reference=session.count_number,commit=False)
+            session.posted_document_id=doc.id
+        session.status="posted"; db.commit(); db.refresh(session); return session
+    except (InventoryError,IntegrityError) as exc:
+        db.rollback(); conflict(exc if isinstance(exc,InventoryError) else "Count could not be posted")

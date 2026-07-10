@@ -20,7 +20,14 @@ jobs:
         with:
           name: backend-pytest-log
           path: backend/pytest.log
-      - run: APP_ENV=production DATABASE_URL=postgresql+psycopg://inventory:test@localhost/inventory JWT_SECRET=0123456789abcdef0123456789abcdef BOOTSTRAP_OWNER_PASSWORD=strong-ci-password CORS_ORIGINS=https://inventory.example.com python scripts/production_preflight.py
+      - name: Production preflight
+        env:
+          APP_ENV: production
+          DATABASE_URL: postgresql+psycopg://inventory:test@localhost/inventory
+          JWT_SECRET: 0123456789abcdef0123456789abcdef
+          BOOTSTRAP_OWNER_PASSWORD: strong-ci-password
+          CORS_ORIGINS: '["https://inventory.example.com"]'
+        run: python scripts/production_preflight.py
       - run: alembic upgrade head --sql > /tmp/migration.sql
       - run: pip check
   frontend:

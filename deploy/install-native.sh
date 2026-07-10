@@ -5,6 +5,27 @@ APP_DIR=/opt/inventory-procurement-online
 BACKEND_ENV=/etc/hiddenoasis/inventory-backend.env
 FRONTEND_ENV=/etc/hiddenoasis/inventory-frontend.env
 
+wait_for_url() {
+  local url="$1"
+  local host_header="${2:-}"
+  local attempts=30
+  local delay=1
+
+  for ((i=1; i<=attempts; i++)); do
+    if [[ -n "$host_header" ]]; then
+      if curl -fsS -H "Host: $host_header" "$url" >/dev/null; then
+        return 0
+      fi
+    elif curl -fsS "$url" >/dev/null; then
+      return 0
+    fi
+    sleep "$delay"
+  done
+
+  echo "Service did not become ready: $url" >&2
+  return 1
+}
+
 [[ $EUID -eq 0 ]] || { echo "Run as root."; exit 1; }
 [[ -d "$APP_DIR/.git" ]] || { echo "Missing repository at $APP_DIR"; exit 1; }
 [[ -f "$BACKEND_ENV" ]] || { echo "Missing $BACKEND_ENV"; exit 1; }
@@ -33,6 +54,6 @@ systemctl enable --now hiddenoasis-inventory-backup.timer
 nginx -t
 systemctl reload nginx
 
-curl -fsS http://127.0.0.1:8300/api/v1/ready
-curl -fsSI http://127.0.0.1:3300/login >/dev/null
+wait_for_url http://127.0.0.1:8300/api/v1/ready inventory.hiddenoasis.app
+wait_for_url http://127.0.0.1:3300/login
 systemctl --no-pager --full status hiddenoasis-inventory-backend.service hiddenoasis-inventory-frontend.service hiddenoasis-inventory-worker.service

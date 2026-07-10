@@ -10,16 +10,18 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.models.inventory import Category, UnitOfMeasure, Item, Location, StockBalance, StockMovement
-from app.models.procurement import Supplier, PurchaseRequisition, PurchaseOrder, GoodsReceipt, PurchaseReturn
+from app.models.procurement import Supplier, PurchaseRequisition, PurchaseOrder, GoodsReceipt
 from app.models.production import ProductionBatch
 from app.models.operations import BackupRecord, IntegrationEvent
 from app.models.readiness import DataImportJob, AcceptanceRun
 from app.schemas.readiness import *
 from app.services.controls import add_audit, next_document_number
+from app.services.inventory import InventoryError, post_document
 
 router=APIRouter(tags=['production-readiness'])
 def now(): return datetime.now(timezone.utc)
 def fail(code:int,message:str): raise HTTPException(code,message)
+def aware(value:datetime)->datetime: return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 def decimal(value,default='0'):
     try: return Decimal(str(value or default))
     except Exception: raise ValueError(f'Invalid decimal value: {value}')
@@ -77,8 +79,7 @@ def apply_import(job_id:str,db:Session=Depends(get_db),user:User=Depends(require
                 item=db.scalar(select(Item).where(Item.sku==row['sku']))
                 if item:
                     item.name=row['name']; item.category_id=category.id; item.base_unit_id=unit.id; item.minimum_stock=Decimal(row['minimum_stock']); item.standard_cost=Decimal(row['standard_cost']); updated+=1
-                else:
-                    db.add(Item(sku=row['sku'],name=row['name'],category_id=category.id,base_unit_id=unit.id,minimum_stock=Decimal(row['minimum_stock']),standard_cost=Decimal(row['standard_cost']))); created+=1
+                else: db.add(Item(sku=row['sku'],name=row['name'],category_id=category.id,base_unit_id=unit.id,minimum_stock=Decimal(row['minimum_stock']),standard_cost=Decimal(row['standard_cost']))); created+=1
         elif job.import_type=='suppliers':
             for row in rows:
                 supplier=db.scalar(select(Supplier).where(Supplier.code==row['code']))
@@ -88,13 +89,14 @@ def apply_import(job_id:str,db:Session=Depends(get_db),user:User=Depends(require
                 else: db.add(Supplier(**row)); created+=1
         elif job.import_type=='opening_balances':
             if db.scalar(select(func.count()).select_from(StockMovement))>0: fail(409,'Opening balances can only be applied before stock movements exist')
+            entries=[]
             for row in rows:
                 item=db.scalar(select(Item).where(Item.sku==row['sku'])); location=db.scalar(select(Location).where(Location.code==row['location']))
                 if not item or not location: fail(422,f"Unknown item or location: {row['sku']} / {row['location']}")
-                balance=db.scalar(select(StockBalance).where(StockBalance.item_id==item.id,StockBalance.location_id==location.id))
-                if balance: balance.quantity=Decimal(row['quantity']); balance.average_cost=Decimal(row['average_cost']); updated+=1
-                else: db.add(StockBalance(item_id=item.id,location_id=location.id,quantity=Decimal(row['quantity']),average_cost=Decimal(row['average_cost']))); created+=1
+                if Decimal(row['quantity'])>0: entries.append({'item_id':item.id,'location_id':location.id,'quantity':Decimal(row['quantity']),'unit_cost':Decimal(row['average_cost']),'reason':'opening balance'})
+            post_document(db,kind='opening_balance',actor_id=user.id,entries=entries,reference=job.id,idempotency_key=f'opening-balance:{job.id}',commit=False,allow_empty=True); created=len(entries)
         job.status='applied'; job.applied_at=now(); job.summary={**job.summary,'created':created,'updated':updated}; add_audit(db,actor_user_id=user.id,action='migration.import_applied',entity_type='data_import_job',entity_id=job.id,details={'created':created,'updated':updated}); db.commit(); return ImportApplyOut(job_id=job.id,status=job.status,summary={'created':created,'updated':updated},applied_at=job.applied_at)
+    except InventoryError as exc: db.rollback(); fail(409,str(exc))
     except IntegrityError as exc: db.rollback(); fail(409,f'Import could not be applied: {exc.orig}')
 
 @router.post('/requisitions/{document_id}/cancel')
@@ -141,17 +143,15 @@ def print_grn(document_id:str,db:Session=Depends(get_db),_:User=Depends(require_
 @router.get('/deployment/status',response_model=DeploymentStatusOut)
 def deployment_status(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
     db.execute(text('SELECT 1')); pending=db.scalar(select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status.in_(['pending','processing','failed']))) or 0; dead=db.scalar(select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status=='dead_letter')) or 0; backup=db.scalar(select(BackupRecord).order_by(BackupRecord.created_at.desc()))
-    age=(now()-backup.created_at).total_seconds()/3600 if backup else None; status='healthy' if dead==0 and pending<100 and age is not None and age<=48 else 'attention'
+    age=(now()-aware(backup.created_at)).total_seconds()/3600 if backup else None; status='healthy' if dead==0 and pending<100 and age is not None and age<=settings.backup_max_age_hours else 'attention'
     return DeploymentStatusOut(environment=settings.app_env,database='ok',migrations='head',worker_backlog=pending,dead_letter_events=dead,latest_backup_at=backup.created_at if backup else None,backup_age_hours=age,status=status)
 
 @router.post('/acceptance-runs',response_model=AcceptanceRunOut,status_code=201)
 def run_acceptance(p:AcceptanceRunCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
     run=AcceptanceRun(run_number=next_document_number(db,'UAT'),environment=p.environment,notes=p.notes,created_by_user_id=user.id); db.add(run); db.flush(); checks={}
     try:
-        db.execute(text('SELECT 1')); checks['database']={'passed':True}
-        mismatches=[]
-        movement_rows=db.execute(select(StockMovement.item_id,StockMovement.location_id,func.sum(StockMovement.quantity)).group_by(StockMovement.item_id,StockMovement.location_id)).all()
-        movement_map={(a,b):Decimal(c or 0) for a,b,c in movement_rows}
+        db.execute(text('SELECT 1')); checks['database']={'passed':True}; mismatches=[]
+        movement_rows=db.execute(select(StockMovement.item_id,StockMovement.location_id,func.sum(StockMovement.quantity)).group_by(StockMovement.item_id,StockMovement.location_id)).all(); movement_map={(a,b):Decimal(c or 0) for a,b,c in movement_rows}
         for balance in db.scalars(select(StockBalance)).all():
             ledger=movement_map.get((balance.item_id,balance.location_id),Decimal('0'))
             if ledger!=Decimal(balance.quantity): mismatches.append({'item_id':balance.item_id,'location_id':balance.location_id,'ledger':str(ledger),'balance':str(balance.quantity)})

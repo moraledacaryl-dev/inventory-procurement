@@ -10,7 +10,16 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -q -r requirements.txt
       - run: python -m compileall -q app tests scripts
-      - run: pytest -x -vv
+      - name: Run pytest
+        run: |
+          set -o pipefail
+          pytest -x -vv 2>&1 | tee pytest.log
+      - name: Upload pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-pytest-log
+          path: backend/pytest.log
       - run: APP_ENV=production DATABASE_URL=postgresql+psycopg://inventory:test@localhost/inventory JWT_SECRET=0123456789abcdef0123456789abcdef BOOTSTRAP_OWNER_PASSWORD=strong-ci-password CORS_ORIGINS=https://inventory.example.com python scripts/production_preflight.py
       - run: alembic upgrade head --sql > /tmp/migration.sql
       - run: pip check

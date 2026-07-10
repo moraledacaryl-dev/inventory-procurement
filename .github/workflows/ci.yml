@@ -56,6 +56,15 @@ jobs:
         with:
           name: frontend-npm-audit-log
           path: frontend/npm-audit.log
-      - run: npm run lint
+      - name: Lint frontend
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee eslint.log
+      - name: Upload lint log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-eslint-log
+          path: frontend/eslint.log
       - run: npm run typecheck
       - run: npm run build

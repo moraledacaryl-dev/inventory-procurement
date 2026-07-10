@@ -1,0 +1,74 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - inventory_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    env_file: .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8800:8000"
+    volumes:
+      - inventory_backups:/backups
+    command: sh -c "alembic upgrade head && python scripts/bootstrap_owner.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    env_file: .env.production
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - inventory_backups:/backups
+    command: sh -c "while true; do python scripts/process_integration_events.py --limit 25; sleep 10; done"
+    restart: unless-stopped
+
+  backup:
+    build: ./backend
+    env_file: .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - inventory_backups:/backups
+    command: sh -c "while true; do python scripts/backup_database.py; sleep 86400; done"
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    environment:
+      NODE_ENV: production
+      INTERNAL_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3300:3000"
+    restart: unless-stopped
+
+volumes:
+  inventory_postgres:
+    name: hiddenoasis_inventory_postgres
+  inventory_backups:
+    name: hiddenoasis_inventory_backups

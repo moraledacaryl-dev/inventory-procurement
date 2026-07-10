@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 def auth(client):
     r=client.post('/api/v1/auth/login',json={'email':'owner@example.com','password':'password123'})
     return {'Authorization':f"Bearer {r.json()['access_token']}"}
@@ -11,7 +13,7 @@ def approved_po(client,h,item,loc,supplier,quantity='10',price='48'):
     return client.post(f"/api/v1/purchase-orders/{po['id']}/approve",headers=h).json(),req,quote
 def test_procurement_to_partial_and_full_receipt(client):
     h=auth(client); item,loc,supplier=masters(client,h); po,req,quote=approved_po(client,h,item,loc,supplier); line=po['lines'][0]
-    comparison=client.get(f"/api/v1/requisitions/{req['id']}/quotation-comparison",headers=h).json(); assert comparison[0]['total']=='480.0000'
+    comparison=client.get(f"/api/v1/requisitions/{req['id']}/quotation-comparison",headers=h).json(); assert Decimal(comparison[0]['total'])==Decimal('480')
     first=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-1','idempotency_key':'grn-1','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'4','accepted_quantity':'4','rejected_quantity':'0'}]}); assert first.status_code==201
     repeat=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-1','idempotency_key':'grn-1','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'4','accepted_quantity':'4','rejected_quantity':'0'}]}); assert repeat.status_code==201 and repeat.json()['id']==first.json()['id']
     after=client.get('/api/v1/purchase-orders',headers=h).json()[0]; assert after['status']=='partially_received' and after['lines'][0]['received_quantity']=='4.0000'

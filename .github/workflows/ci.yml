@@ -8,10 +8,34 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install -r requirements.txt
+      - run: pip install -q -r requirements.txt
       - run: python -m compileall -q app tests scripts
-      - run: pytest
-      - run: APP_ENV=production DATABASE_URL=postgresql+psycopg://inventory:test@localhost/inventory JWT_SECRET=0123456789abcdef0123456789abcdef BOOTSTRAP_OWNER_PASSWORD=strong-ci-password CORS_ORIGINS=https://inventory.example.com python scripts/production_preflight.py
+      - name: Run pytest
+        run: |
+          set -o pipefail
+          pytest -x -vv 2>&1 | tee pytest.log
+      - name: Upload pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-pytest-log
+          path: backend/pytest.log
+      - name: Production preflight
+        env:
+          APP_ENV: production
+          DATABASE_URL: postgresql+psycopg://inventory:test@localhost/inventory
+          JWT_SECRET: 0123456789abcdef0123456789abcdef
+          BOOTSTRAP_OWNER_PASSWORD: strong-ci-password
+          CORS_ORIGINS: '["https://inventory.example.com"]'
+        run: |
+          set -o pipefail
+          python scripts/production_preflight.py 2>&1 | tee preflight.log
+      - name: Upload preflight log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-preflight-log
+          path: backend/preflight.log
       - run: alembic upgrade head --sql > /tmp/migration.sql
       - run: pip check
   frontend:
@@ -21,8 +45,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
-      - run: npm install
-      - run: npm audit --audit-level=high
-      - run: npm run lint
+      - run: npm install --silent
+      - name: Audit frontend dependencies
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high 2>&1 | tee npm-audit.log
+      - name: Upload npm audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-npm-audit-log
+          path: frontend/npm-audit.log
+      - name: Lint frontend
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee eslint.log
+      - name: Upload lint log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-eslint-log
+          path: frontend/eslint.log
       - run: npm run typecheck
       - run: npm run build

@@ -2,7 +2,24 @@
   "name": "hidden-oasis-inventory-web",
   "version": "0.1.0",
   "private": true,
-  "scripts": {"dev": "next dev", "build": "next build", "start": "next start", "lint": "next lint", "typecheck": "tsc --noEmit"},
-  "dependencies": {"next": "14.2.25", "react": "18.3.1", "react-dom": "18.3.1"},
-  "devDependencies": {"@types/node": "22.10.10", "@types/react": "18.3.18", "@types/react-dom": "18.3.5", "eslint": "8.57.1", "eslint-config-next": "14.2.25", "typescript": "5.7.3"}
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.2.10",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.10",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "eslint": "9.39.1",
+    "eslint-config-next": "16.2.10",
+    "typescript": "5.7.3"
+  }
 }

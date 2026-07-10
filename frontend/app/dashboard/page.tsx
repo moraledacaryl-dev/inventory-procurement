@@ -1,0 +1,3 @@
+import {AppShell} from "../../components/AppShell";
+const modules=[["Items","Canonical inventory catalogue and units"],["Stock","Receipts, issues, transfers and adjustments"],["Purchasing","Requisitions, quotations and purchase orders"],["Receiving","Delivery inspection and goods receipts"],["Counts","Physical counts and variance approval"],["Reports","Balances, movement history and procurement visibility"]];
+export default function Dashboard(){return <AppShell title="Dashboard"><div className="grid">{modules.map(([title,text])=><section className="card" key={title}><h2>{title}</h2><p>{text}</p></section>)}</div></AppShell>}

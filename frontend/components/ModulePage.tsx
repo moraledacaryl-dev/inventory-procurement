@@ -1,0 +1,2 @@
+import {AppShell} from "./AppShell";
+export function ModulePage({title,description,nextPass}:{title:string;description:string;nextPass:string}){return <AppShell title={title}><div className="grid"><section className="card"><h2>Framework status</h2><p>{description}</p></section><section className="card"><h2>Next implementation</h2><p>{nextPass}</p></section><section className="card"><h2>Controls included</h2><p>Authentication, permissions, API conventions, audit foundation, responsive layout, and production configuration.</p></section></div></AppShell>}

@@ -1,20 +1,14 @@
 # Hidden Oasis Inventory & Procurement
 
-Pass 2 implements the operational inventory core on top of the Pass 1 application framework.
+Passes 1–4 establish a production-oriented inventory and procurement application.
 
-## Completed
+## Current capabilities
 
-- Categories, units of measure, item master, and storage locations
-- Immutable stock documents and movement lines
-- Materialized balances by item and location
-- Receipts, issues, transfers, and signed adjustments
-- Negative-stock protection with per-item override
-- Weighted-average cost updates on inbound stock
-- Idempotency keys for safe repeated posting
-- Physical count sessions and variance-generated adjustments
-- Balance, low-stock, and movement-history APIs
-- Working login, item, location, stock, and count screens
-- Alembic migration and transaction tests
+- Item, category, unit, and storage-location masters
+- Immutable stock ledger, balances, receipts, issues, transfers, adjustments, and counts
+- Suppliers, requisitions, approvals, quotations, comparison, purchase orders, partial receiving, rejection, and returns
+- Audit activity, notifications, CSV import/export, durable integration event monitoring, backups, checksums, and production preflight
+- JWT authentication, RBAC, PostgreSQL migrations, responsive UI, tests, and CI security gates
 
 ## Run
 
@@ -23,13 +17,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open `http://localhost:3000`. API documentation is available at `http://localhost:8000/docs` outside production.
-
-## Verification
+## Verify
 
 ```bash
-cd backend && pytest
-cd ../frontend && npm run typecheck && npm run build
+cd backend && pytest && python scripts/production_preflight.py
+cd ../frontend && npm run lint && npm run typecheck && npm run build
 ```
 
-The backend suite covers authentication, health, receipt idempotency, balanced transfers, issues, negative-stock blocking, balances, and count variance posting. Procurement requisitions, quotations, purchase orders, goods receiving against POs, and supplier workflows remain Pass 3.
+## Operational safety
+
+Inventory quantities change only through posted movement documents. Corrections and returns produce reversing movements. Production restore is a controlled maintenance procedure documented in `docs/PASS_4.md`; the application does not expose a dangerous one-click live restore.

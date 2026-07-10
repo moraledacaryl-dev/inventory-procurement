@@ -1,8 +1,9 @@
 from fastapi import APIRouter
-from app.api.routes import auth, health, modules, inventory, procurement
+from app.api.routes import auth, health, modules, inventory, procurement, operations
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(modules.router)
 api_router.include_router(inventory.router)
 api_router.include_router(procurement.router)
+api_router.include_router(operations.router)

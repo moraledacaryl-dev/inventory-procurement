@@ -27,7 +27,15 @@ jobs:
           JWT_SECRET: 0123456789abcdef0123456789abcdef
           BOOTSTRAP_OWNER_PASSWORD: strong-ci-password
           CORS_ORIGINS: '["https://inventory.example.com"]'
-        run: python scripts/production_preflight.py
+        run: |
+          set -o pipefail
+          python scripts/production_preflight.py 2>&1 | tee preflight.log
+      - name: Upload preflight log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-preflight-log
+          path: backend/preflight.log
       - run: alembic upgrade head --sql > /tmp/migration.sql
       - run: pip check
   frontend:

@@ -8,7 +8,9 @@ jobs:
       - name: Validate deployment script
         run: bash -n deploy/deploy.sh
       - name: Validate production Compose stack
-        run: docker compose --env-file .env.production.example -f docker-compose.production.yml config --quiet
+        run: |
+          cp .env.production.example .env.production
+          docker compose --env-file .env.production -f docker-compose.production.yml config --quiet
       - name: Validate domain configuration
         run: |
           grep -q 'inventory.hiddenoasis.app' deploy/inventory.hiddenoasis.app.nginx.conf

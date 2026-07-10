@@ -37,11 +37,13 @@ class DocumentOut(ORMModel):
 class BalanceOut(ORMModel):
     item_id: str; location_id: str; quantity: Decimal; average_cost: Decimal; updated_at: datetime
 class CountCreate(BaseModel):
-    location_id: str; notes: str | None = None
+    location_id: str; notes: str | None = None; blind_count: bool = True; approval_threshold: Decimal = Field(default=0, ge=0)
 class CountEntry(BaseModel):
     item_id: str; counted_quantity: Decimal = Field(ge=0); note: str | None = None
 class CountSubmit(BaseModel): lines: list[CountEntry] = Field(min_length=1)
 class CountLineOut(ORMModel):
     id: str; item_id: str; system_quantity: Decimal; counted_quantity: Decimal | None; note: str | None
 class CountOut(ORMModel):
-    id: str; count_number: str; location_id: str; status: str; notes: str | None; created_at: datetime; posted_document_id: str | None; lines: list[CountLineOut]
+    id: str; count_number: str; location_id: str; status: str; notes: str | None; blind_count: bool; approval_threshold: Decimal; approved_by_user_id: str | None; approved_at: datetime | None; created_at: datetime; posted_document_id: str | None; lines: list[CountLineOut]
+class CountWorksheetLine(BaseModel): item_id: str; counted_quantity: Decimal | None; note: str | None
+class CountWorksheet(BaseModel): id: str; count_number: str; location_id: str; blind_count: bool; lines: list[CountWorksheetLine]

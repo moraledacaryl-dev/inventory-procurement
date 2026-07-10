@@ -1,3 +1,3 @@
-export const API=process.env.NEXT_PUBLIC_API_URL||"http://localhost:8000/api/v1";
+export const API=process.env.NEXT_PUBLIC_API_URL||"/api/v1";
 export function token(){return typeof window!=="undefined"?localStorage.getItem("inventory_token"):null}
 export async function api<T>(path:string,init:RequestInit={}):Promise<T>{const headers=new Headers(init.headers);headers.set("Content-Type","application/json");const t=token();if(t)headers.set("Authorization",`Bearer ${t}`);const response=await fetch(`${API}${path}`,{...init,headers,cache:"no-store"});if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.detail||`Request failed (${response.status})`)}return response.json()}

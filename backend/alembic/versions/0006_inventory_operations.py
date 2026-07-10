@@ -6,8 +6,9 @@ revision='0006_inventory_operations'; down_revision='0005_integrations_controls'
 def upgrade():
     op.add_column('count_sessions',sa.Column('blind_count',sa.Boolean(),nullable=False,server_default=sa.true()))
     op.add_column('count_sessions',sa.Column('approval_threshold',sa.Numeric(18,4),nullable=False,server_default='0'))
-    op.add_column('count_sessions',sa.Column('approved_by_user_id',sa.String(36),sa.ForeignKey('users.id')))
+    op.add_column('count_sessions',sa.Column('approved_by_user_id',sa.String(36)))
     op.add_column('count_sessions',sa.Column('approved_at',sa.DateTime(timezone=True)))
+    if op.get_context().dialect.name!='sqlite': op.create_foreign_key('fk_count_sessions_approved_by_user','count_sessions','users',['approved_by_user_id'],['id'])
     op.create_table('item_barcodes',sa.Column('id',sa.String(36),primary_key=True),sa.Column('item_id',sa.String(36),sa.ForeignKey('items.id'),nullable=False),sa.Column('barcode',sa.String(100),nullable=False,unique=True),sa.Column('barcode_type',sa.String(30),nullable=False),sa.Column('is_primary',sa.Boolean(),nullable=False)); op.create_index('ix_item_barcodes_item_id','item_barcodes',['item_id']); op.create_index('ix_item_barcodes_barcode','item_barcodes',['barcode'])
     op.create_table('unit_conversions',sa.Column('id',sa.String(36),primary_key=True),sa.Column('item_id',sa.String(36),sa.ForeignKey('items.id'),nullable=False),sa.Column('from_unit_id',sa.String(36),sa.ForeignKey('units_of_measure.id'),nullable=False),sa.Column('to_unit_id',sa.String(36),sa.ForeignKey('units_of_measure.id'),nullable=False),sa.Column('multiplier',sa.Numeric(18,6),nullable=False),sa.Column('is_active',sa.Boolean(),nullable=False),sa.UniqueConstraint('item_id','from_unit_id','to_unit_id',name='uq_item_unit_conversion')); op.create_index('ix_unit_conversions_item_id','unit_conversions',['item_id'])
     op.create_table('item_location_settings',sa.Column('id',sa.String(36),primary_key=True),sa.Column('item_id',sa.String(36),sa.ForeignKey('items.id'),nullable=False),sa.Column('location_id',sa.String(36),sa.ForeignKey('locations.id'),nullable=False),sa.Column('minimum_stock',sa.Numeric(18,4),nullable=False),sa.Column('reorder_quantity',sa.Numeric(18,4),nullable=False),sa.Column('maximum_stock',sa.Numeric(18,4)),sa.Column('preferred_supplier_id',sa.String(36),sa.ForeignKey('suppliers.id')),sa.Column('cycle_count_days',sa.Integer(),nullable=False),sa.Column('is_active',sa.Boolean(),nullable=False),sa.UniqueConstraint('item_id','location_id',name='uq_item_location_setting')); op.create_index('ix_item_location_settings_item_id','item_location_settings',['item_id']); op.create_index('ix_item_location_settings_location_id','item_location_settings',['location_id'])
@@ -20,4 +21,5 @@ def upgrade():
 
 def downgrade():
     for table in ['cycle_count_schedules','transfer_order_lines','transfer_orders','stock_reservations','lot_balances','inventory_lots','item_location_settings','unit_conversions','item_barcodes']: op.drop_table(table)
+    if op.get_context().dialect.name!='sqlite': op.drop_constraint('fk_count_sessions_approved_by_user','count_sessions',type_='foreignkey')
     op.drop_column('count_sessions','approved_at'); op.drop_column('count_sessions','approved_by_user_id'); op.drop_column('count_sessions','approval_threshold'); op.drop_column('count_sessions','blind_count')

@@ -11,14 +11,20 @@ class SupplierItemCreate(BaseModel):
     item_id:str; supplier_sku:str|None=None; last_price:Decimal=Field(default=0,ge=0); lead_time_days:int=Field(default=0,ge=0); minimum_order_quantity:Decimal=Field(default=1,gt=0); is_preferred:bool=False
 class SupplierItemOut(ORMModel):
     id:str; supplier_id:str; item_id:str; supplier_sku:str|None; last_price:Decimal; lead_time_days:int; minimum_order_quantity:Decimal; is_preferred:bool
+class SupplierPerformance(BaseModel):
+    supplier_id:str; supplier_code:str; supplier_name:str; purchase_orders:int; completed_orders:int; ordered_value:Decimal; received_value:Decimal; accepted_value:Decimal; rejected_value:Decimal; acceptance_rate:Decimal; on_time_rate:Decimal; average_delivery_variance_days:Decimal
 class PRLineIn(BaseModel):
     item_id:str; quantity:Decimal=Field(gt=0); estimated_unit_cost:Decimal=Field(default=0,ge=0); notes:str|None=None
 class PRCreate(BaseModel):
     department:str=Field(min_length=1,max_length=100); needed_by:date|None=None; justification:str|None=None; lines:list[PRLineIn]=Field(min_length=1)
+class ReorderRequisitionCreate(BaseModel):
+    department:str=Field(min_length=1,max_length=100); location_id:str|None=None; needed_by:date|None=None; justification:str='Automatic reorder requisition'; item_ids:list[str]|None=None
 class PRLineOut(ORMModel):
     id:str; item_id:str; quantity:Decimal; estimated_unit_cost:Decimal; notes:str|None
 class PROut(ORMModel):
     id:str; requisition_number:str; department:str; needed_by:date|None; justification:str|None; status:str; requested_by_user_id:str; approved_by_user_id:str|None; approved_at:datetime|None; created_at:datetime; lines:list[PRLineOut]
+class ReorderSuggestion(BaseModel):
+    item_id:str; sku:str; item_name:str; location_id:str|None; location_name:str|None; current_quantity:Decimal; minimum_stock:Decimal; on_order_quantity:Decimal; suggested_quantity:Decimal; standard_cost:Decimal; preferred_supplier_id:str|None; preferred_supplier_name:str|None; lead_time_days:int|None
 class QuoteLineIn(BaseModel):
     item_id:str; quantity:Decimal=Field(gt=0); unit_price:Decimal=Field(gt=0)
 class QuoteCreate(BaseModel):

@@ -1,0 +1,16 @@
+name: Deployment Validation
+on: [push, pull_request]
+jobs:
+  deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment script
+        run: bash -n deploy/deploy.sh
+      - name: Validate production Compose stack
+        run: docker compose --env-file .env.production.example -f docker-compose.production.yml config --quiet
+      - name: Validate domain configuration
+        run: |
+          grep -q 'inventory.hiddenoasis.app' deploy/inventory.hiddenoasis.app.nginx.conf
+          grep -q '127.0.0.1:3300' deploy/inventory.hiddenoasis.app.nginx.conf
+          grep -q '127.0.0.1:8800' deploy/inventory.hiddenoasis.app.nginx.conf

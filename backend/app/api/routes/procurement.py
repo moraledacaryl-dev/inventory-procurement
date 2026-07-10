@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.models.inventory import Item, Location
+from app.models.inventory import Item, Location, StockDocument
 from app.models.procurement import Supplier, SupplierItem, PurchaseRequisition, PurchaseRequisitionLine, SupplierQuotation, SupplierQuotationLine, PurchaseOrder, PurchaseOrderLine, GoodsReceipt, GoodsReceiptLine, PurchaseReturn
 from app.schemas.procurement import *
 from app.services.inventory import InventoryError, post_document
@@ -23,7 +23,10 @@ def numbered(prefix:str,count:int): return f'{prefix}-{count+1:06d}'
 
 def load_pr(db,id): return db.scalar(select(PurchaseRequisition).where(PurchaseRequisition.id==id).options(selectinload(PurchaseRequisition.lines)))
 def load_quote(db,id): return db.scalar(select(SupplierQuotation).where(SupplierQuotation.id==id).options(selectinload(SupplierQuotation.lines)))
-def load_po(db,id): return db.scalar(select(PurchaseOrder).where(PurchaseOrder.id==id).options(selectinload(PurchaseOrder.lines)))
+def load_po(db,id,lock:bool=False):
+    stmt=select(PurchaseOrder).where(PurchaseOrder.id==id).options(selectinload(PurchaseOrder.lines))
+    if lock: stmt=stmt.with_for_update()
+    return db.scalar(stmt)
 
 @router.get('/suppliers',response_model=list[SupplierOut])
 def suppliers(db:Session=Depends(get_db),_:User=Depends(require_permission('suppliers.read'))): return db.scalars(select(Supplier).order_by(Supplier.code)).all()
@@ -108,7 +111,13 @@ def approve_po(po_id:str,db:Session=Depends(get_db),user:User=Depends(require_pe
 
 @router.post('/purchase-orders/{po_id}/receipts',response_model=GoodsReceiptOut,status_code=201)
 def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.*'))):
-    po=load_po(db,po_id)
+    if p.idempotency_key:
+        existing_doc=db.scalar(select(StockDocument).where(StockDocument.idempotency_key==p.idempotency_key))
+        if existing_doc:
+            existing=db.scalar(select(GoodsReceipt).where(GoodsReceipt.stock_document_id==existing_doc.id).options(selectinload(GoodsReceipt.lines)))
+            if existing: return existing
+            fail(409,'Idempotency key is already used by another stock operation')
+    po=load_po(db,po_id,lock=True)
     if not po: fail(404,'Purchase order not found')
     if po.status not in {'approved','partially_received'}: fail(409,'Purchase order is not receivable')
     po_lines={x.id:x for x in po.lines}; entries=[]
@@ -118,22 +127,28 @@ def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:Us
         outstanding=Decimal(line.ordered_quantity)-Decimal(line.received_quantity)
         if x.received_quantity>outstanding: fail(409,'Received quantity exceeds outstanding quantity')
         if x.accepted_quantity: entries.append({'item_id':line.item_id,'location_id':po.delivery_location_id,'quantity':x.accepted_quantity,'unit_cost':line.unit_price,'reason':'purchase order receipt'})
-    try: doc=post_document(db,kind='po_receipt',actor_id=user.id,entries=entries,reference=po.purchase_order_number,notes=p.notes,idempotency_key=p.idempotency_key)
-    except InventoryError as exc: fail(409,str(exc))
-    existing=db.scalar(select(GoodsReceipt).where(GoodsReceipt.stock_document_id==doc.id).options(selectinload(GoodsReceipt.lines)))
-    if existing: return existing
-    receipt=GoodsReceipt(goods_receipt_number=numbered('GRN',db.query(GoodsReceipt).count()),purchase_order_id=po.id,stock_document_id=doc.id,delivery_reference=p.delivery_reference,received_by_user_id=user.id,notes=p.notes)
-    for x in p.lines:
-        line=po_lines[x.purchase_order_line_id]; line.received_quantity=Decimal(line.received_quantity)+x.received_quantity
-        receipt.lines.append(GoodsReceiptLine(purchase_order_line_id=line.id,item_id=line.item_id,received_quantity=x.received_quantity,accepted_quantity=x.accepted_quantity,rejected_quantity=x.rejected_quantity,unit_cost=line.unit_price))
-    po.status='received' if all(Decimal(x.received_quantity)>=Decimal(x.ordered_quantity) for x in po.lines) else 'partially_received'
-    db.add(receipt); db.commit(); db.refresh(receipt); return receipt
+    try:
+        doc=post_document(db,kind='po_receipt',actor_id=user.id,entries=entries,reference=po.purchase_order_number,notes=p.notes,idempotency_key=p.idempotency_key,commit=False,allow_empty=True)
+        receipt=GoodsReceipt(goods_receipt_number=numbered('GRN',db.query(GoodsReceipt).count()),purchase_order_id=po.id,stock_document_id=doc.id,delivery_reference=p.delivery_reference,received_by_user_id=user.id,notes=p.notes)
+        for x in p.lines:
+            line=po_lines[x.purchase_order_line_id]; line.received_quantity=Decimal(line.received_quantity)+x.received_quantity
+            receipt.lines.append(GoodsReceiptLine(purchase_order_line_id=line.id,item_id=line.item_id,received_quantity=x.received_quantity,accepted_quantity=x.accepted_quantity,rejected_quantity=x.rejected_quantity,unit_cost=line.unit_price))
+        po.status='received' if all(Decimal(x.received_quantity)>=Decimal(x.ordered_quantity) for x in po.lines) else 'partially_received'
+        db.add(receipt); db.commit(); db.refresh(receipt); return receipt
+    except (InventoryError,IntegrityError) as exc:
+        db.rollback(); fail(409,str(exc) if isinstance(exc,InventoryError) else 'Goods receipt could not be posted')
 @router.get('/goods-receipts',response_model=list[GoodsReceiptOut])
 def goods_receipts(db:Session=Depends(get_db),_:User=Depends(require_permission('receiving.read'))): return db.scalars(select(GoodsReceipt).options(selectinload(GoodsReceipt.lines)).order_by(GoodsReceipt.received_at.desc())).unique().all()
 
 @router.post('/purchase-orders/{po_id}/returns',response_model=ReturnOut,status_code=201)
 def create_return(po_id:str,p:ReturnCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.*'))):
-    po=load_po(db,po_id)
+    if p.idempotency_key:
+        existing_doc=db.scalar(select(StockDocument).where(StockDocument.idempotency_key==p.idempotency_key))
+        if existing_doc:
+            existing=db.scalar(select(PurchaseReturn).where(PurchaseReturn.stock_document_id==existing_doc.id))
+            if existing: return existing
+            fail(409,'Idempotency key is already used by another stock operation')
+    po=load_po(db,po_id,lock=True)
     if not po: fail(404,'Purchase order not found')
     lines={x.id:x for x in po.lines}; entries=[]
     for x in p.lines:
@@ -142,10 +157,10 @@ def create_return(po_id:str,p:ReturnCreate,db:Session=Depends(get_db),user:User=
         returnable=Decimal(line.received_quantity)-Decimal(line.returned_quantity)
         if x.quantity>returnable: fail(409,'Return quantity exceeds received quantity')
         entries.append({'item_id':line.item_id,'location_id':po.delivery_location_id,'quantity':-x.quantity,'unit_cost':line.unit_price,'reason':'purchase return'})
-    try: doc=post_document(db,kind='purchase_return',actor_id=user.id,entries=entries,reference=po.purchase_order_number,notes=p.reason,idempotency_key=p.idempotency_key)
-    except InventoryError as exc: fail(409,str(exc))
-    existing=db.scalar(select(PurchaseReturn).where(PurchaseReturn.stock_document_id==doc.id))
-    if existing: return existing
-    for x in p.lines: lines[x.purchase_order_line_id].returned_quantity=Decimal(lines[x.purchase_order_line_id].returned_quantity)+x.quantity
-    row=PurchaseReturn(return_number=numbered('PRTN',db.query(PurchaseReturn).count()),purchase_order_id=po.id,stock_document_id=doc.id,reason=p.reason,created_by_user_id=user.id)
-    db.add(row); db.commit(); db.refresh(row); return row
+    try:
+        doc=post_document(db,kind='purchase_return',actor_id=user.id,entries=entries,reference=po.purchase_order_number,notes=p.reason,idempotency_key=p.idempotency_key,commit=False)
+        for x in p.lines: lines[x.purchase_order_line_id].returned_quantity=Decimal(lines[x.purchase_order_line_id].returned_quantity)+x.quantity
+        row=PurchaseReturn(return_number=numbered('PRTN',db.query(PurchaseReturn).count()),purchase_order_id=po.id,stock_document_id=doc.id,reason=p.reason,created_by_user_id=user.id)
+        db.add(row); db.commit(); db.refresh(row); return row
+    except (InventoryError,IntegrityError) as exc:
+        db.rollback(); fail(409,str(exc) if isinstance(exc,InventoryError) else 'Purchase return could not be posted')

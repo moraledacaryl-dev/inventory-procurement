@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -14,8 +14,15 @@ class Notification(Base):
     title: Mapped[str]=mapped_column(String(180))
     message: Mapped[str]=mapped_column(Text)
     severity: Mapped[str]=mapped_column(String(20),default='info')
-    is_read: Mapped[bool]=mapped_column(Boolean,default=False,index=True)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow,index=True)
+
+class NotificationRead(Base):
+    __tablename__='notification_reads'
+    __table_args__=(UniqueConstraint('notification_id','user_id',name='uq_notification_read_user'),)
+    id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
+    notification_id: Mapped[str]=mapped_column(String(36),ForeignKey('notifications.id',ondelete='CASCADE'),index=True)
+    user_id: Mapped[str]=mapped_column(String(36),ForeignKey('users.id',ondelete='CASCADE'),index=True)
+    read_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
 
 class IntegrationEvent(Base):
     __tablename__='integration_events'
@@ -30,10 +37,19 @@ class IntegrationEvent(Base):
     payload: Mapped[dict]=mapped_column(JSON)
     status: Mapped[str]=mapped_column(String(30),default='pending',index=True)
     attempts: Mapped[int]=mapped_column(default=0)
+    max_attempts: Mapped[int]=mapped_column(default=8)
     last_error: Mapped[str|None]=mapped_column(Text,nullable=True)
-    available_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow)
+    available_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow,index=True)
+    locked_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+    locked_by: Mapped[str|None]=mapped_column(String(100),nullable=True)
     processed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow,index=True)
+
+class DocumentSequence(Base):
+    __tablename__='document_sequences'
+    prefix: Mapped[str]=mapped_column(String(20),primary_key=True)
+    next_value: Mapped[int]=mapped_column(default=1)
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utcnow,onupdate=utcnow)
 
 class BackupRecord(Base):
     __tablename__='backup_records'

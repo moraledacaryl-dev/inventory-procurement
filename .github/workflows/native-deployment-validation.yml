@@ -1,0 +1,13 @@
+name: Native Deployment Validation
+on: [push, pull_request]
+jobs:
+  native-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n deploy/install-native.sh
+      - run: systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer
+      - run: |
+          grep -q '/opt/inventory-procurement-online' deploy/systemd/hiddenoasis-inventory-backend.service
+          grep -q '127.0.0.1:8300' deploy/nginx/inventory-hiddenoasis.conf
+          grep -q '127.0.0.1:3300' deploy/nginx/inventory-hiddenoasis.conf

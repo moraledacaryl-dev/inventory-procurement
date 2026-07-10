@@ -85,9 +85,11 @@ def post_count(count_id:str,p:CountSubmit,db:Session=Depends(get_db),user:User=D
     if not session: raise HTTPException(404,"Count not found")
     if session.status!="open": conflict("Count is already posted")
     submitted={x.item_id:x for x in p.lines}; entries=[]
+    current_balances={b.item_id:Decimal(b.quantity) for b in db.scalars(select(StockBalance).where(StockBalance.location_id==session.location_id).with_for_update()).all()}
     for line in session.lines:
         if line.item_id not in submitted: continue
-        entry=submitted[line.item_id]; line.counted_quantity=entry.counted_quantity; line.note=entry.note; delta=Decimal(entry.counted_quantity)-Decimal(line.system_quantity)
+        entry=submitted[line.item_id]; line.counted_quantity=entry.counted_quantity; line.note=entry.note
+        delta=Decimal(entry.counted_quantity)-current_balances.get(line.item_id,Decimal("0"))
         if delta: entries.append({"item_id":line.item_id,"location_id":session.location_id,"quantity":delta,"unit_cost":0,"reason":"physical count variance"})
     try:
         if entries:

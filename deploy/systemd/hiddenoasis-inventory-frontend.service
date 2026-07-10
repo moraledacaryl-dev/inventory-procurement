@@ -1,0 +1,16 @@
+[Unit]
+Description=Hidden Oasis Inventory Frontend
+After=network.target hiddenoasis-inventory-backend.service
+
+[Service]
+User=hiddenoasis
+Group=hiddenoasis
+WorkingDirectory=/opt/inventory-procurement-online/frontend
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/hiddenoasis/inventory-frontend.env
+ExecStart=/usr/bin/npm run start -- -H 127.0.0.1 -p 3300
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

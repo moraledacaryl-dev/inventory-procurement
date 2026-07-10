@@ -1,0 +1,23 @@
+name: Native Deployment Validation
+on: [push, pull_request]
+jobs:
+  native-deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installer shell syntax
+        run: bash -n deploy/install-native.sh
+      - name: Validate systemd unit structure
+        run: |
+          for unit in deploy/systemd/*.service deploy/systemd/*.timer; do
+            grep -q '^\[Unit\]' "$unit"
+          done
+          grep -q '^\[Service\]' deploy/systemd/*.service
+          grep -q '^\[Timer\]' deploy/systemd/*.timer
+          grep -q '^ExecStart=' deploy/systemd/*.service
+      - name: Validate verified server paths and ports
+        run: |
+          grep -q '/opt/inventory-procurement-online' deploy/systemd/hiddenoasis-inventory-backend.service
+          grep -q '/etc/hiddenoasis/inventory-backend.env' deploy/systemd/hiddenoasis-inventory-backend.service
+          grep -q '127.0.0.1:8300' deploy/nginx/inventory-hiddenoasis.conf
+          grep -q '127.0.0.1:3300' deploy/nginx/inventory-hiddenoasis.conf

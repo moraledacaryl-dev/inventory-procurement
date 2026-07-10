@@ -1,0 +1,16 @@
+[Unit]
+Description=Hidden Oasis Inventory Integration Worker
+After=network.target postgresql.service hiddenoasis-inventory-backend.service
+Wants=postgresql.service
+
+[Service]
+User=hiddenoasis
+Group=hiddenoasis
+WorkingDirectory=/opt/inventory-procurement-online/backend
+EnvironmentFile=/etc/hiddenoasis/inventory-backend.env
+ExecStart=/opt/inventory-procurement-online/backend/.venv/bin/python scripts/process_integration_events.py --loop --limit 25 --sleep 10
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

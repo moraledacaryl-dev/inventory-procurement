@@ -7,8 +7,10 @@ User=hiddenoasis
 Group=hiddenoasis
 WorkingDirectory=/opt/inventory-procurement-online/frontend
 Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3300
 EnvironmentFile=/etc/hiddenoasis/inventory-frontend.env
-ExecStart=/usr/bin/npm run start -- -H 127.0.0.1 -p 3300
+ExecStart=/usr/bin/node /opt/inventory-procurement-online/frontend/.next/standalone/server.js
 Restart=always
 RestartSec=5
 

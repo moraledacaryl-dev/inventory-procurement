@@ -7,9 +7,11 @@ def test_inventory_flow(client):
     h=login(client); item,a,b=setup_master(client,h)
     r=client.post('/api/v1/stock/receipts',headers=h,json={'location_id':a['id'],'idempotency_key':'receipt-1','lines':[{'item_id':item['id'],'quantity':'10','unit_cost':'40'}]}); assert r.status_code==201
     same=client.post('/api/v1/stock/receipts',headers=h,json={'location_id':a['id'],'idempotency_key':'receipt-1','lines':[{'item_id':item['id'],'quantity':'10','unit_cost':'40'}]}); assert same.json()['id']==r.json()['id']
-    t=client.post('/api/v1/stock/transfers',headers=h,json={'source_location_id':a['id'],'destination_location_id':b['id'],'lines':[{'item_id':item['id'],'quantity':'3','unit_cost':'40'}]}); assert t.status_code==201 and len(t.json()['movements'])==2
+    t=client.post('/api/v1/stock/transfers',headers=h,json={'source_location_id':a['id'],'destination_location_id':b['id'],'lines':[{'item_id':item['id'],'quantity':'3'}]}); assert t.status_code==201 and len(t.json()['movements'])==2
     i=client.post('/api/v1/stock/issues',headers=h,json={'location_id':b['id'],'lines':[{'item_id':item['id'],'quantity':'1'}]}); assert i.status_code==201
-    values={x['location_id']:x['quantity'] for x in client.get('/api/v1/stock/balances',headers=h).json()}; assert values[a['id']]=='7.0000' and values[b['id']]=='2.0000'
+    balances=client.get('/api/v1/stock/balances',headers=h).json(); values={x['location_id']:x['quantity'] for x in balances}; costs={x['location_id']:x['average_cost'] for x in balances}
+    assert values[a['id']]=='7.0000' and values[b['id']]=='2.0000'
+    assert costs[b['id']]=='40.0000'
 def test_negative_stock_is_blocked(client):
     h=login(client); item,a,_=setup_master(client,h); r=client.post('/api/v1/stock/issues',headers=h,json={'location_id':a['id'],'lines':[{'item_id':item['id'],'quantity':'1'}]}); assert r.status_code==409
 def test_count_posts_variance(client):

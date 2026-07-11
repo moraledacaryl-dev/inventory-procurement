@@ -25,8 +25,10 @@ async def request_context(request: Request, call_next):
     if content_length and int(content_length) > settings.max_request_bytes:
         return JSONResponse(status_code=413, content={"detail": "Request body too large", "request_id": request_id}, headers={"x-request-id": request_id})
 
+    is_login = request.url.path == f"{settings.api_v1_prefix}/auth/login"
     cookie_authenticated_mutation = (
         request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and not is_login
         and request.cookies.get(SESSION_COOKIE_NAME)
         and not request.headers.get("authorization")
     )

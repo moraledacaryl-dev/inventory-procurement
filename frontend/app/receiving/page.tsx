@@ -1,56 +1,66 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/AppShell";
-import { DataTable } from "../../components/DataTable";
+import { Can } from "../../components/SessionContext";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { FeedbackBanner } from "../../components/FeedbackBanner";
+import { StatusBadge } from "../../components/StatusBadge";
 import { api } from "../../lib/api";
+import { formatDate, formatDateTime, formatMoney, formatQuantity } from "../../lib/formatters";
 
-type POLine={id:string;item_id:string;ordered_quantity:string;received_quantity:string;unit_price:string};
-type PO={id:string;purchase_order_number:string;status:string;lines:POLine[]};
-type GR={id:string;goods_receipt_number:string;purchase_order_id:string;delivery_reference:string|null;received_at:string;lines:{accepted_quantity:string;rejected_quantity:string}[]};
-type Entry={line_id:string;received:string;rejected:string};
+type POLine={id:string;item_id:string;sku:string;item_name:string;ordered_quantity:string;received_quantity:string;returned_quantity:string;outstanding_quantity:string;returnable_quantity:string;unit_price:string};
+type PO={id:string;purchase_order_number:string;supplier_id:string;supplier_code:string;supplier_name:string;delivery_location_id:string;delivery_location_code:string;delivery_location_name:string;expected_delivery_date:string|null;status:string;ordered_quantity:string;received_quantity:string;outstanding_quantity:string;lines:POLine[]};
+type Receipt={id:string;goods_receipt_number:string;purchase_order_id:string;purchase_order_number:string;supplier_id:string|null;supplier_code:string|null;supplier_name:string|null;delivery_location_id:string|null;delivery_location_code:string|null;delivery_location_name:string|null;stock_document_id:string;delivery_reference:string|null;notes:string|null;received_at:string;received_value:string;accepted_value:string;rejected_value:string;has_discrepancy:boolean;lines:{id:string;purchase_order_line_id:string;item_id:string;sku:string;item_name:string;received_quantity:string;accepted_quantity:string;rejected_quantity:string;unit_cost:string}[]};
+type ReturnRow={id:string;return_number:string;purchase_order_id:string;purchase_order_number:string;supplier_id:string|null;supplier_code:string|null;supplier_name:string|null;stock_document_id:string;reason:string;created_at:string};
+type Workspace={summary:{receivable_orders:number;partial_orders:number;receipts:number;discrepant_receipts:number;accepted_value:string;rejected_value:string;returns:number};purchase_orders:PO[];receipts:Receipt[];returns:ReturnRow[]};
+type ReceiveLine={line_id:string;received:string;rejected:string;reason:string;lot_number:string;manufactured_date:string;expiry_date:string};
+type ReturnLine={line_id:string;quantity:string};
 
-export default function Page(){
-  const[pos,setPos]=useState<PO[]>([]);
-  const[receipts,setReceipts]=useState<GR[]>([]);
-  const[selectedPoId,setSelectedPoId]=useState("");
-  const[entries,setEntries]=useState<Entry[]>([]);
-  const[msg,setMsg]=useState("");
+export default function ReceivingPage(){
+ const[data,setData]=useState<Workspace|null>(null);
+ const[selectedPoId,setSelectedPoId]=useState("");
+ const[receiveLines,setReceiveLines]=useState<ReceiveLine[]>([]);
+ const[returnPoId,setReturnPoId]=useState("");
+ const[returnLines,setReturnLines]=useState<ReturnLine[]>([]);
+ const[deliveryReference,setDeliveryReference]=useState("");
+ const[receiptNotes,setReceiptNotes]=useState("");
+ const[returnReason,setReturnReason]=useState("");
+ const[returnReference,setReturnReference]=useState("");
+ const[returnNotes,setReturnNotes]=useState("");
+ const[loading,setLoading]=useState(true);
+ const[busy,setBusy]=useState(false);
+ const[feedback,setFeedback]=useState<{tone:"success"|"error"|"warning"|"info";title:string;message?:string}|null>(null);
+ const[pending,setPending]=useState<"receive"|"return"|null>(null);
 
-  const load=useCallback(async()=>{
-    try{
-      const[p,g]=await Promise.all([api<PO[]>("/purchase-orders"),api<GR[]>("/goods-receipts")]);
-      setPos(p);setReceipts(g);
-    }catch(error){setMsg((error as Error).message)}
-  },[]);
+ const load=useCallback(async()=>{setLoading(true);try{setData(await api<Workspace>("/receiving/workspace"))}catch(error){setFeedback({tone:"error",title:"Receiving workspace unavailable",message:(error as Error).message})}finally{setLoading(false)}},[]);
+ useEffect(()=>{void load()},[load]);
+ const selectedPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===selectedPoId)||null,[data,selectedPoId]);
+ const selectedReturnPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===returnPoId)||null,[data,returnPoId]);
+ useEffect(()=>{if(!selectedPo){setReceiveLines([]);return}setReceiveLines(selectedPo.lines.filter(line=>Number(line.outstanding_quantity)>0).map(line=>({line_id:line.id,received:"",rejected:"0",reason:"",lot_number:"",manufactured_date:"",expiry_date:""})))},[selectedPo]);
+ useEffect(()=>{if(!selectedReturnPo){setReturnLines([]);return}setReturnLines(selectedReturnPo.lines.filter(line=>Number(line.returnable_quantity)>0).map(line=>({line_id:line.id,quantity:"0"})))},[selectedReturnPo]);
 
-  useEffect(()=>{void load()},[load]);
-  const selectedPo=useMemo(()=>pos.find(x=>x.id===selectedPoId),[pos,selectedPoId]);
+ const receiptPayload=useMemo(()=>receiveLines.filter(row=>Number(row.received)>0).map(row=>{const received=Number(row.received),rejected=Number(row.rejected||0);return {purchase_order_line_id:row.line_id,received_quantity:received,accepted_quantity:received-rejected,rejected_quantity:rejected,discrepancy_reason:rejected>0?row.reason||null:null,lot_number:row.lot_number||null,manufactured_date:row.manufactured_date||null,expiry_date:row.expiry_date||null}}),[receiveLines]);
+ const returnPayload=useMemo(()=>returnLines.filter(row=>Number(row.quantity)>0).map(row=>({purchase_order_line_id:row.line_id,quantity:Number(row.quantity)})),[returnLines]);
+ const receiptValid=Boolean(selectedPo&&deliveryReference.trim()&&receiptPayload.length&&receiptPayload.every(row=>row.accepted_quantity>=0&&(!row.rejected_quantity||row.discrepancy_reason)));
+ const returnValid=Boolean(selectedReturnPo&&returnReason.trim()&&returnPayload.length);
 
-  useEffect(()=>{
-    if(!selectedPo){setEntries([]);return}
-    setEntries(selectedPo.lines.filter(line=>Number(line.received_quantity)<Number(line.ordered_quantity)).map(line=>({line_id:line.id,received:"",rejected:"0"})));
-  },[selectedPo]);
+ async function postReceipt(){if(!selectedPo||!receiptValid)return;setBusy(true);try{const result=await api<Receipt>(`/receiving/purchase-orders/${selectedPo.id}`,{method:"POST",body:JSON.stringify({delivery_reference:deliveryReference.trim(),notes:receiptNotes||null,idempotency_key:crypto.randomUUID(),lines:receiptPayload})});setFeedback({tone:result.has_discrepancy?"warning":"success",title:"Goods receipt posted",message:result.has_discrepancy?`${result.goods_receipt_number} includes rejected quantities requiring follow-up.`:`${result.goods_receipt_number} posted accepted stock to ${result.delivery_location_code}.`});setPending(null);setSelectedPoId("");setDeliveryReference("");setReceiptNotes("");await load()}catch(error){setFeedback({tone:"error",title:"Goods receipt could not be posted",message:(error as Error).message});setPending(null)}finally{setBusy(false)}}
+ async function postReturn(){if(!selectedReturnPo||!returnValid)return;setBusy(true);try{const result=await api<ReturnRow>(`/receiving/purchase-orders/${selectedReturnPo.id}/returns`,{method:"POST",body:JSON.stringify({reason:returnReason.trim(),supplier_reference:returnReference||null,notes:returnNotes||null,idempotency_key:crypto.randomUUID(),lines:returnPayload})});setFeedback({tone:"success",title:"Supplier return posted",message:`${result.return_number} removed the selected quantity from stock and sent the event to Accounting.`});setPending(null);setReturnPoId("");setReturnReason("");setReturnReference("");setReturnNotes("");await load()}catch(error){setFeedback({tone:"error",title:"Supplier return could not be posted",message:(error as Error).message});setPending(null)}finally{setBusy(false)}}
 
-  const updateEntry=(lineId:string,key:"received"|"rejected",value:string)=>setEntries(rows=>rows.map(row=>row.line_id===lineId?{...row,[key]:value}:row));
+ return <AppShell title="Receiving" description="Receive approved purchase orders, capture accepted and rejected quantities, create traceable lots, and return stock to suppliers.">
+  {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}
+  <section className="receiving-metrics"><div><span>Receivable POs</span><strong>{data?.summary.receivable_orders||0}</strong></div><div><span>Partial POs</span><strong>{data?.summary.partial_orders||0}</strong></div><div><span>Goods receipts</span><strong>{data?.summary.receipts||0}</strong></div><div><span>Discrepant receipts</span><strong>{data?.summary.discrepant_receipts||0}</strong></div><div><span>Accepted value</span><strong>{formatMoney(data?.summary.accepted_value||0)}</strong></div><div><span>Rejected value</span><strong>{formatMoney(data?.summary.rejected_value||0)}</strong></div><div><span>Supplier returns</span><strong>{data?.summary.returns||0}</strong></div></section>
 
-  async function receive(event:FormEvent<HTMLFormElement>){
-    event.preventDefault();const form=event.currentTarget;const values=new FormData(form);
-    if(!selectedPo)return;
-    const lines=entries.filter(entry=>Number(entry.received)>0).map(entry=>{
-      const received=Number(entry.received),rejected=Number(entry.rejected||0);
-      return {purchase_order_line_id:entry.line_id,received_quantity:String(received),accepted_quantity:String(received-rejected),rejected_quantity:String(rejected)};
-    });
-    if(!lines.length){setMsg("Enter a received quantity for at least one line.");return}
-    if(lines.some(line=>Number(line.accepted_quantity)<0)){setMsg("Rejected quantity cannot exceed received quantity.");return}
-    try{
-      await api(`/purchase-orders/${selectedPo.id}/receipts`,{method:"POST",body:JSON.stringify({delivery_reference:values.get("reference")||null,notes:values.get("notes")||null,idempotency_key:values.get("idempotency_key")||null,lines})});
-      form.reset();setSelectedPoId("");setMsg("Goods receipt posted.");await load();
-    }catch(error){setMsg((error as Error).message)}
-  }
+  <Can permission="receiving.*"><section className="card"><div className="topline"><div><h2>Receive purchase order</h2><p>Record the supplier delivery reference, actual received quantity, accepted stock, rejected quantity, discrepancy reason, and optional lot or expiry details.</p></div></div><div className="receiving-header-form"><label><span>Purchase order</span><select value={selectedPoId} onChange={event=>setSelectedPoId(event.target.value)}><option value="">Select approved/open PO</option>{data?.purchase_orders.filter(row=>["approved","partially_received"].includes(row.status)).map(row=><option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_code} — {row.status}</option>)}</select></label><label><span>Delivery reference</span><input value={deliveryReference} onChange={event=>setDeliveryReference(event.target.value)} placeholder="Supplier DR or invoice"/></label><label><span>Receiving notes</span><input value={receiptNotes} onChange={event=>setReceiptNotes(event.target.value)}/></label></div>{selectedPo?<><div className="receiving-po-summary"><div><span>Supplier</span><strong>{selectedPo.supplier_code} — {selectedPo.supplier_name}</strong></div><div><span>Destination</span><strong>{selectedPo.delivery_location_code}</strong></div><div><span>Expected</span><strong>{selectedPo.expected_delivery_date?formatDate(selectedPo.expected_delivery_date):"—"}</strong></div><div><span>Outstanding</span><strong>{formatQuantity(selectedPo.outstanding_quantity)}</strong></div></div><div className="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Previously received</th><th>Outstanding</th><th>Received now</th><th>Rejected</th><th>Accepted</th><th>Discrepancy reason</th><th>Lot</th><th>Manufactured</th><th>Expiry</th></tr></thead><tbody>{selectedPo.lines.map(line=>{const entry=receiveLines.find(row=>row.line_id===line.id);const accepted=Math.max(0,Number(entry?.received||0)-Number(entry?.rejected||0));return <tr key={line.id}><td><Link href={`/items/${line.item_id}`}>{line.sku} — {line.item_name}</Link></td><td>{formatQuantity(line.ordered_quantity)}</td><td>{formatQuantity(line.received_quantity)}</td><td>{formatQuantity(line.outstanding_quantity)}</td><td><input type="number" min="0" max={line.outstanding_quantity} step="0.0001" disabled={!entry} value={entry?.received||""} onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,received:event.target.value}:row))}/></td><td><input type="number" min="0" max={entry?.received||0} step="0.0001" disabled={!entry} value={entry?.rejected||"0"} onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,rejected:event.target.value}:row))}/></td><td>{formatQuantity(accepted)}</td><td><input disabled={!entry||Number(entry.rejected)<=0} value={entry?.reason||""} placeholder={entry&&Number(entry.rejected)>0?"Required":"—"} onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,reason:event.target.value}:row))}/></td><td><input disabled={!entry} value={entry?.lot_number||""} onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,lot_number:event.target.value}:row))}/></td><td><input type="date" disabled={!entry} value={entry?.manufactured_date||""} onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,manufactured_date:event.target.value}:row))}/></td><td><input type="date" disabled={!entry} value={entry?.expiry_date||""} onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,expiry_date:event.target.value}:row))}/></td></tr>})}</tbody></table></div><div className="form-actions"><button className="primary" disabled={!receiptValid||busy} onClick={()=>setPending("receive")}>Review and post receipt</button></div></>:<div className="config-empty">Select a receivable purchase order.</div>}</section></Can>
 
-  return <AppShell title="Receiving">
-    <section className="card"><h2>Receive purchase order</h2><form onSubmit={receive}><div className="inline-form"><select name="po" required value={selectedPoId} onChange={e=>setSelectedPoId(e.target.value)}><option value="">Approved/open PO</option>{pos.filter(x=>["approved","partially_received"].includes(x.status)).map(x=><option key={x.id} value={x.id}>{x.purchase_order_number} — {x.status}</option>)}</select><input name="reference" placeholder="Delivery reference"/><input name="idempotency_key" placeholder="Unique receipt key (optional)"/><input name="notes" placeholder="Receiving notes"/></div>{selectedPo&&<div className="table-wrap"><table><thead><tr><th>Item</th><th>Ordered</th><th>Previously received</th><th>Outstanding</th><th>Received now</th><th>Rejected now</th><th>Accepted now</th></tr></thead><tbody>{selectedPo.lines.map(line=>{const entry=entries.find(x=>x.line_id===line.id);const outstanding=Number(line.ordered_quantity)-Number(line.received_quantity);const accepted=Math.max(0,Number(entry?.received||0)-Number(entry?.rejected||0));return <tr key={line.id}><td>{line.item_id}</td><td>{line.ordered_quantity}</td><td>{line.received_quantity}</td><td>{outstanding}</td><td><input value={entry?.received||""} disabled={!entry} onChange={e=>updateEntry(line.id,"received",e.target.value)} type="number" step="0.0001" min="0" max={outstanding}/></td><td><input value={entry?.rejected||"0"} disabled={!entry} onChange={e=>updateEntry(line.id,"rejected",e.target.value)} type="number" step="0.0001" min="0" max={entry?.received||0}/></td><td>{accepted}</td></tr>})}</tbody></table></div>}<button className="primary compact" disabled={!selectedPo}>Post multi-line receipt</button></form>{msg&&<p className="status">{msg}</p>}</section>
-    <section className="card section-gap"><h2>Goods receipts</h2><DataTable columns={["GRN","PO","Delivery ref","Accepted","Rejected","Received at"]} rows={receipts.map(x=>[x.goods_receipt_number,pos.find(p=>p.id===x.purchase_order_id)?.purchase_order_number||x.purchase_order_id,x.delivery_reference||"",x.lines.reduce((s,l)=>s+Number(l.accepted_quantity),0),x.lines.reduce((s,l)=>s+Number(l.rejected_quantity),0),new Date(x.received_at).toLocaleString()])}/></section>
-  </AppShell>
+  <Can permission="receiving.*"><section className="card section-gap"><div className="topline"><div><h2>Return accepted stock to supplier</h2><p>Returns remove stock from the PO delivery location and create a linked immutable stock and Accounting event.</p></div></div><div className="receiving-header-form"><label><span>Purchase order</span><select value={returnPoId} onChange={event=>setReturnPoId(event.target.value)}><option value="">Select PO with returnable stock</option>{data?.purchase_orders.filter(row=>row.lines.some(line=>Number(line.returnable_quantity)>0)).map(row=><option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_code}</option>)}</select></label><label><span>Return reason</span><input value={returnReason} onChange={event=>setReturnReason(event.target.value)} placeholder="Damage, quality issue, wrong item…"/></label><label><span>Supplier reference</span><input value={returnReference} onChange={event=>setReturnReference(event.target.value)} placeholder="RMA or supplier credit ref"/></label><label><span>Notes</span><input value={returnNotes} onChange={event=>setReturnNotes(event.target.value)}/></label></div>{selectedReturnPo?<><div className="table-wrap"><table><thead><tr><th>Item</th><th>Received</th><th>Previously returned</th><th>Returnable</th><th>Return now</th><th>Value</th></tr></thead><tbody>{selectedReturnPo.lines.map(line=>{const entry=returnLines.find(row=>row.line_id===line.id);return <tr key={line.id}><td>{line.sku} — {line.item_name}</td><td>{formatQuantity(line.received_quantity)}</td><td>{formatQuantity(line.returned_quantity)}</td><td>{formatQuantity(line.returnable_quantity)}</td><td><input type="number" min="0" max={line.returnable_quantity} step="0.0001" disabled={!entry} value={entry?.quantity||"0"} onChange={event=>setReturnLines(rows=>rows.map(row=>row.line_id===line.id?{...row,quantity:event.target.value}:row))}/></td><td>{formatMoney(Number(entry?.quantity||0)*Number(line.unit_price))}</td></tr>})}</tbody></table></div><div className="form-actions"><button className="primary" disabled={!returnValid||busy} onClick={()=>setPending("return")}>Review and post return</button></div></>:<div className="config-empty">Select a purchase order with accepted stock available to return.</div>}</section></Can>
+
+  <section className="card section-gap"><div className="topline"><div><h2>Goods receipt history</h2><p>Accepted and rejected value, delivery reference, discrepancy status, stock document, supplier, and destination.</p></div></div><div className="table-wrap"><table><thead><tr><th>GRN</th><th>PO</th><th>Supplier</th><th>Destination</th><th>Delivery ref</th><th>Accepted</th><th>Rejected</th><th>Status</th><th>Received</th></tr></thead><tbody>{data?.receipts.length?data.receipts.map(row=><tr key={row.id}><td><Link href={`/stock/documents/${row.stock_document_id}`}>{row.goods_receipt_number}</Link></td><td><Link href={`/purchasing/orders/${row.purchase_order_id}`}>{row.purchase_order_number}</Link></td><td>{row.supplier_code} — {row.supplier_name}</td><td>{row.delivery_location_code}</td><td>{row.delivery_reference||"—"}</td><td>{formatMoney(row.accepted_value)}</td><td>{formatMoney(row.rejected_value)}</td><td><StatusBadge status={row.has_discrepancy?"discrepancy":"accepted"}/></td><td>{formatDateTime(row.received_at)}</td></tr>):<tr><td colSpan={9}>{loading?"Loading receipts…":"No goods receipts recorded."}</td></tr>}</tbody></table></div></section>
+
+  <section className="card section-gap"><div className="topline"><div><h2>Supplier return history</h2><p>Every return links to its source purchase order and immutable stock document.</p></div></div><div className="table-wrap"><table><thead><tr><th>Return</th><th>PO</th><th>Supplier</th><th>Reason</th><th>Created</th><th>Document</th></tr></thead><tbody>{data?.returns.length?data.returns.map(row=><tr key={row.id}><td>{row.return_number}</td><td><Link href={`/purchasing/orders/${row.purchase_order_id}`}>{row.purchase_order_number}</Link></td><td>{row.supplier_code} — {row.supplier_name}</td><td>{row.reason}</td><td>{formatDateTime(row.created_at)}</td><td><Link href={`/stock/documents/${row.stock_document_id}`}>Open stock document</Link></td></tr>):<tr><td colSpan={6}>No supplier returns recorded.</td></tr>}</tbody></table></div></section>
+
+  <ConfirmDialog open={Boolean(pending)} title={pending==="receive"?"Post this goods receipt?":"Post this supplier return?"} description={pending==="receive"?`${receiptPayload.length} line(s) will be received against ${selectedPo?.purchase_order_number}. Accepted stock will be posted; rejected quantities will remain out of inventory.`:`${returnPayload.length} line(s) will be removed from stock and returned against ${selectedReturnPo?.purchase_order_number}.`} confirmLabel={pending==="receive"?"Post goods receipt":"Post supplier return"} tone={pending==="return"?"danger":"default"} busy={busy} onConfirm={()=>pending==="receive"?void postReceipt():void postReturn()} onCancel={()=>setPending(null)}/>
+ </AppShell>;
 }

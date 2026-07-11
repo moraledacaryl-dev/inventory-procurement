@@ -19,6 +19,7 @@ import "./supplier-360.css";
 import "./procurement-planning.css";
 import "./quotation-po-workspace.css";
 import "./receiving-workspace.css";
+import "./recipe-costing.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

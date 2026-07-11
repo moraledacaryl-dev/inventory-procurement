@@ -14,6 +14,7 @@ import "./catalogue-configuration.css";
 import "./location-controls.css";
 import "./stock-ledger.css";
 import "./inventory-controls.css";
+import "./guided-counts.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

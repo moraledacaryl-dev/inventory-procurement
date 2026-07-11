@@ -48,6 +48,7 @@ async def request_context(request: Request, call_next):
     response.headers["x-frame-options"] = "DENY"
     response.headers["referrer-policy"] = "no-referrer"
     response.headers["permissions-policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["content-security-policy"] = "default-src 'none'; frame-ancestors 'none'"
     response.headers["cache-control"] = "no-store"
     if settings.app_env == "production":
         response.headers["strict-transport-security"] = "max-age=31536000; includeSubDomains"

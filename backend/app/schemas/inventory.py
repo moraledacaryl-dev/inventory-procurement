@@ -17,8 +17,29 @@ class LocationOut(ORMModel):
     id: str; code: str; name: str; location_type: str; parent_id: str | None; is_active: bool
 class ItemCreate(BaseModel):
     sku: str = Field(min_length=1, max_length=80); name: str = Field(min_length=1, max_length=180); description: str | None = None; category_id: str; base_unit_id: str; track_stock: bool = True; allow_negative_stock: bool = False; minimum_stock: Decimal = Field(default=0, ge=0); standard_cost: Decimal = Field(default=0, ge=0)
+class ItemUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    description: str | None = None
+    category_id: str | None = None
+    base_unit_id: str | None = None
+    track_stock: bool | None = None
+    allow_negative_stock: bool | None = None
+    minimum_stock: Decimal | None = Field(default=None, ge=0)
+    standard_cost: Decimal | None = Field(default=None, ge=0)
+    is_active: bool | None = None
 class ItemOut(ORMModel):
     id: str; sku: str; name: str; description: str | None; category_id: str; base_unit_id: str; track_stock: bool; allow_negative_stock: bool; minimum_stock: Decimal; standard_cost: Decimal; is_active: bool
+class ItemBalanceDetail(BaseModel):
+    location_id: str; location_code: str; location_name: str; quantity: Decimal; average_cost: Decimal; inventory_value: Decimal; updated_at: datetime | None
+class ItemMovementDetail(BaseModel):
+    id: str; location_id: str; location_name: str; document_number: str; document_type: str; quantity: Decimal; unit_cost: Decimal; reason: str | None; created_at: datetime
+class ItemDetail(BaseModel):
+    item: ItemOut
+    category: CategoryOut
+    base_unit: UnitOut
+    totals: dict[str, Decimal | int]
+    balances: list[ItemBalanceDetail]
+    recent_movements: list[ItemMovementDetail]
 class StockLineIn(BaseModel):
     item_id: str; quantity: Decimal = Field(gt=0); unit_cost: Decimal = Field(default=0, ge=0); reason: str | None = None
 class ReceiptCreate(BaseModel):

@@ -5,6 +5,7 @@ import "./modules.css";
 import "./ui-foundation.css";
 import "./feedback.css";
 import "./forms.css";
+import "./auth.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

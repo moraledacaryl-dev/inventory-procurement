@@ -66,5 +66,14 @@ jobs:
         with:
           name: frontend-eslint-log
           path: frontend/eslint.log
-      - run: npm run typecheck
+      - name: Typecheck frontend
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
+      - name: Upload typecheck log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-typecheck-log
+          path: frontend/typecheck.log
       - run: npm run build

@@ -9,6 +9,7 @@ import "./auth.css";
 import "./permissions.css";
 import "./shell-completion.css";
 import "./role-workspace.css";
+import "./item-detail.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

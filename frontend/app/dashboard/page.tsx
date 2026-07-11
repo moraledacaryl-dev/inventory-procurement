@@ -23,6 +23,11 @@ type ValuationHistory={as_of:string;current_value:string;points:{date:string;val
 
 const StrokeIcon=({children}:{children:ReactNode})=><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
 
+function UserGreeting(){
+  const {user}=useSession();
+  return <>Welcome back{user?.full_name?`, ${user.full_name.split(" ")[0]}`:""}</>;
+}
+
 function comparisonText(value:number|null,label:string){
   if(value===null)return `No prior ${label} baseline`;
   if(value===0)return `No change from prior period`;
@@ -43,7 +48,6 @@ function buildChart(points:{date:string;value:string}[]){
 }
 
 export default function Dashboard(){
-  const {user}=useSession();
   const[locations,setLocations]=useState<Location[]>([]);
   const[locationId,setLocationId]=useState("");
   const[days,setDays]=useState(30);
@@ -92,7 +96,7 @@ export default function Dashboard(){
   const donutStyle={background:summary?`conic-gradient(#42bd73 0 ${stops[0]}%,#f7b928 ${stops[0]}% ${stops[1]}%,#ef5555 ${stops[1]}% ${stops[2]}%,#aeb9c5 ${stops[2]}% 100%)`:"conic-gradient(#e5eaf0 0 100%)"};
 
   return <AppShell title="Dashboard" description="Monitor inventory, procurement, receiving, and production from one workspace."><div className="dashboard-overview">
-    <section className="dashboard-welcome"><div><h2>Welcome back{user?.full_name?`, ${user.full_name.split(" ")[0]}`:""}</h2><p>{summary?`Operational snapshot updated ${formatDateTime(summary.as_of)}.`:"Loading the current operating picture."}</p></div><div className="dashboard-filters"><label><span>Location</span><select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">All locations</option>{locations.map(location=><option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}</select></label><label><span>Period</span><select value={days} onChange={event=>setDays(Number(event.target.value))}><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value={365}>365 days</option></select></label></div></section>
+    <section className="dashboard-welcome"><div><h2><UserGreeting/></h2><p>{summary?`Operational snapshot updated ${formatDateTime(summary.as_of)}.`:"Loading the current operating picture."}</p></div><div className="dashboard-filters"><label><span>Location</span><select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">All locations</option>{locations.map(location=><option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}</select></label><label><span>Period</span><select value={days} onChange={event=>setDays(Number(event.target.value))}><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value={365}>365 days</option></select></label></div></section>
 
     {summaryError?<ErrorState title="Dashboard summary unavailable" message={summaryError} onRetry={()=>void loadSummary()}/>:summaryLoading?<LoadingState title="Loading dashboard summary" rows={3}/>:<section className="metric-grid" aria-label="Inventory summary">{metrics.map(metric=><Link className="metric-card metric-card-link" key={metric.label} href={metric.href}><div className={`metric-icon ${metric.tone}`}>{metric.icon}</div><div className="metric-copy"><div className="metric-label">{metric.label}</div><div className="metric-value">{metric.value}</div><div className="metric-note">{metric.note}</div></div></Link>)}</section>}
 

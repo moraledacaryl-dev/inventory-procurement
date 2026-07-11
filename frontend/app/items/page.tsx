@@ -38,7 +38,10 @@ export default function Page() {
   const load = useCallback(async () => {
     setLoading(true); setLoadError("");
     try {
-      const [itemRecords, categoryRecords, unitRecords] = await Promise.all([api<Item[]>(`/items?active=${showInactive ? "" : "true"}`), api<Ref[]>("/categories"), api<Ref[]>("/units")]);
+      const itemRequest = showInactive
+        ? Promise.all([api<Item[]>("/items?active=true"), api<Item[]>("/items?active=false")]).then(([active, inactive]) => [...active, ...inactive].sort((a, b) => a.sku.localeCompare(b.sku)))
+        : api<Item[]>("/items?active=true");
+      const [itemRecords, categoryRecords, unitRecords] = await Promise.all([itemRequest, api<Ref[]>("/categories"), api<Ref[]>("/units")]);
       setItems(itemRecords); setCategories(categoryRecords); setUnits(unitRecords);
     } catch (error) { setLoadError((error as Error).message); }
     finally { setLoading(false); }

@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models.user import User
-from app.models.inventory import Category, UnitOfMeasure, Location, Item, StockBalance, StockMovement, CountSession, CountLine
+from app.models.inventory import Category, UnitOfMeasure, Location, Item, StockBalance, StockMovement, StockDocument, CountSession, CountLine
 from app.schemas.inventory import *
 from app.services.controls import add_audit, next_document_number
 from app.services.inventory import InventoryError, post_document, receipt_entries, issue_entries, transfer_entries
@@ -38,9 +38,36 @@ def list_items(q:str|None=None,active:bool|None=True,db:Session=Depends(get_db),
     if active is not None: stmt=stmt.where(Item.is_active==active)
     return db.scalars(stmt).all()
 @router.post("/items",response_model=ItemOut,status_code=201)
-def create_item(p:ItemCreate,db:Session=Depends(get_db),_:User=Depends(require_permission("items.*"))):
+def create_item(p:ItemCreate,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
     if not db.get(Category,p.category_id) or not db.get(UnitOfMeasure,p.base_unit_id): raise HTTPException(422,"Category or unit not found")
-    data=p.model_dump(); data["sku"]=p.sku.upper().strip(); data["name"]=p.name.strip(); return save(db,Item(**data))
+    data=p.model_dump(); data["sku"]=p.sku.upper().strip(); data["name"]=p.name.strip(); item=save(db,Item(**data)); add_audit(db,actor_user_id=user.id,action="item.created",entity_type="item",entity_id=item.id,details={"sku":item.sku}); db.commit(); return item
+@router.get("/items/{item_id}",response_model=ItemDetail)
+def item_detail(item_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission("items.read"))):
+    item=db.get(Item,item_id)
+    if not item: raise HTTPException(404,"Item not found")
+    category=db.get(Category,item.category_id); unit=db.get(UnitOfMeasure,item.base_unit_id)
+    balance_rows=db.execute(select(StockBalance,Location).join(Location,Location.id==StockBalance.location_id).where(StockBalance.item_id==item.id).order_by(Location.code)).all()
+    movement_rows=db.execute(select(StockMovement,StockDocument,Location).join(StockDocument,StockDocument.id==StockMovement.document_id).join(Location,Location.id==StockMovement.location_id).where(StockMovement.item_id==item.id).order_by(StockMovement.created_at.desc()).limit(25)).all()
+    total_quantity=sum((Decimal(balance.quantity) for balance,_location in balance_rows),Decimal("0"))
+    total_value=sum((Decimal(balance.quantity)*Decimal(balance.average_cost) for balance,_location in balance_rows),Decimal("0"))
+    average_cost=total_value/total_quantity if total_quantity else Decimal(item.standard_cost or 0)
+    return ItemDetail(item=item,category=category,base_unit=unit,totals={"quantity":total_quantity,"inventory_value":total_value,"average_cost":average_cost,"location_count":len(balance_rows),"movement_count":db.scalar(select(func.count()).select_from(StockMovement).where(StockMovement.item_id==item.id)) or 0},balances=[ItemBalanceDetail(location_id=balance.location_id,location_code=location.code,location_name=location.name,quantity=balance.quantity,average_cost=balance.average_cost,inventory_value=Decimal(balance.quantity)*Decimal(balance.average_cost),updated_at=balance.updated_at) for balance,location in balance_rows],recent_movements=[ItemMovementDetail(id=movement.id,location_id=movement.location_id,location_name=location.name,document_number=document.document_number,document_type=document.document_type,quantity=movement.quantity,unit_cost=movement.unit_cost,reason=movement.reason,created_at=movement.created_at) for movement,document,location in movement_rows])
+@router.patch("/items/{item_id}",response_model=ItemOut)
+def update_item(item_id:str,p:ItemUpdate,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    item=db.get(Item,item_id)
+    if not item: raise HTTPException(404,"Item not found")
+    data=p.model_dump(exclude_unset=True)
+    if data.get("category_id") and not db.get(Category,data["category_id"]): raise HTTPException(422,"Category not found")
+    if data.get("base_unit_id") and not db.get(UnitOfMeasure,data["base_unit_id"]): raise HTTPException(422,"Unit not found")
+    if "name" in data: data["name"]=data["name"].strip()
+    if data.get("is_active") is False:
+        balance_total=db.scalar(select(func.coalesce(func.sum(StockBalance.quantity),0)).where(StockBalance.item_id==item.id)) or 0
+        if Decimal(balance_total)!=0: conflict("Item with non-zero stock cannot be deactivated")
+    changes={key:{"from":str(getattr(item,key)),"to":str(value)} for key,value in data.items() if getattr(item,key)!=value}
+    for key,value in data.items(): setattr(item,key,value)
+    try:
+        add_audit(db,actor_user_id=user.id,action="item.updated",entity_type="item",entity_id=item.id,details={"changes":changes}); db.commit(); db.refresh(item); return item
+    except IntegrityError: db.rollback(); conflict("Item update could not be saved")
 @router.get("/stock/balances",response_model=list[BalanceOut])
 def balances(item_id:str|None=None,location_id:str|None=None,low_stock:bool=False,db:Session=Depends(get_db),_:User=Depends(require_permission("inventory.read"))):
     stmt=select(StockBalance)
@@ -94,7 +121,7 @@ def finalize_count(db:Session,session:CountSession,user:User):
 def create_count(p:CountCreate,db:Session=Depends(get_db),user:User=Depends(require_permission("counts.create"))):
     if not db.get(Location,p.location_id): raise HTTPException(422,"Location not found")
     session=CountSession(count_number=next_document_number(db,'COUNT'),location_id=p.location_id,notes=p.notes,blind_count=p.blind_count,approval_threshold=p.approval_threshold,created_by_user_id=user.id); db.add(session); db.flush()
-    items=db.scalars(select(Item).where(Item.is_active==True,Item.track_stock==True)).all(); balances={b.item_id:b for b in db.scalars(select(StockBalance).where(StockBalance.location_id==p.location_id)).all()}
+    items=db.scalars(select(Item).where(Item.is_active==True,Item.track_stock==True)).all(); balances={b.item_id:b for b in db.scalars(select(StockBalance).where(StockBalance.location_id==p.location_id)).all()
     for item in items: session.lines.append(CountLine(item_id=item.id,system_quantity=balances.get(item.id).quantity if balances.get(item.id) else 0))
     add_audit(db,actor_user_id=user.id,action='count.created',entity_type='count_session',entity_id=session.id,details={'blind_count':p.blind_count,'approval_threshold':str(p.approval_threshold)}); db.commit(); db.refresh(session); return session
 @router.get("/counts",response_model=list[CountOut])

@@ -53,4 +53,5 @@ def test_role_permission_matrix():
     assert permissions_for_role("unknown-role") == []
     assert "receiving" in accessible_modules("receiver")
     assert "purchasing" in accessible_modules("receiver")
-    assert "suppliers" not in accessible_modules("receiver")
+    assert "suppliers" in accessible_modules("receiver")
+    assert "counts" not in accessible_modules("receiver")

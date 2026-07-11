@@ -1,14 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, logout } from "../lib/api";
-
-type SessionUser = {
-  id: string;
-  email: string;
-  full_name: string;
-  role: string;
-};
+import { logout } from "../lib/api";
+import { useSession } from "./SessionContext";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -20,18 +14,10 @@ function roleLabel(role: string) {
 }
 
 export function AuthenticatedUserMenu() {
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const { user, loading } = useSession();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let active = true;
-    void api<SessionUser>("/auth/me")
-      .then(value => { if (active) setUser(value); })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -58,8 +44,8 @@ export function AuthenticatedUserMenu() {
     }
   }
 
-  const displayName = user?.full_name || "Loading account…";
-  const displayRole = user ? roleLabel(user.role) : "Checking session";
+  const displayName = user?.full_name || (loading ? "Loading account…" : "Account unavailable");
+  const displayRole = user ? roleLabel(user.role) : (loading ? "Checking session" : "Unknown role");
 
   return (
     <div className="authenticated-user" ref={containerRef}>
@@ -72,9 +58,10 @@ export function AuthenticatedUserMenu() {
         <div className="user-popover" role="menu">
           <div className="user-popover__identity">
             <strong>{displayName}</strong>
-            <span>{user?.email || "Retrieving account details"}</span>
+            <span>{user?.email || "No email available"}</span>
           </div>
           <div className="user-popover__role"><span>Role</span><strong>{displayRole}</strong></div>
+          <div className="user-popover__role"><span>Permissions</span><strong>{user?.permissions.includes("*") ? "Full access" : `${user?.permissions.length || 0} assigned`}</strong></div>
           <button type="button" role="menuitem" className="user-popover__logout" onClick={signOut} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button>
         </div>
       ) : null}

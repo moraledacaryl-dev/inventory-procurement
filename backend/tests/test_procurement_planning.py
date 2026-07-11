@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+
 def auth_headers(client):
     response = client.post("/api/v1/auth/login", json={"email": "owner@example.com", "password": "password123"})
     assert response.status_code == 200
@@ -25,8 +28,8 @@ def test_procurement_planning_payload(client):
     assert set(payload) == {"summary", "rows"}
     assert payload["summary"]["suggestion_count"] >= 1
     row = next(row for row in payload["rows"] if row["item_id"] == item["id"])
-    assert row["available_quantity"] == "0"
-    assert float(row["suggested_quantity"]) >= 10
+    assert Decimal(row["available_quantity"]) == 0
+    assert Decimal(row["suggested_quantity"]) >= 10
     assert row["priority"] == "critical"
 
 
@@ -49,7 +52,7 @@ def test_create_planned_requisition_and_workspace(client):
     workspace = client.get("/api/v1/procurement/requisitions/workspace", headers=headers)
     assert workspace.status_code == 200
     row = next(row for row in workspace.json() if row["id"] == created.json()["id"])
-    assert row["estimated_value"] == "50.0000"
+    assert Decimal(row["estimated_value"]) == Decimal("50")
     assert "location:" in row["lines"][0]["notes"]
 
 

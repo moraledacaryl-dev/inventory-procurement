@@ -19,8 +19,10 @@ def next_document_number(db:Session,prefix:str,width:int=6)->str:
 def add_audit(db:Session,*,actor_user_id:str|None,action:str,entity_type:str,entity_id:str|None=None,details:dict|None=None,request_id:str|None=None,ip_address:str|None=None):
     db.add(AuditLog(actor_user_id=actor_user_id,action=action,entity_type=entity_type,entity_id=entity_id,details=details or {},request_id=request_id,ip_address=ip_address))
 
-def add_notification(db:Session,*,title:str,message:str,severity:str='info',user_id:str|None=None):
-    row=Notification(title=title,message=message,severity=severity,user_id=user_id); db.add(row); return row
+def add_notification(db:Session,*,title:str,message:str|None=None,body:str|None=None,severity:str='info',user_id:str|None=None):
+    text=message if message is not None else body
+    if text is None: raise ValueError('Notification message is required')
+    row=Notification(title=title,message=text,severity=severity,user_id=user_id); db.add(row); return row
 
 def enqueue_event(db:Session,*,destination_system:str,event_type:str,aggregate_type:str,aggregate_id:str,payload:dict,idempotency_key:str,source_system:str='inventory',direction:str='outbound'):
     existing=db.scalar(select(IntegrationEvent).where(IntegrationEvent.idempotency_key==idempotency_key))

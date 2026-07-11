@@ -11,20 +11,20 @@ type IconName = "home"|"box"|"map"|"layers"|"factory"|"cart"|"truck"|"clipboard"
 const groups: NavGroup[] = [
   { label: "Overview", items: [{ href: "/dashboard", label: "Dashboard", icon: "home" }] },
   { label: "Inventory", items: [
-    { href: "/items", label: "Items", icon: "box" },
+    { href: "/items", label: "Products", icon: "box" },
     { href: "/locations", label: "Locations", icon: "map" },
-    { href: "/stock", label: "Stock", icon: "layers" },
-    { href: "/inventory-operations", label: "Inventory Operations", icon: "clipboard" },
-    { href: "/counts", label: "Physical Counts", icon: "clipboard" },
+    { href: "/stock", label: "Stock Movements", icon: "layers" },
+    { href: "/inventory-operations", label: "Adjustments", icon: "clipboard" },
+    { href: "/counts", label: "Inventory Counts", icon: "clipboard" },
   ]},
-  { label: "Supply", items: [
+  { label: "Procurement", items: [
     { href: "/suppliers", label: "Suppliers", icon: "users" },
-    { href: "/purchasing", label: "Purchasing", icon: "cart" },
-    { href: "/receiving", label: "Receiving", icon: "truck" },
+    { href: "/purchasing", label: "Purchase Orders", icon: "cart" },
+    { href: "/receiving", label: "Receive Items", icon: "truck" },
   ]},
   { label: "Production", items: [{ href: "/production", label: "Recipes & Production", icon: "factory" }] },
-  { label: "Control", items: [
-    { href: "/reports", label: "Reports", icon: "chart" },
+  { label: "Reports", items: [{ href: "/reports", label: "Reports", icon: "chart" }] },
+  { label: "System", items: [
     { href: "/integrations", label: "Integrations", icon: "plug" },
     { href: "/readiness", label: "Readiness", icon: "shield" },
     { href: "/rollout", label: "Rollout", icon: "rocket" },
@@ -51,6 +51,8 @@ function Icon({ name }: { name: IconName }) {
   return <svg {...common}>{paths[name]}</svg>;
 }
 
+const StrokeIcon = ({ children }: { children: ReactNode }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
+
 export function AppShell({ title, children, description }: { title: string; children: ReactNode; description?: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -75,18 +77,23 @@ export function AppShell({ title, children, description }: { title: string; chil
           })}
         </div>)}
       </nav>
-      <div className="sidebar-footer">
-        <div className="system-dot"/><div><strong>System online</strong><span>Version 1.0</span></div>
-      </div>
+      <div className="sidebar-footer"><div className="system-dot"/><div><strong>System online</strong><span>Version 1.0.0</span></div></div>
     </aside>
+
     <main className="main-area" id="main-content" tabIndex={-1}>
       <header className="app-header">
-        <button className="menu-button" type="button" onClick={() => setOpen(true)} aria-label="Open navigation" aria-expanded={open}>
-          <span/><span/><span/>
-        </button>
-        <div className="page-heading"><div className="page-kicker">Operations workspace</div><h1>{title}</h1><p>{pageDescription}</p></div>
-        <div className="header-actions"><span className="environment-badge"><span className="system-dot"/>Live workspace</span></div>
+        <div className="header-left">
+          <button className="menu-button" type="button" onClick={() => setOpen(true)} aria-label="Open navigation" aria-expanded={open}><span/><span/><span/></button>
+          <button className="desktop-menu-button" type="button" aria-label="Navigation menu"><StrokeIcon><path d="M4 6h16M4 12h16M4 18h16"/></StrokeIcon></button>
+          <label className="global-search"><span className="sr-only">Search</span><input type="search" placeholder="Search anything..."/><StrokeIcon><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></StrokeIcon></label>
+        </div>
+        <div className="header-actions">
+          <button className="icon-button" type="button" aria-label="Notifications"><StrokeIcon><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7"/><path d="M10 19h4"/></StrokeIcon><span className="notification-dot">3</span></button>
+          <button className="icon-button help-button" type="button" aria-label="Help"><StrokeIcon><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.5 2.5 0 1 1 3.7 2.2c-1 .5-1.5 1.2-1.5 2.3M12 17h.01"/></StrokeIcon></button>
+          <div className="user-menu"><div className="user-avatar">M</div><div className="user-copy"><strong>Moraleda Caryl</strong><span>Administrator</span></div></div>
+        </div>
       </header>
+      <div className="page-heading-bar"><div className="page-heading"><div className="page-kicker">Operations workspace</div><h1>{title}</h1><p>{pageDescription}</p></div></div>
       <div className="page-content">{children}</div>
     </main>
   </div>;

@@ -60,6 +60,9 @@ function AppShellContent({ title, children, description }: { title: string; chil
   const [open, setOpen] = useState(false);
   const { loading, canAccessModule } = useSession();
   const pageDescription = description || "Hidden Oasis inventory and procurement operations";
+  const allItems = groups.flatMap(group => group.items);
+  const currentItem = allItems.find(item => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  const routeDenied = !loading && currentItem && !canAccessModule(currentItem.module);
   const visibleGroups = groups.map(group => ({ ...group, items: group.items.filter(item => loading || canAccessModule(item.module)) })).filter(group => group.items.length);
 
   return <div className="app-shell">
@@ -67,15 +70,13 @@ function AppShellContent({ title, children, description }: { title: string; chil
     <div className={`mobile-scrim ${open ? "is-open" : ""}`} onClick={() => setOpen(false)} aria-hidden="true" />
     <aside className={`sidebar ${open ? "is-open" : ""}`} aria-label="Primary navigation">
       <div className="brand-block"><div className="brand-mark" aria-hidden="true">HO</div><div><div className="brand-name">Hidden Oasis</div><div className="brand-subtitle">Inventory & Procurement</div></div></div>
-      <nav className="nav" aria-label="Application modules">
-        {visibleGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => { const active = pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link className={`nav-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined} key={item.href} href={item.href} onClick={() => setOpen(false)}><Icon name={item.icon}/><span>{item.label}</span></Link>; })}</div>)}
-      </nav>
+      <nav className="nav" aria-label="Application modules">{visibleGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(item => { const active = pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link className={`nav-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined} key={item.href} href={item.href} onClick={() => setOpen(false)}><Icon name={item.icon}/><span>{item.label}</span></Link>; })}</div>)}</nav>
       <div className="sidebar-footer"><div className="system-dot"/><div><strong>System online</strong><span>Permission-filtered workspace</span></div></div>
     </aside>
     <main className="main-area" id="main-content" tabIndex={-1}>
       <header className="app-header"><div className="header-left"><button className="menu-button" type="button" onClick={() => setOpen(true)} aria-label="Open navigation" aria-expanded={open}><span/><span/><span/></button><button className="desktop-menu-button" type="button" aria-label="Navigation menu"><StrokeIcon><path d="M4 6h16M4 12h16M4 18h16"/></StrokeIcon></button><label className="global-search"><span className="sr-only">Search</span><input type="search" placeholder="Search anything..."/><StrokeIcon><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></StrokeIcon></label></div><div className="header-actions"><button className="icon-button" type="button" aria-label="Notifications"><StrokeIcon><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7"/><path d="M10 19h4"/></StrokeIcon><span className="notification-dot">3</span></button><button className="icon-button help-button" type="button" aria-label="Help"><StrokeIcon><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.5 2.5 0 1 1 3.7 2.2c-1 .5-1.5 1.2-1.5 2.3M12 17h.01"/></StrokeIcon></button><AuthenticatedUserMenu /></div></header>
       <div className="page-heading-bar"><div className="page-heading"><div className="page-kicker">Operations workspace</div><h1>{title}</h1><p>{pageDescription}</p></div></div>
-      <div className="page-content">{children}</div>
+      <div className="page-content">{routeDenied ? <section className="card access-denied" role="alert"><div className="access-denied__icon" aria-hidden="true">!</div><h2>Access restricted</h2><p>Your current role does not include access to this module. Use the available navigation or contact an administrator if your duties require it.</p><Link className="primary compact" href="/dashboard">Return to dashboard</Link></section> : children}</div>
     </main>
   </div>;
 }

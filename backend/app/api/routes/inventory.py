@@ -121,7 +121,7 @@ def finalize_count(db:Session,session:CountSession,user:User):
 def create_count(p:CountCreate,db:Session=Depends(get_db),user:User=Depends(require_permission("counts.create"))):
     if not db.get(Location,p.location_id): raise HTTPException(422,"Location not found")
     session=CountSession(count_number=next_document_number(db,'COUNT'),location_id=p.location_id,notes=p.notes,blind_count=p.blind_count,approval_threshold=p.approval_threshold,created_by_user_id=user.id); db.add(session); db.flush()
-    items=db.scalars(select(Item).where(Item.is_active==True,Item.track_stock==True)).all(); balances={b.item_id:b for b in db.scalars(select(StockBalance).where(StockBalance.location_id==p.location_id)).all()
+    items=db.scalars(select(Item).where(Item.is_active==True,Item.track_stock==True)).all(); balances={b.item_id:b for b in db.scalars(select(StockBalance).where(StockBalance.location_id==p.location_id)).all()}
     for item in items: session.lines.append(CountLine(item_id=item.id,system_quantity=balances.get(item.id).quantity if balances.get(item.id) else 0))
     add_audit(db,actor_user_id=user.id,action='count.created',entity_type='count_session',entity_id=session.id,details={'blind_count':p.blind_count,'approval_threshold':str(p.approval_threshold)}); db.commit(); db.refresh(session); return session
 @router.get("/counts",response_model=list[CountOut])

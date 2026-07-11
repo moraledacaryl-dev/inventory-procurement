@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, isValidElement, useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "./AsyncState";
 
 export type DataTableDensity = "comfortable" | "compact";
@@ -36,9 +36,7 @@ function nodeText(node: ReactNode): string {
   if (node === null || node === undefined || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number" || typeof node === "bigint") return String(node);
   if (Array.isArray(node)) return node.map(nodeText).join(" ");
-  if (typeof node === "object" && "props" in node) {
-    return nodeText((node as { props?: { children?: ReactNode } }).props?.children);
-  }
+  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
   return "";
 }
 
@@ -70,6 +68,7 @@ export function DataTable({
   density = "comfortable",
   caption,
 }: DataTableProps) {
+  const columnKey = columns.join("\u0000");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortState>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -78,7 +77,10 @@ export function DataTable({
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [internalSelection, setInternalSelection] = useState<string[]>([]);
 
-  useEffect(() => setVisibleColumns(columns.map(() => true)), [columns]);
+  useEffect(() => {
+    setVisibleColumns(columns.map(() => true));
+    setSort(null);
+  }, [columnKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => setCurrentPage(1), [query, currentPageSize, rows.length]);
 
   const selected = selectedRowIds ?? internalSelection;
@@ -175,7 +177,7 @@ export function DataTable({
               {columnsOpen ? (
                 <div className="data-table-columns__menu">
                   {columns.map((column, index) => (
-                    <label key={column}>
+                    <label key={`${column}-${index}`}>
                       <input
                         type="checkbox"
                         checked={visibleColumns[index]}
@@ -203,7 +205,7 @@ export function DataTable({
                 </th>
               ) : null}
               {columns.map((column, index) => visibleColumns[index] ? (
-                <th scope="col" key={column} aria-sort={sort?.column === index ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                <th scope="col" key={`${column}-${index}`} aria-sort={sort?.column === index ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   {sortable ? (
                     <button type="button" className="data-table-sort" onClick={() => toggleSort(index)}>
                       <span>{column}</span>

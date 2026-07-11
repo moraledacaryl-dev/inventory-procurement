@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import auth, catalogue_configuration, controlled_inventory, controlled_inventory_compat, dashboard, dashboard_exceptions, guided_counts, health, location_controls, modules, inventory, procurement, procurement_planning, quotation_po_workspace, operations, inventory_operations, production, readiness, stabilization, stock_ledger, supplier_360
+from app.api.routes import auth, catalogue_configuration, controlled_inventory, controlled_inventory_compat, dashboard, dashboard_exceptions, guided_counts, health, location_controls, modules, inventory, procurement, procurement_planning, quotation_po_workspace, receiving_workspace, operations, inventory_operations, production, readiness, stabilization, stock_ledger, supplier_360
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
@@ -11,6 +11,7 @@ api_router.include_router(stock_ledger.router)
 api_router.include_router(supplier_360.router)
 api_router.include_router(procurement_planning.router)
 api_router.include_router(quotation_po_workspace.router)
+api_router.include_router(receiving_workspace.router)
 api_router.include_router(procurement.router)
 api_router.include_router(catalogue_configuration.router)
 api_router.include_router(location_controls.router)

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { ErrorState, LoadingState } from "../../components/AsyncState";
+import { RoleWorkspace } from "../../components/RoleWorkspace";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useSession } from "../../components/SessionContext";
 import { api } from "../../lib/api";
@@ -97,6 +98,8 @@ export default function Dashboard(){
 
   return <AppShell title="Dashboard" description="Monitor inventory, procurement, receiving, and production from one workspace."><div className="dashboard-overview">
     <section className="dashboard-welcome"><div><h2><UserGreeting/></h2><p>{summary?`Operational snapshot updated ${formatDateTime(summary.as_of)}.`:"Loading the current operating picture."}</p></div><div className="dashboard-filters"><label><span>Location</span><select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">All locations</option>{locations.map(location=><option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}</select></label><label><span>Period</span><select value={days} onChange={event=>setDays(Number(event.target.value))}><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value={365}>365 days</option></select></label></div></section>
+
+    <RoleWorkspace locationId={locationId} />
 
     {summaryError?<ErrorState title="Dashboard summary unavailable" message={summaryError} onRetry={()=>void loadSummary()}/>:summaryLoading?<LoadingState title="Loading dashboard summary" rows={3}/>:<section className="metric-grid" aria-label="Inventory summary">{metrics.map(metric=><Link className="metric-card metric-card-link" key={metric.label} href={metric.href}><div className={`metric-icon ${metric.tone}`}>{metric.icon}</div><div className="metric-copy"><div className="metric-label">{metric.label}</div><div className="metric-value">{metric.value}</div><div className="metric-note">{metric.note}</div></div></Link>)}</section>}
 

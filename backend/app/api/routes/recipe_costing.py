@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -59,8 +58,8 @@ def costing_payload(db: Session, recipe: Recipe, location_id: str):
     item_ids = {line.ingredient_item_id for line in recipe.lines} | {recipe.output_item_id}
     items = {row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()}
     total = Decimal("0")
-    possible = []
-    lines = []
+    possible: list[Decimal] = []
+    lines: list[dict] = []
     for line in recipe.lines:
         required = Decimal(line.quantity) * (Decimal("1") + Decimal(line.waste_factor))
         unit_cost = ingredient_cost(db, line.ingredient_item_id, location_id)
@@ -83,8 +82,11 @@ def costing_payload(db: Session, recipe: Recipe, location_id: str):
             "available_quantity": str(available),
             "unit_cost": str(unit_cost),
             "line_cost": str(line_cost),
-            "cost_share_percent": str((line_cost / total * 100).quantize(Decimal("0.01")) if total else Decimal("0")),
+            "cost_share_percent": "0",
         })
+    for line in lines:
+        line_cost = Decimal(line["line_cost"])
+        line["cost_share_percent"] = str((line_cost / total * 100).quantize(Decimal("0.01")) if total else Decimal("0"))
     output = items.get(recipe.output_item_id)
     unit_cost = total / Decimal(recipe.yield_quantity)
     return {
@@ -181,7 +183,20 @@ def revise_recipe(recipe_id: str, payload: RecipeRevisionCreate, db: Session = D
         db.flush()
         add_audit(db, actor_user_id=user.id, action="recipe.revised", entity_type="recipe", entity_id=row.id, details={"source_recipe_id": current.id, "source_version": current.version, "new_version": version})
         db.commit()
-        return costing_payload(db, load_recipe(db, row.id), next(iter(db.scalars(select(Location.id).where(Location.is_active.is_(True))).all()), ""))
+        revised = load_recipe(db, row.id)
+        return {
+            "recipe": {
+                "id": revised.id,
+                "code": revised.code,
+                "name": revised.name,
+                "output_item_id": revised.output_item_id,
+                "yield_quantity": str(revised.yield_quantity),
+                "version": revised.version,
+                "status": revised.status,
+                "notes": revised.notes,
+            },
+            "source_recipe_id": current.id,
+        }
     except IntegrityError:
         db.rollback()
         fail(409, "Recipe revision could not be created")

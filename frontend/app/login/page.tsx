@@ -22,6 +22,7 @@ export default function Login() {
   const [notice, setNotice] = useState<"expired" | "signed_out" | null>(null);
 
   useEffect(() => {
+    window.localStorage.removeItem("inventory_token");
     const params = new URLSearchParams(window.location.search);
     if (params.get("expired") === "1") setNotice("expired");
     else if (params.get("signed_out") === "1") setNotice("signed_out");

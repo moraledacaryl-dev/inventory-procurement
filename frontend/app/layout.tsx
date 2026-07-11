@@ -2,6 +2,7 @@ import "./globals.css";
 import "./shell.css";
 import "./dashboard.css";
 import "./modules.css";
+import "./ui-foundation.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

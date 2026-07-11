@@ -3,10 +3,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import SESSION_COOKIE_NAME, get_current_user
 from app.core.config import settings
+from app.core.roles import accessible_modules, permissions_for_role
 from app.core.security import create_access_token, verify_password
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import LoginRequest, LoginResponse, UserOut
+from app.schemas.auth import LoginRequest, LoginResponse, SessionUserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -45,6 +46,13 @@ def logout(response: Response):
     )
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=SessionUserOut)
 def me(user: User = Depends(get_current_user)):
-    return user
+    return SessionUserOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        permissions=permissions_for_role(user.role),
+        accessible_modules=accessible_modules(user.role),
+    )

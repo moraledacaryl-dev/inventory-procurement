@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR=/opt/inventory-procurement-online
 BACKEND_ENV=/etc/hiddenoasis/inventory-backend.env
 FRONTEND_ENV=/etc/hiddenoasis/inventory-frontend.env
+CERT_DIR=/etc/letsencrypt/live/inventory.hiddenoasis.app
 
 wait_for_url() {
   local url="$1"
@@ -13,9 +14,7 @@ wait_for_url() {
 
   for ((i=1; i<=attempts; i++)); do
     if [[ -n "$host_header" ]]; then
-      if curl -fsS -H "Host: $host_header" "$url" >/dev/null; then
-        return 0
-      fi
+      if curl -fsS -H "Host: $host_header" "$url" >/dev/null; then return 0; fi
     elif curl -fsS "$url" >/dev/null; then
       return 0
     fi
@@ -30,6 +29,7 @@ wait_for_url() {
 [[ -d "$APP_DIR/.git" ]] || { echo "Missing repository at $APP_DIR"; exit 1; }
 [[ -f "$BACKEND_ENV" ]] || { echo "Missing $BACKEND_ENV"; exit 1; }
 [[ -f "$FRONTEND_ENV" ]] || { echo "Missing $FRONTEND_ENV"; exit 1; }
+[[ -f "$CERT_DIR/fullchain.pem" && -f "$CERT_DIR/privkey.pem" ]] || { echo "Missing TLS certificate for inventory.hiddenoasis.app. Run certbot before deployment."; exit 1; }
 
 install -d -o hiddenoasis -g hiddenoasis /var/backups/hiddenoasis/inventory
 python3 -m venv "$APP_DIR/backend/.venv"
@@ -47,13 +47,13 @@ install -m 0644 "$APP_DIR/deploy/nginx/inventory-hiddenoasis.conf" /etc/nginx/si
 ln -sfn /etc/nginx/sites-available/inventory-hiddenoasis /etc/nginx/sites-enabled/inventory-hiddenoasis
 
 systemctl daemon-reload
-systemctl enable --now hiddenoasis-inventory-backend.service
-systemctl enable --now hiddenoasis-inventory-frontend.service
-systemctl enable --now hiddenoasis-inventory-worker.service
-systemctl enable --now hiddenoasis-inventory-backup.timer
+systemctl enable hiddenoasis-inventory-backend.service hiddenoasis-inventory-frontend.service hiddenoasis-inventory-worker.service hiddenoasis-inventory-backup.timer
+systemctl restart hiddenoasis-inventory-backend.service hiddenoasis-inventory-frontend.service hiddenoasis-inventory-worker.service
+systemctl start hiddenoasis-inventory-backup.timer
 nginx -t
 systemctl reload nginx
 
 wait_for_url http://127.0.0.1:8300/api/v1/ready inventory.hiddenoasis.app
 wait_for_url http://127.0.0.1:3300/login
+wait_for_url https://inventory.hiddenoasis.app/login
 systemctl --no-pager --full status hiddenoasis-inventory-backend.service hiddenoasis-inventory-frontend.service hiddenoasis-inventory-worker.service

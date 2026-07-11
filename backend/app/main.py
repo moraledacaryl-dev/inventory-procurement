@@ -25,11 +25,12 @@ async def request_context(request: Request, call_next):
     if content_length and int(content_length) > settings.max_request_bytes:
         return JSONResponse(status_code=413, content={"detail": "Request body too large", "request_id": request_id}, headers={"x-request-id": request_id})
 
-    if (
+    cookie_authenticated_mutation = (
         request.method in {"POST", "PUT", "PATCH", "DELETE"}
         and request.cookies.get(SESSION_COOKIE_NAME)
-        and request.headers.get("x-requested-with") != "HiddenOasisInventory"
-    ):
+        and not request.headers.get("authorization")
+    )
+    if cookie_authenticated_mutation and request.headers.get("x-requested-with") != "HiddenOasisInventory":
         return JSONResponse(
             status_code=403,
             content={"detail": "Missing session request verification", "request_id": request_id},

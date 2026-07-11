@@ -7,6 +7,7 @@ import "./feedback.css";
 import "./forms.css";
 import "./auth.css";
 import "./permissions.css";
+import "./shell-completion.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

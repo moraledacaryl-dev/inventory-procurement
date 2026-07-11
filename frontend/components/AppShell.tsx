@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState } from "react";
+import { AuthenticatedUserMenu } from "./AuthenticatedUserMenu";
 
 type NavItem = { href: string; label: string; icon: IconName };
 type NavGroup = { label: string; items: NavItem[] };
@@ -90,7 +91,7 @@ export function AppShell({ title, children, description }: { title: string; chil
         <div className="header-actions">
           <button className="icon-button" type="button" aria-label="Notifications"><StrokeIcon><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7"/><path d="M10 19h4"/></StrokeIcon><span className="notification-dot">3</span></button>
           <button className="icon-button help-button" type="button" aria-label="Help"><StrokeIcon><circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.5 2.5 0 1 1 3.7 2.2c-1 .5-1.5 1.2-1.5 2.3M12 17h.01"/></StrokeIcon></button>
-          <div className="user-menu"><div className="user-avatar">M</div><div className="user-copy"><strong>Moraleda Caryl</strong><span>Administrator</span></div></div>
+          <AuthenticatedUserMenu />
         </div>
       </header>
       <div className="page-heading-bar"><div className="page-heading"><div className="page-kicker">Operations workspace</div><h1>{title}</h1><p>{pageDescription}</p></div></div>

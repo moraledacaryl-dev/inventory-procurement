@@ -1,5 +1,6 @@
 import "./globals.css";
 import "./shell.css";
+import "./dashboard.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

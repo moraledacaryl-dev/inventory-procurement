@@ -8,6 +8,7 @@ from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models.user import User
 from app.models.inventory import Item, Location, StockBalance, StockDocument, StockMovement
+from app.models.classification import OperationalDimension, ItemWorkspaceAssignment
 from app.models.operations import IntegrationEvent
 from app.models.production import Recipe, RecipeLine, ProductionBatch, PosProductMapping, PosSaleEvent
 from app.schemas.production import *
@@ -15,6 +16,8 @@ from app.services.controls import add_audit, add_notification, enqueue_event, ne
 from app.services.inventory import InventoryError, post_document
 
 router=APIRouter(tags=['production'])
+INGREDIENT_BEHAVIORS={'ingredient','recipe_output','recipe_packaging'}
+OUTPUT_BEHAVIORS={'recipe_output'}
 def fail(code:int,message:str): raise HTTPException(code,message)
 def now(): return datetime.now(timezone.utc)
 def load_recipe(db,id): return db.scalar(select(Recipe).where(Recipe.id==id).options(selectinload(Recipe.lines)))
@@ -25,6 +28,24 @@ def avg_cost(db,item_id,location_id):
     row=db.scalar(select(StockBalance).where(StockBalance.item_id==item_id,StockBalance.location_id==location_id))
     if row: return Decimal(row.average_cost)
     item=db.get(Item,item_id); return Decimal(item.standard_cost if item else 0)
+
+def fnb_workspace_ids(db:Session)->set[str]:
+    return set(db.scalars(select(OperationalDimension.id).where(OperationalDimension.dimension_type=='workspace',OperationalDimension.behavior_key=='fnb',OperationalDimension.is_active.is_(True))).all())
+
+def recipe_item_behavior(db:Session,item:Item|None)->str|None:
+    if not item or not item.is_active or not item.item_type_id:return None
+    fnb_ids=fnb_workspace_ids(db)
+    assigned=item.primary_workspace_id in fnb_ids or bool(db.scalar(select(ItemWorkspaceAssignment.id).where(ItemWorkspaceAssignment.item_id==item.id,ItemWorkspaceAssignment.workspace_id.in_(fnb_ids)).limit(1)))
+    if not assigned:return None
+    item_type=db.get(OperationalDimension,item.item_type_id)
+    return item_type.behavior_key if item_type and item_type.dimension_type=='item_type' and item_type.is_active else None
+
+def require_recipe_item(db:Session,item_id:str,allowed:set[str],label:str)->Item:
+    item=db.get(Item,item_id)
+    behavior=recipe_item_behavior(db,item)
+    if behavior not in allowed:fail(422,f'{label} must be an active F&B item with a compatible item type')
+    return item
+
 def recipe_entries(db,recipe:Recipe,location_id:str,output_quantity:Decimal,consume_only:bool=False):
     factor=output_quantity/Decimal(recipe.yield_quantity); entries=[]; total_cost=Decimal('0')
     for line in recipe.lines:
@@ -33,6 +54,16 @@ def recipe_entries(db,recipe:Recipe,location_id:str,output_quantity:Decimal,cons
     if not consume_only: entries.append({'item_id':recipe.output_item_id,'location_id':location_id,'quantity':output_quantity,'unit_cost':total_cost/output_quantity,'reason':'production output'})
     return entries,total_cost
 
+@router.get('/recipes/item-options')
+def recipe_item_options(db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
+    items=db.scalars(select(Item).where(Item.is_active.is_(True)).order_by(Item.sku)).all();ingredients=[];outputs=[]
+    for item in items:
+        behavior=recipe_item_behavior(db,item)
+        row={'id':item.id,'sku':item.sku,'name':item.name,'item_type_behavior':behavior}
+        if behavior in INGREDIENT_BEHAVIORS:ingredients.append(row)
+        if behavior in OUTPUT_BEHAVIORS:outputs.append(row)
+    return {'ingredients':ingredients,'outputs':outputs}
+
 @router.get('/recipes',response_model=list[RecipeOut])
 def recipes(status:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
     stmt=select(Recipe).options(selectinload(Recipe.lines)).order_by(Recipe.code)
@@ -40,11 +71,10 @@ def recipes(status:str|None=None,db:Session=Depends(get_db),_:User=Depends(requi
     return db.scalars(stmt).unique().all()
 @router.post('/recipes',response_model=RecipeOut,status_code=201)
 def create_recipe(p:RecipeCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
-    if not db.get(Item,p.output_item_id): fail(422,'Output item not found')
+    require_recipe_item(db,p.output_item_id,OUTPUT_BEHAVIORS,'Output item')
     ids=[x.ingredient_item_id for x in p.lines]
     if len(ids)!=len(set(ids)) or p.output_item_id in ids: fail(422,'Recipe ingredients must be unique and cannot equal output item')
-    for item_id in ids:
-        if not db.get(Item,item_id): fail(422,'Ingredient item not found')
+    for item_id in ids:require_recipe_item(db,item_id,INGREDIENT_BEHAVIORS,'Ingredient')
     row=Recipe(code=p.code.upper().strip(),name=p.name.strip(),output_item_id=p.output_item_id,yield_quantity=p.yield_quantity,notes=p.notes,created_by_user_id=user.id)
     row.lines=[RecipeLine(**x.model_dump()) for x in p.lines]; db.add(row)
     try:
@@ -56,6 +86,8 @@ def approve_recipe(recipe_id:str,db:Session=Depends(get_db),user:User=Depends(re
     if not row: fail(404,'Recipe not found')
     if row.status!='draft': fail(409,'Only draft recipes can be approved')
     if row.created_by_user_id==user.id: fail(409,'Recipe creator cannot approve their own recipe')
+    require_recipe_item(db,row.output_item_id,OUTPUT_BEHAVIORS,'Output item')
+    for line in row.lines:require_recipe_item(db,line.ingredient_item_id,INGREDIENT_BEHAVIORS,'Ingredient')
     row.status='approved'; row.approved_by_user_id=user.id; row.approved_at=now(); add_audit(db,actor_user_id=user.id,action='recipe.approved',entity_type='recipe',entity_id=row.id); db.commit(); return load_recipe(db,row.id)
 @router.get('/recipes/{recipe_id}/cost',response_model=RecipeCostOut)
 def recipe_cost(recipe_id:str,location_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):

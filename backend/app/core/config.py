@@ -10,9 +10,12 @@ class Settings(BaseSettings):
     jwt_secret: str = "development-secret-change-me-please"
     access_token_minutes: int = 480
     cors_origins: list[str] | str = ["http://localhost:3000"]
-    bootstrap_owner_email: str = "owner@hiddenoasis.local"
-    bootstrap_owner_name: str = "Owner"
-    bootstrap_owner_password: str = "change-this-password-now"
+    bootstrap_owner_email: str = ""
+    bootstrap_owner_name: str = "Hidden Oasis Owner"
+    bootstrap_owner_password: str = ""
+    staff_integration_token: str = ""
+    command_center_integration_token: str = ""
+    accounting_integration_token: str = ""
     max_request_bytes: int = 10_485_760
     backup_max_age_hours: int = 48
     trusted_hosts: list[str] | str = ["localhost","127.0.0.1","testserver"]

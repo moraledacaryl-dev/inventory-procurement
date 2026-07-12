@@ -1,6 +1,9 @@
+import hashlib
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
@@ -20,7 +23,7 @@ class PublishMasterData(BaseModel):
 def identity_row(user: User) -> dict:
     return {
         "canonical_user_id": user.id,
-        "employee_identity_key": user.email.lower().strip(),
+        "employee_identity_key": user.id,
         "email": user.email,
         "full_name": user.full_name,
         "role": user.role,
@@ -30,16 +33,29 @@ def identity_row(user: User) -> dict:
     }
 
 
+def snapshot_hash(payload: dict) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 @router.get("/shared-identities")
 def shared_identities(db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
     rows = db.scalars(select(User).order_by(User.full_name, User.email)).all()
     return {"identities": [identity_row(row) for row in rows], "count": len(rows)}
 
 
-@router.get("/shared-identities/resolve")
-def resolve_identity(email: str, db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
+@router.get("/shared-identities/{canonical_user_id}")
+def resolve_identity_by_id(canonical_user_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
+    row = db.get(User, canonical_user_id)
+    if not row:
+        raise HTTPException(404, "Shared identity not found")
+    return identity_row(row)
+
+
+@router.get("/shared-identities/resolve/by-email")
+def resolve_identity_by_email(email: str, db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
     normalized = email.lower().strip()
-    row = db.scalar(select(User).where(User.email == normalized))
+    row = db.scalar(select(User).where(func.lower(User.email) == normalized))
     if not row:
         raise HTTPException(404, "Shared identity not found")
     return identity_row(row)
@@ -63,7 +79,7 @@ def master_data_workspace(db: Session = Depends(get_db), _: User = Depends(requi
             "active_supplier_count": sum(1 for row in suppliers if row.is_active),
         },
         "identities": [identity_row(row) for row in users],
-        "items": [{"canonical_id": row.id, "code": row.sku, "name": row.name, "is_active": row.is_active} for row in items],
+        "items": [{"canonical_id": row.id, "code": row.sku, "name": row.name, "is_active": row.is_active, "updated_at": row.updated_at.isoformat() if row.updated_at else None} for row in items],
         "locations": [{"canonical_id": row.id, "code": row.code, "name": row.name, "is_active": row.is_active} for row in locations],
         "suppliers": [{"canonical_id": row.id, "code": row.code, "name": row.name, "is_active": row.is_active} for row in suppliers],
     }
@@ -77,6 +93,7 @@ def publish_master_data(payload: PublishMasterData, db: Session = Depends(get_db
     if invalid:
         raise HTTPException(422, f"Unsupported destination: {', '.join(sorted(invalid))}")
     workspace = master_data_workspace(db, user)
+    digest = snapshot_hash(workspace)
     published = []
     for destination in destinations:
         event = enqueue_event(
@@ -85,10 +102,10 @@ def publish_master_data(payload: PublishMasterData, db: Session = Depends(get_db
             event_type="inventory.master_data.snapshot",
             aggregate_type="master_data",
             aggregate_id="canonical",
-            idempotency_key=f"master-data:{destination}:{workspace['summary']['identity_count']}:{workspace['summary']['item_count']}:{workspace['summary']['location_count']}:{workspace['summary']['supplier_count']}",
-            payload=workspace,
+            idempotency_key=f"master-data:{destination}:{digest}",
+            payload={**workspace, "snapshot_hash": digest},
         )
-        published.append({"destination": destination, "event_id": event.id})
-    add_audit(db, actor_user_id=user.id, action="master_data.published", entity_type="master_data", entity_id="canonical", details={"destinations": destinations})
+        published.append({"destination": destination, "event_id": event.id, "snapshot_hash": digest})
+    add_audit(db, actor_user_id=user.id, action="master_data.published", entity_type="master_data", entity_id="canonical", details={"destinations": destinations, "snapshot_hash": digest})
     db.commit()
-    return {"published": published, "summary": workspace["summary"]}
+    return {"published": published, "summary": workspace["summary"], "snapshot_hash": digest}

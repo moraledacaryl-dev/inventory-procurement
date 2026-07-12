@@ -1,6 +1,9 @@
 import os
 os.environ["DATABASE_URL"] = "sqlite:///./test_inventory.db"
 os.environ["JWT_SECRET"] = "test-secret-that-is-long-enough-for-tests"
+os.environ["STAFF_INTEGRATION_TOKEN"] = "test-staff-integration-token"
+os.environ["COMMAND_CENTER_INTEGRATION_TOKEN"] = "test-command-center-integration-token"
+os.environ["ACCOUNTING_INTEGRATION_TOKEN"] = "test-accounting-integration-token"
 import pytest
 from fastapi.testclient import TestClient
 from app.db.base import Base

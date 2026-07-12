@@ -38,6 +38,10 @@ python3 -m venv "$APP_DIR/backend/.venv"
 
 sudo -H -u hiddenoasis bash -lc "cd '$APP_DIR/frontend' && set -a && source '$FRONTEND_ENV' && set +a && npm install --include=dev && npm run build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -a .next/static .next/standalone/.next/static && if [ -d public ]; then rm -rf .next/standalone/public && cp -a public .next/standalone/public; fi"
 
+# Apply schema changes before account bootstrap. When OWNER_EMAIL and OWNER_PASSWORD
+# are present in the protected backend environment file, create or reset the owner.
+sudo -H -u hiddenoasis bash -lc "cd '$APP_DIR/backend' && set -a && source '$BACKEND_ENV' && set +a && .venv/bin/alembic upgrade head && if [[ -n \"\${OWNER_EMAIL:-}\" && -n \"\${OWNER_PASSWORD:-}\" ]]; then .venv/bin/python scripts/ensure_owner.py --non-interactive; else echo 'OWNER_EMAIL/OWNER_PASSWORD not set; owner bootstrap skipped.'; fi"
+
 install -m 0644 "$APP_DIR/deploy/systemd/hiddenoasis-inventory-backend.service" /etc/systemd/system/
 install -m 0644 "$APP_DIR/deploy/systemd/hiddenoasis-inventory-frontend.service" /etc/systemd/system/
 install -m 0644 "$APP_DIR/deploy/systemd/hiddenoasis-inventory-worker.service" /etc/systemd/system/

@@ -14,8 +14,13 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID", "X-Requested-With", "X-Integration-Token"],
 )
+
+SERVICE_MUTATION_PATHS = {
+    f"{settings.api_v1_prefix}/integrations/accounting/receipts",
+    f"{settings.api_v1_prefix}/integrations/operations/requests",
+}
 
 
 @app.middleware("http")
@@ -26,9 +31,11 @@ async def request_context(request: Request, call_next):
         return JSONResponse(status_code=413, content={"detail": "Request body too large", "request_id": request_id}, headers={"x-request-id": request_id})
 
     is_login = request.url.path == f"{settings.api_v1_prefix}/auth/login"
+    is_service_endpoint = request.url.path in SERVICE_MUTATION_PATHS
     cookie_authenticated_mutation = (
         request.method in {"POST", "PUT", "PATCH", "DELETE"}
         and not is_login
+        and not is_service_endpoint
         and request.cookies.get(SESSION_COOKIE_NAME)
         and not request.headers.get("authorization")
     )

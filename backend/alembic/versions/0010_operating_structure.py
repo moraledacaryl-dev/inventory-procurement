@@ -48,20 +48,22 @@ def upgrade():
     op.create_index("ix_item_workspace_assignments_item_id", "item_workspace_assignments", ["item_id"])
     op.create_index("ix_item_workspace_assignments_workspace_id", "item_workspace_assignments", ["workspace_id"])
 
-    with op.batch_alter_table("categories") as batch:
-        batch.add_column(sa.Column("parent_id", sa.String(36), nullable=True))
-        batch.add_column(sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"))
-        batch.create_foreign_key("fk_categories_parent_id", "categories", ["parent_id"], ["id"])
-        batch.create_index("ix_categories_parent_id", ["parent_id"])
+    dialect = op.get_context().dialect.name
+    op.add_column("categories", sa.Column("parent_id", sa.String(36), nullable=True))
+    op.add_column("categories", sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"))
+    if dialect != "sqlite":
+        op.create_foreign_key("fk_categories_parent_id", "categories", "categories", ["parent_id"], ["id"])
+    op.create_index("ix_categories_parent_id", "categories", ["parent_id"])
 
-    with op.batch_alter_table("items") as batch:
-        for name in ("record_class_id", "item_type_id", "primary_workspace_id", "department_id", "cost_center_id"):
-            batch.add_column(sa.Column(name, sa.String(36), nullable=True))
-            batch.create_foreign_key(f"fk_items_{name}", "operational_dimensions", [name], ["id"])
-            batch.create_index(f"ix_items_{name}", [name])
-        batch.add_column(sa.Column("default_location_id", sa.String(36), nullable=True))
-        batch.create_foreign_key("fk_items_default_location_id", "locations", ["default_location_id"], ["id"])
-        batch.create_index("ix_items_default_location_id", ["default_location_id"])
+    for name in ("record_class_id", "item_type_id", "primary_workspace_id", "department_id", "cost_center_id"):
+        op.add_column("items", sa.Column(name, sa.String(36), nullable=True))
+        if dialect != "sqlite":
+            op.create_foreign_key(f"fk_items_{name}", "items", "operational_dimensions", [name], ["id"])
+        op.create_index(f"ix_items_{name}", "items", [name])
+    op.add_column("items", sa.Column("default_location_id", sa.String(36), nullable=True))
+    if dialect != "sqlite":
+        op.create_foreign_key("fk_items_default_location_id", "items", "locations", ["default_location_id"], ["id"])
+    op.create_index("ix_items_default_location_id", "items", ["default_location_id"])
 
     seed_table = sa.table(
         "operational_dimensions",
@@ -94,18 +96,20 @@ def upgrade():
 
 
 def downgrade():
-    with op.batch_alter_table("items") as batch:
-        batch.drop_index("ix_items_default_location_id")
-        batch.drop_constraint("fk_items_default_location_id", type_="foreignkey")
-        batch.drop_column("default_location_id")
-        for name in reversed(("record_class_id", "item_type_id", "primary_workspace_id", "department_id", "cost_center_id")):
-            batch.drop_index(f"ix_items_{name}")
-            batch.drop_constraint(f"fk_items_{name}", type_="foreignkey")
-            batch.drop_column(name)
-    with op.batch_alter_table("categories") as batch:
-        batch.drop_index("ix_categories_parent_id")
-        batch.drop_constraint("fk_categories_parent_id", type_="foreignkey")
-        batch.drop_column("sort_order")
-        batch.drop_column("parent_id")
+    dialect = op.get_context().dialect.name
+    op.drop_index("ix_items_default_location_id", table_name="items")
+    if dialect != "sqlite":
+        op.drop_constraint("fk_items_default_location_id", "items", type_="foreignkey")
+    op.drop_column("items", "default_location_id")
+    for name in reversed(("record_class_id", "item_type_id", "primary_workspace_id", "department_id", "cost_center_id")):
+        op.drop_index(f"ix_items_{name}", table_name="items")
+        if dialect != "sqlite":
+            op.drop_constraint(f"fk_items_{name}", "items", type_="foreignkey")
+        op.drop_column("items", name)
+    op.drop_index("ix_categories_parent_id", table_name="categories")
+    if dialect != "sqlite":
+        op.drop_constraint("fk_categories_parent_id", "categories", type_="foreignkey")
+    op.drop_column("categories", "sort_order")
+    op.drop_column("categories", "parent_id")
     op.drop_table("item_workspace_assignments")
     op.drop_table("operational_dimensions")

@@ -9,6 +9,7 @@ from app.models.readiness import DataImportJob, AcceptanceRun
 from app.models.stabilization import StaffFeedback, OperationalIncident
 from app.models.classification import OperationalDimension, ItemWorkspaceAssignment
 from app.models.property import PropertyBalance, PropertyMovement, HotelParProfile, HotelParLine
+from app.models.assets import FixedAsset, DepreciationRun, DepreciationLine, AssetEvent
 
 __all__ = [
     'User', 'AuditLog', 'Category', 'UnitOfMeasure', 'Location', 'Item',
@@ -23,5 +24,6 @@ __all__ = [
     'PosProductMapping', 'PosSaleEvent', 'DataImportJob', 'AcceptanceRun',
     'StaffFeedback', 'OperationalIncident', 'OperationalDimension',
     'ItemWorkspaceAssignment', 'PropertyBalance', 'PropertyMovement',
-    'HotelParProfile', 'HotelParLine',
+    'HotelParProfile', 'HotelParLine', 'FixedAsset', 'DepreciationRun',
+    'DepreciationLine', 'AssetEvent',
 ]

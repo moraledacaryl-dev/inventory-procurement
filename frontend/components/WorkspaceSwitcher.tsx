@@ -52,6 +52,7 @@ export function WorkspaceSwitcher() {
     window.dispatchEvent(new CustomEvent("hidden-oasis:workspace-change", { detail: { id: next, behavior } }));
     if (behavior === "fnb") router.push("/fnb");
     else if (behavior === "hotel") router.push("/hotel");
+    else if (behavior === "assets") router.push("/assets");
     else router.push("/dashboard");
   }
 

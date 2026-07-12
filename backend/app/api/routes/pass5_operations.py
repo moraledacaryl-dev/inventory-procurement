@@ -32,7 +32,7 @@ def plans(db:Session=Depends(get_db),_:User=Depends(require_permission('inventor
 @router.post('/maintenance/plans',status_code=201)
 def create_plan(p:PlanIn,db:Session=Depends(get_db),u:User=Depends(require_permission('inventory.*'))):
     if not db.get(FixedAsset,p.asset_id): fail(422,'Asset not found')
-    row=MaintenancePlan(**p.model_dump(),code=p.code.upper().strip()); db.add(row)
+    data=p.model_dump(); data['code']=p.code.upper().strip(); row=MaintenancePlan(**data); db.add(row)
     try: db.flush(); add_audit(db,actor_user_id=u.id,action='maintenance.plan_created',entity_type='maintenance_plan',entity_id=row.id,details={'asset_id':row.asset_id}); db.commit(); db.refresh(row); return row
     except IntegrityError: db.rollback(); fail(409,'Maintenance plan code already exists')
 

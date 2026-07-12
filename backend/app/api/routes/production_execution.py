@@ -47,14 +47,19 @@ def item_cost(db: Session, item_id: str, location_id: str) -> Decimal:
 
 class MaterialActual(BaseModel):
     item_id: str
-    actual_quantity: Decimal = Field(gt=0)
+    actual_quantity: Decimal = Field(ge=0)
 
 
 class ExecuteProduction(BaseModel):
-    actual_output_quantity: Decimal = Field(gt=0)
+    actual_output_quantity: Decimal = Field(gt=0, description="Total output before rejected/waste output")
     output_waste_quantity: Decimal = Field(default=0, ge=0)
-    materials: list[MaterialActual] = Field(default_factory=list)
+    materials: list[MaterialActual]
     notes: str | None = None
+
+
+class CancelProduction(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+    material_disposition: str | None = Field(default=None, max_length=500)
 
 
 def execution_snapshot(db: Session, batch: ProductionBatch) -> dict:
@@ -142,9 +147,10 @@ def execute_batch(batch_id: str, payload: ExecuteProduction, db: Session = Depen
     if len(supplied) != len(payload.materials):
         fail(422, "Actual material lines must be unique")
     recipe_ids = {line.ingredient_item_id for line in recipe.lines}
-    unknown = set(supplied) - recipe_ids
-    if unknown:
-        fail(422, "Actual materials must belong to the batch recipe")
+    if set(supplied) != recipe_ids:
+        missing = recipe_ids - set(supplied)
+        unknown = set(supplied) - recipe_ids
+        fail(422, f"Actual quantities are required for every recipe material; missing={sorted(missing)}, unknown={sorted(unknown)}")
 
     planned_factor = Decimal(batch.planned_quantity) / Decimal(recipe.yield_quantity)
     entries = []
@@ -152,13 +158,14 @@ def execute_batch(batch_id: str, payload: ExecuteProduction, db: Session = Depen
     total_actual_cost = Decimal("0")
     for line in recipe.lines:
         planned_quantity = Decimal(line.quantity) * planned_factor * (Decimal("1") + Decimal(line.waste_factor))
-        actual_quantity = supplied.get(line.ingredient_item_id, planned_quantity)
+        actual_quantity = supplied[line.ingredient_item_id]
         if not line.optional and actual_quantity <= 0:
             fail(422, "Required recipe materials must have a positive actual quantity")
         cost = item_cost(db, line.ingredient_item_id, batch.location_id)
         actual_cost = actual_quantity * cost
         total_actual_cost += actual_cost
-        entries.append({"item_id": line.ingredient_item_id, "location_id": batch.location_id, "quantity": -actual_quantity, "unit_cost": cost, "reason": "production actual consumption"})
+        if actual_quantity > 0:
+            entries.append({"item_id": line.ingredient_item_id, "location_id": batch.location_id, "quantity": -actual_quantity, "unit_cost": cost, "reason": "production actual consumption"})
         variances.append({
             "item_id": line.ingredient_item_id,
             "planned_quantity": str(planned_quantity),
@@ -168,16 +175,17 @@ def execute_batch(batch_id: str, payload: ExecuteProduction, db: Session = Depen
             "actual_cost": str(actual_cost),
         })
 
-    good_output = Decimal(payload.actual_output_quantity)
+    total_output = Decimal(payload.actual_output_quantity)
     output_waste = Decimal(payload.output_waste_quantity)
-    if output_waste > good_output:
-        fail(422, "Output waste cannot exceed actual output")
+    good_output = total_output - output_waste
+    if output_waste >= total_output:
+        fail(422, "Waste output must be lower than total output")
     entries.append({
         "item_id": recipe.output_item_id,
         "location_id": batch.location_id,
         "quantity": good_output,
         "unit_cost": total_actual_cost / good_output,
-        "reason": "production output",
+        "reason": "production good output",
     })
 
     yield_variance = good_output - Decimal(batch.planned_quantity)
@@ -198,11 +206,12 @@ def execute_batch(batch_id: str, payload: ExecuteProduction, db: Session = Depen
         batch.completed_at = utcnow()
         batch.stock_document_id = document.id
         details = {
-            "actual_output_quantity": str(good_output),
+            "total_output_quantity": str(total_output),
+            "good_output_quantity": str(good_output),
             "output_waste_quantity": str(output_waste),
             "yield_variance": str(yield_variance),
             "total_actual_cost": str(total_actual_cost),
-            "cost_per_output_unit": str(total_actual_cost / good_output),
+            "cost_per_good_output_unit": str(total_actual_cost / good_output),
             "materials": variances,
         }
         add_audit(db, actor_user_id=user.id, action="production.executed", entity_type="production_batch", entity_id=batch.id, details=details)
@@ -225,14 +234,16 @@ def execute_batch(batch_id: str, payload: ExecuteProduction, db: Session = Depen
 
 
 @router.post("/production-batches/{batch_id}/cancel")
-def cancel_batch(batch_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("inventory.*"))):
+def cancel_batch(batch_id: str, payload: CancelProduction, db: Session = Depends(get_db), user: User = Depends(require_permission("inventory.*"))):
     batch = load_batch(db, batch_id, lock=True)
     if not batch:
         fail(404, "Production batch not found")
     if batch.status not in {"planned", "in_progress"}:
         fail(409, "Only open batches can be cancelled")
+    if batch.status == "in_progress" and not payload.material_disposition:
+        fail(422, "In-progress cancellation requires material disposition")
     previous = batch.status
     batch.status = "cancelled"
-    add_audit(db, actor_user_id=user.id, action="production.cancelled", entity_type="production_batch", entity_id=batch.id, details={"previous_status": previous})
+    add_audit(db, actor_user_id=user.id, action="production.cancelled", entity_type="production_batch", entity_id=batch.id, details={"previous_status": previous, "reason": payload.reason, "material_disposition": payload.material_disposition})
     db.commit()
     return execution_snapshot(db, batch)

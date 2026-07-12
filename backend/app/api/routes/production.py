@@ -32,16 +32,31 @@ def avg_cost(db,item_id,location_id):
 def fnb_workspace_ids(db:Session)->set[str]:
     return set(db.scalars(select(OperationalDimension.id).where(OperationalDimension.dimension_type=='workspace',OperationalDimension.behavior_key=='fnb',OperationalDimension.is_active.is_(True))).all())
 
+def item_workspace_ids(db:Session,item:Item)->set[str]:
+    values=set(db.scalars(select(ItemWorkspaceAssignment.workspace_id).where(ItemWorkspaceAssignment.item_id==item.id)).all())
+    if item.primary_workspace_id:values.add(item.primary_workspace_id)
+    return values
+
 def recipe_item_behavior(db:Session,item:Item|None)->str|None:
     if not item or not item.is_active or not item.item_type_id:return None
     fnb_ids=fnb_workspace_ids(db)
-    assigned=item.primary_workspace_id in fnb_ids or bool(db.scalar(select(ItemWorkspaceAssignment.id).where(ItemWorkspaceAssignment.item_id==item.id,ItemWorkspaceAssignment.workspace_id.in_(fnb_ids)).limit(1)))
-    if not assigned:return None
+    if not item_workspace_ids(db,item).intersection(fnb_ids):return None
     item_type=db.get(OperationalDimension,item.item_type_id)
     return item_type.behavior_key if item_type and item_type.dimension_type=='item_type' and item_type.is_active else None
 
+def is_legacy_unclassified(db:Session,item:Item)->bool:
+    """Permit existing pre-classification recipes during the controlled migration window.
+
+    Once any workspace or item-type classification exists, normal F&B behavioral
+    enforcement applies. The focused recipe-options endpoint never exposes these
+    legacy items, so new UI-driven recipes remain fully classified.
+    """
+    return not item.item_type_id and not item.record_class_id and not item_workspace_ids(db,item)
+
 def require_recipe_item(db:Session,item_id:str,allowed:set[str],label:str)->Item:
     item=db.get(Item,item_id)
+    if not item or not item.is_active:fail(422,f'{label} was not found or is inactive')
+    if is_legacy_unclassified(db,item):return item
     behavior=recipe_item_behavior(db,item)
     if behavior not in allowed:fail(422,f'{label} must be an active F&B item with a compatible item type')
     return item

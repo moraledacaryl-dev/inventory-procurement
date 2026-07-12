@@ -1,12 +1,12 @@
 """pass 5 maintenance, purchase treatment, and accounting mappings
 
-Revision ID: 0013_maintenance_treatment_accounting
+Revision ID: 0013_maintenance
 Revises: 0012_fixed_assets
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision='0013_maintenance_treatment_accounting'
+revision='0013_maintenance'
 down_revision='0012_fixed_assets'
 branch_labels=None
 depends_on=None

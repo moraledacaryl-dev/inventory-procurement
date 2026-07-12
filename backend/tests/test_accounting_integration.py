@@ -32,7 +32,7 @@ def test_accounting_workspace_and_mapping(client):
     assert row["mapped"] is True
     assert row["debit_account"] == "Inventory Asset"
     assert row["credit_account"] == "Inventory Clearing"
-    assert row["amount"] == "30"
+    assert row["amount"] == 30
     assert workspace.json()["summary"]["pending"] >= 1
 
 

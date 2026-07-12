@@ -20,6 +20,27 @@ type SessionContextValue = {
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
+let cachedUser: SessionUser | null = null;
+let sessionResolved = false;
+let sessionRequest: Promise<SessionUser> | null = null;
+
+function loadSession() {
+  if (!sessionRequest) {
+    sessionRequest = api<SessionUser>("/auth/me")
+      .then(value => {
+        cachedUser = value;
+        sessionResolved = true;
+        return value;
+      })
+      .catch(error => {
+        cachedUser = null;
+        sessionResolved = true;
+        throw error;
+      })
+      .finally(() => { sessionRequest = null; });
+  }
+  return sessionRequest;
+}
 
 function permissionMatches(granted: string, requested: string) {
   if (granted === "*" || granted === requested) return true;
@@ -28,12 +49,13 @@ function permissionMatches(granted: string, requested: string) {
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<SessionUser | null>(() => cachedUser);
+  const [loading, setLoading] = useState(() => !sessionResolved);
 
   useEffect(() => {
+    if (sessionResolved) return;
     let active = true;
-    void api<SessionUser>("/auth/me")
+    void loadSession()
       .then(value => { if (active) setUser(value); })
       .catch(() => undefined)
       .finally(() => { if (active) setLoading(false); });

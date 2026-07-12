@@ -31,6 +31,11 @@ def validate_dimension(db:Session,value:str|None,kind:str):
     row=db.get(OperationalDimension,value)
     if not row or row.dimension_type!=kind: fail(422,f'{kind.replace("_"," ").title()} not found')
 
+@router.get('/access-scope-users')
+def access_scope_users(db:Session=Depends(get_db),_:User=Depends(require_permission('users.read'))):
+    rows=db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name,User.email)).all()
+    return [{'id':x.id,'email':x.email,'full_name':x.full_name,'role':x.role} for x in rows]
+
 @router.get('/access-scopes')
 def access_scopes(user_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('users.read'))):
     q=select(OperationalAccessScope).order_by(OperationalAccessScope.user_id,OperationalAccessScope.created_at)

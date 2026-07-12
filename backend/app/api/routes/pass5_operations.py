@@ -17,6 +17,17 @@ router=APIRouter(tags=['maintenance-accounting'])
 def fail(c,m): raise HTTPException(c,m)
 def now(): return datetime.now(timezone.utc)
 
+def work_order_payload(row:WorkOrder):
+    return {
+        'id':row.id,'work_order_number':row.work_order_number,'asset_id':row.asset_id,'plan_id':row.plan_id,
+        'title':row.title,'description':row.description,'priority':row.priority,'status':row.status,
+        'assigned_user_id':row.assigned_user_id,'contractor':row.contractor,'scheduled_date':row.scheduled_date,
+        'started_at':row.started_at,'completed_at':row.completed_at,'labor_cost':row.labor_cost,
+        'external_cost':row.external_cost,'downtime_hours':row.downtime_hours,'completion_notes':row.completion_notes,
+        'created_by_user_id':row.created_by_user_id,'created_at':row.created_at,
+        'parts':[{'id':x.id,'item_id':x.item_id,'quantity':x.quantity,'unit_cost':x.unit_cost} for x in row.parts],
+    }
+
 class PlanIn(BaseModel):
     code:str; name:str; asset_id:str; interval_days:int=Field(gt=0,le=3650); checklist:str|None=None; assigned_user_id:str|None=None; next_due_date:date
 class PartIn(BaseModel): item_id:str; quantity:Decimal=Field(gt=0); unit_cost:Decimal=Field(default=0,ge=0)
@@ -40,7 +51,7 @@ def create_plan(p:PlanIn,db:Session=Depends(get_db),u:User=Depends(require_permi
 def work_orders(status:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
     q=select(WorkOrder).options(selectinload(WorkOrder.parts)).order_by(WorkOrder.created_at.desc())
     if status:q=q.where(WorkOrder.status==status)
-    return db.scalars(q).unique().all()
+    return [work_order_payload(x) for x in db.scalars(q).unique().all()]
 @router.post('/maintenance/work-orders',status_code=201)
 def create_work_order(p:WorkOrderIn,db:Session=Depends(get_db),u:User=Depends(require_permission('inventory.*'))):
     asset=db.get(FixedAsset,p.asset_id)
@@ -49,16 +60,17 @@ def create_work_order(p:WorkOrderIn,db:Session=Depends(get_db),u:User=Depends(re
     for part in p.parts:
         if not db.get(Item,part.item_id): fail(422,'Part item not found')
     data=p.model_dump(exclude={'parts'}); row=WorkOrder(work_order_number=next_document_number(db,'MWO'),**data,created_by_user_id=u.id)
-    row.parts=[WorkOrderPart(**x.model_dump()) for x in p.parts]; db.add(row); db.flush(); add_audit(db,actor_user_id=u.id,action='maintenance.work_order_created',entity_type='maintenance_work_order',entity_id=row.id,details={'asset_id':row.asset_id}); db.commit(); return db.scalar(select(WorkOrder).where(WorkOrder.id==row.id).options(selectinload(WorkOrder.parts)))
+    row.parts=[WorkOrderPart(**x.model_dump()) for x in p.parts]; db.add(row); db.flush(); add_audit(db,actor_user_id=u.id,action='maintenance.work_order_created',entity_type='maintenance_work_order',entity_id=row.id,details={'asset_id':row.asset_id}); db.commit()
+    row=db.scalar(select(WorkOrder).where(WorkOrder.id==row.id).options(selectinload(WorkOrder.parts))); return work_order_payload(row)
 @router.post('/maintenance/work-orders/{work_order_id}/start')
 def start_work_order(work_order_id:str,db:Session=Depends(get_db),u:User=Depends(require_permission('inventory.*'))):
-    row=db.get(WorkOrder,work_order_id)
+    row=db.scalar(select(WorkOrder).where(WorkOrder.id==work_order_id).options(selectinload(WorkOrder.parts)))
     if not row: fail(404,'Work order not found')
     if row.status!='open': fail(409,'Only open work orders can start')
-    row.status='in_progress'; row.started_at=now(); db.commit(); return row
+    row.status='in_progress'; row.started_at=now(); db.commit(); db.refresh(row); return work_order_payload(row)
 @router.post('/maintenance/work-orders/{work_order_id}/complete')
 def complete_work_order(work_order_id:str,p:CompleteIn,db:Session=Depends(get_db),u:User=Depends(require_permission('inventory.*'))):
-    row=db.get(WorkOrder,work_order_id)
+    row=db.scalar(select(WorkOrder).where(WorkOrder.id==work_order_id).options(selectinload(WorkOrder.parts)))
     if not row: fail(404,'Work order not found')
     if row.status not in {'open','in_progress'}: fail(409,'Work order cannot be completed')
     for k,v in p.model_dump().items(): setattr(row,k,v)
@@ -67,7 +79,7 @@ def complete_work_order(work_order_id:str,p:CompleteIn,db:Session=Depends(get_db
         plan=db.get(MaintenancePlan,row.plan_id); plan.next_due_date=date.today()+timedelta(days=plan.interval_days)
     total=sum((Decimal(x.quantity)*Decimal(x.unit_cost) for x in row.parts),Decimal('0'))+Decimal(row.labor_cost)+Decimal(row.external_cost)
     enqueue_event(db,destination_system='accounting',event_type='inventory.maintenance.completed',aggregate_type='maintenance_work_order',aggregate_id=row.id,idempotency_key=f'maintenance:{row.id}',payload={'work_order_id':row.id,'asset_id':row.asset_id,'total_cost':str(total)})
-    add_audit(db,actor_user_id=u.id,action='maintenance.work_order_completed',entity_type='maintenance_work_order',entity_id=row.id,details={'total_cost':str(total)}); db.commit(); return row
+    add_audit(db,actor_user_id=u.id,action='maintenance.work_order_completed',entity_type='maintenance_work_order',entity_id=row.id,details={'total_cost':str(total)}); db.commit(); db.refresh(row); return work_order_payload(row)
 
 @router.get('/purchase-line-treatments')
 def treatments(source_type:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):

@@ -21,6 +21,7 @@ import "./quotation-po-workspace.css";
 import "./receiving-workspace.css";
 import "./recipe-costing.css";
 import "./operating-structure.css";
+import "./workspaces.css";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },

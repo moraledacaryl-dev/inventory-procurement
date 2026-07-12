@@ -25,8 +25,8 @@ def identity_row(user: User) -> dict:
         "full_name": user.full_name,
         "role": user.role,
         "is_active": user.is_active,
-        "created_at": user.created_at,
-        "updated_at": user.updated_at,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
     }
 
 

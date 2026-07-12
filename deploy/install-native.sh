@@ -36,6 +36,8 @@ python3 -m venv "$APP_DIR/backend/.venv"
 "$APP_DIR/backend/.venv/bin/pip" install --upgrade pip
 "$APP_DIR/backend/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
+sudo -H -u hiddenoasis bash -lc "cd '$APP_DIR/backend' && set -a && source '$BACKEND_ENV' && set +a && .venv/bin/alembic upgrade head && .venv/bin/python scripts/bootstrap_owner.py"
+
 sudo -H -u hiddenoasis bash -lc "cd '$APP_DIR/frontend' && set -a && source '$FRONTEND_ENV' && set +a && npm install --include=dev && npm run build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -a .next/static .next/standalone/.next/static && if [ -d public ]; then rm -rf .next/standalone/public && cp -a public .next/standalone/public; fi"
 
 install -m 0644 "$APP_DIR/deploy/systemd/hiddenoasis-inventory-backend.service" /etc/systemd/system/

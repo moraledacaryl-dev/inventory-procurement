@@ -45,8 +45,8 @@ def test_reusable_property_laundry_circulation_and_balance_control(client):
     })
     assert sent.status_code == 201
     balances = client.get('/api/v1/property/balances', headers=headers).json()
-    assert any(row['location_id'] == clean_store['id'] and row['condition_id'] == available['id'] and row['quantity'] == '12.000000' for row in balances)
-    assert any(row['location_id'] == laundry_room['id'] and row['condition_id'] == laundry['id'] and row['quantity'] == '8.000000' for row in balances)
+    assert any(row['location_id'] == clean_store['id'] and row['condition_id'] == available['id'] and float(row['quantity']) == 12 for row in balances)
+    assert any(row['location_id'] == laundry_room['id'] and row['condition_id'] == laundry['id'] and float(row['quantity']) == 8 for row in balances)
     rejected = client.post('/api/v1/property/movements', headers=headers, json={
         'item_id': item['id'], 'quantity': 50,
         'source_location_id': clean_store['id'], 'source_condition_id': available['id'],
@@ -65,4 +65,4 @@ def test_hotel_par_profile_accepts_only_reusable_property(client):
     assert response.status_code == 201
     profiles = client.get('/api/v1/hotel/par-profiles', headers=headers).json()
     assert profiles[0]['profile']['code'] == 'DELUXE-KING'
-    assert profiles[0]['lines'][0]['par_quantity'] == '2.000000'
+    assert float(profiles[0]['lines'][0]['par_quantity']) == 2

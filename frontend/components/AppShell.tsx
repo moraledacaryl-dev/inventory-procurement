@@ -13,7 +13,7 @@ import { readWorkspaceBehavior, WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 type NavItem = { href: string; label: string; icon: IconName; module: string; scopes?: string[] };
 type NavGroup = { label: string; items: NavItem[] };
-type IconName = "home"|"box"|"map"|"layers"|"factory"|"cart"|"truck"|"clipboard"|"chart"|"plug"|"shield"|"rocket"|"users"|"settings"|"hotel";
+type IconName = "home"|"box"|"map"|"layers"|"factory"|"cart"|"truck"|"clipboard"|"chart"|"plug"|"shield"|"rocket"|"users"|"settings"|"hotel"|"linen";
 
 const groups: NavGroup[] = [
   { label: "Overview", items: [
@@ -27,6 +27,9 @@ const groups: NavGroup[] = [
     { href: "/stock", label: "Stock Movements", icon: "layers", module: "stock" },
     { href: "/inventory-operations", label: "Adjustments & Waste", icon: "clipboard", module: "inventory-operations" },
     { href: "/counts", label: "Inventory Counts", icon: "clipboard", module: "counts" },
+  ]},
+  { label: "Hotel Operations", items: [
+    { href: "/hotel/property", label: "Property & Linen", icon: "linen", module: "inventory-operations", scopes: ["hotel","all"] },
   ]},
   { label: "Procurement", items: [
     { href: "/suppliers", label: "Suppliers", icon: "users", module: "suppliers" },
@@ -55,6 +58,7 @@ function Icon({ name }: { name: IconName }) {
     layers: <><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></>,
     factory: <><path d="M3 21V9l6 3V9l6 3V5h6v16Z"/><path d="M7 21v-4h3v4M14 17h3"/></>,
     hotel: <><path d="M4 21V4h16v17"/><path d="M8 8h2M14 8h2M8 12h2M14 12h2M8 16h8M2 21h20"/></>,
+    linen: <><path d="M5 5h14v14H5z"/><path d="M8 8h8v8H8z"/><path d="M5 11h3M16 11h3"/></>,
     cart: <><circle cx="9" cy="20" r="1"/><circle cx="19" cy="20" r="1"/><path d="M3 4h2l2.5 11h11l2-7H7"/></>,
     truck: <><path d="M3 6h11v11H3Z"/><path d="M14 10h4l3 3v4h-7Z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></>,
     clipboard: <><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2M9 10h6M9 14h6"/></>,

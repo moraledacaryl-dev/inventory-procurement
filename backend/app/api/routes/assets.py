@@ -17,17 +17,14 @@ from app.services.controls import add_audit, enqueue_event
 
 router = APIRouter(tags=["assets"])
 
-
 def fail(code:int,message:str): raise HTTPException(code,message)
 def now(): return datetime.now(timezone.utc)
 def money(value): return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
 
 def dimension(db:Session, dimension_id:str, kind:str):
     row=db.get(OperationalDimension,dimension_id)
     if not row or row.dimension_type!=kind or not row.is_active: fail(422,f"Active {kind.replace('_',' ')} not found")
     return row
-
 
 def fixed_asset_item(db:Session,item_id:str):
     item=db.get(Item,item_id)
@@ -36,9 +33,7 @@ def fixed_asset_item(db:Session,item_id:str):
     if not item_type or item_type.behavior_key!="fixed_asset": fail(422,"Item type must belong to the fixed-asset behavioral family")
     return item
 
-
 def carrying_value(asset:FixedAsset): return money(asset.acquisition_cost)+money(asset.capitalized_cost)-money(asset.accumulated_depreciation)-money(asset.impairment_loss)
-
 
 class AssetIn(BaseModel):
     asset_tag:str=Field(min_length=1,max_length=80); item_id:str; asset_class_id:str; depreciation_method_id:str
@@ -52,7 +47,6 @@ class AssetEventIn(BaseModel):
     event_type:str; event_date:date; to_location_id:str|None=None; amount:Decimal|None=Field(default=None,ge=0); notes:str|None=None
 
 class RunIn(BaseModel): period:str=Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
-
 
 def asset_payload(asset:FixedAsset):
     return {"id":asset.id,"asset_tag":asset.asset_tag,"item_id":asset.item_id,"asset_class_id":asset.asset_class_id,"depreciation_method_id":asset.depreciation_method_id,"location_id":asset.location_id,"department_id":asset.department_id,"cost_center_id":asset.cost_center_id,"custodian_user_id":asset.custodian_user_id,"serial_number":asset.serial_number,"model_number":asset.model_number,"acquisition_date":asset.acquisition_date,"placed_in_service_date":asset.placed_in_service_date,"acquisition_cost":asset.acquisition_cost,"capitalized_cost":asset.capitalized_cost,"residual_value":asset.residual_value,"useful_life_months":asset.useful_life_months,"accumulated_depreciation":asset.accumulated_depreciation,"impairment_loss":asset.impairment_loss,"net_book_value":carrying_value(asset),"status":asset.status,"condition":asset.condition,"warranty_expiry":asset.warranty_expiry,"disposal_date":asset.disposal_date,"disposal_proceeds":asset.disposal_proceeds,"notes":asset.notes}
@@ -68,7 +62,8 @@ def create_asset(p:AssetIn,db:Session=Depends(get_db),user:User=Depends(require_
     fixed_asset_item(db,p.item_id); dimension(db,p.asset_class_id,"asset_class"); method=dimension(db,p.depreciation_method_id,"depreciation_method")
     if p.location_id and not db.get(Location,p.location_id): fail(422,"Location not found")
     if money(p.residual_value)>money(p.acquisition_cost)+money(p.capitalized_cost): fail(422,"Residual value cannot exceed total capitalized cost")
-    row=FixedAsset(**p.model_dump(),asset_tag=p.asset_tag.upper().strip(),status="active" if p.placed_in_service_date else "candidate",created_by_user_id=user.id)
+    values=p.model_dump(exclude={"asset_tag"})
+    row=FixedAsset(**values,asset_tag=p.asset_tag.upper().strip(),status="active" if p.placed_in_service_date else "candidate",created_by_user_id=user.id)
     if method.behavior_key=="no_depreciation": row.useful_life_months=1
     db.add(row)
     try:
@@ -98,7 +93,6 @@ def create_event(asset_id:str,p:AssetEventIn,db:Session=Depends(get_db),user:Use
     add_audit(db,actor_user_id=user.id,action=f"asset.{p.event_type}",entity_type="fixed_asset",entity_id=asset.id,details={"event_id":event.id,"amount":str(p.amount) if p.amount is not None else None})
     if p.event_type in {"impairment","dispose"}: enqueue_event(db,destination_system="accounting",event_type=f"inventory.asset.{p.event_type}",aggregate_type="fixed_asset",aggregate_id=asset.id,idempotency_key=f"asset-{p.event_type}:{event.id}",payload={"asset_id":asset.id,"asset_tag":asset.asset_tag,"amount":str(p.amount or 0),"net_book_value":str(carrying_value(asset))})
     db.commit(); db.refresh(event); return event
-
 
 def monthly_amount(db:Session,asset:FixedAsset):
     method=db.get(OperationalDimension,asset.depreciation_method_id)

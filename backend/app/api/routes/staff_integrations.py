@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.integration_auth import integration_token_header, require_integration_token
+from app.api.integration_auth import require_integration_token
 from app.db.session import get_db
 from app.models.operations import IntegrationEvent
 
@@ -32,10 +32,15 @@ def utcnow() -> datetime:
 @router.post("/integrations/staff/employees")
 def receive_staff_employees(
     payload: dict[str, Any],
-    token: str | None = Depends(integration_token_header),
+    x_integration_token: str | None = Header(default=None, alias="X-Integration-Token"),
+    x_integration_api_key: str | None = Header(default=None, alias="X-Integration-Api-Key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    require_integration_token("staff", token)
+    bearer = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        bearer = authorization[7:].strip()
+    require_integration_token("staff", x_integration_token or x_integration_api_key or bearer)
     if payload.get("external_source") != "hidden_oasis_staff_payroll":
         raise HTTPException(status_code=422, detail="Unsupported integration source")
     if payload.get("event_type") != "employee.sync":

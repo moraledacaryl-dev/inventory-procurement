@@ -7,4 +7,19 @@ from app.models.inventory_operations import ItemBarcode, UnitConversion, ItemLoc
 from app.models.production import Recipe, RecipeLine, ProductionBatch, PosProductMapping, PosSaleEvent
 from app.models.readiness import DataImportJob, AcceptanceRun
 from app.models.stabilization import StaffFeedback, OperationalIncident
-__all__=['User','AuditLog','Category','UnitOfMeasure','Location','Item','StockDocument','StockMovement','StockBalance','CountSession','CountLine','Supplier','SupplierItem','PurchaseRequisition','PurchaseRequisitionLine','SupplierQuotation','SupplierQuotationLine','PurchaseOrder','PurchaseOrderLine','GoodsReceipt','GoodsReceiptLine','PurchaseReturn','Notification','NotificationRead','IntegrationEvent','DocumentSequence','BackupRecord','ItemBarcode','UnitConversion','ItemLocationSetting','InventoryLot','LotBalance','StockReservation','TransferOrder','TransferOrderLine','CycleCountSchedule','Recipe','RecipeLine','ProductionBatch','PosProductMapping','PosSaleEvent','DataImportJob','AcceptanceRun','StaffFeedback','OperationalIncident']
+from app.models.classification import OperationalDimension, ItemWorkspaceAssignment
+
+__all__ = [
+    'User', 'AuditLog', 'Category', 'UnitOfMeasure', 'Location', 'Item',
+    'StockDocument', 'StockMovement', 'StockBalance', 'CountSession', 'CountLine',
+    'Supplier', 'SupplierItem', 'PurchaseRequisition', 'PurchaseRequisitionLine',
+    'SupplierQuotation', 'SupplierQuotationLine', 'PurchaseOrder', 'PurchaseOrderLine',
+    'GoodsReceipt', 'GoodsReceiptLine', 'PurchaseReturn', 'Notification',
+    'NotificationRead', 'IntegrationEvent', 'DocumentSequence', 'BackupRecord',
+    'ItemBarcode', 'UnitConversion', 'ItemLocationSetting', 'InventoryLot',
+    'LotBalance', 'StockReservation', 'TransferOrder', 'TransferOrderLine',
+    'CycleCountSchedule', 'Recipe', 'RecipeLine', 'ProductionBatch',
+    'PosProductMapping', 'PosSaleEvent', 'DataImportJob', 'AcceptanceRun',
+    'StaffFeedback', 'OperationalIncident', 'OperationalDimension',
+    'ItemWorkspaceAssignment',
+]

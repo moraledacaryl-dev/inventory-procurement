@@ -38,6 +38,7 @@ def snapshot(db:Session):
         if item and dec(balance.quantity)<0 and not item.allow_negative_stock:
             location=locations.get(balance.location_id)
             negative.append({'item_id':item.id,'item':item.sku,'location_id':balance.location_id,'location':location.code if location else balance.location_id,'quantity':str(balance.quantity)})
+    unclassified=[{'item_id':item.id,'sku':item.sku,'name':item.name,'primary_workspace_id':item.primary_workspace_id,'item_type_id':item.item_type_id,'record_class_id':item.record_class_id} for item in items.values() if not item.primary_workspace_id or not item.item_type_id or not item.record_class_id]
     movement_counts=dict(db.execute(select(StockMovement.document_id,func.count()).group_by(StockMovement.document_id)).all())
     empty=[{'id':doc.id,'document_number':doc.document_number,'document_type':doc.document_type} for doc in db.scalars(select(StockDocument).where(StockDocument.status=='posted')).all() if movement_counts.get(doc.id,0)==0]
     events=db.scalars(select(IntegrationEvent)).all(); failed=sum(x.status=='failed' for x in events); dead=sum(x.status=='dead_letter' for x in events); pending=sum(x.status in {'pending','processing'} for x in events)
@@ -53,6 +54,7 @@ def snapshot(db:Session):
       ('stock_reconciliation','Stock ledger equals balances','passed' if not mismatches else 'failed',len(mismatches)),
       ('negative_stock','No unauthorized negative stock','passed' if not negative else 'failed',len(negative)),
       ('posted_documents','Posted documents contain movements','passed' if not empty else 'failed',len(empty)),
+      ('item_classification','All active items have workspace, item type, and record class','passed' if not unclassified else 'attention',len(unclassified)),
       ('integration_failures','No failed or dead-letter integrations','passed' if failed==0 and dead==0 else 'failed',failed+dead),
       ('accounting_mapping','Accounting events are mapped','passed' if unmapped==0 else 'failed',unmapped),
       ('backup','Completed backup is within freshness limit','passed' if backup_problem==0 else 'failed',backup_problem),
@@ -62,7 +64,7 @@ def snapshot(db:Session):
     ]
     checks=[{'key':k,'label':label,'status':status,'count':count} for k,label,status,count in controls]
     failed_checks=sum(x['status']=='failed' for x in checks); attention=sum(x['status']=='attention' for x in checks)
-    return {'generated_at':now().isoformat(),'overall_status':'critical' if failed_checks else 'attention' if attention else 'healthy','summary':{'failed_checks':failed_checks,'attention_checks':attention,'stock_mismatches':len(mismatches),'negative_stock_violations':len(negative),'empty_posted_documents':len(empty),'pending_integrations':pending,'failed_integrations':failed,'dead_letter_integrations':dead,'unmapped_accounting_events':unmapped,'unresolved_operational_requests':unresolved,'open_count_sessions':open_counts,'open_production_batches':open_production},'checks':checks,'stock_mismatches':mismatches[:200],'negative_stock':negative[:200],'empty_documents':empty[:200],'latest_backup_at':backup.created_at.isoformat() if backup else None,'backup_age_hours':backup_age}
+    return {'generated_at':now().isoformat(),'overall_status':'critical' if failed_checks else 'attention' if attention else 'healthy','summary':{'failed_checks':failed_checks,'attention_checks':attention,'stock_mismatches':len(mismatches),'negative_stock_violations':len(negative),'empty_posted_documents':len(empty),'unclassified_items':len(unclassified),'pending_integrations':pending,'failed_integrations':failed,'dead_letter_integrations':dead,'unmapped_accounting_events':unmapped,'unresolved_operational_requests':unresolved,'open_count_sessions':open_counts,'open_production_batches':open_production},'checks':checks,'stock_mismatches':mismatches[:200],'negative_stock':negative[:200],'empty_documents':empty[:200],'unclassified_items':unclassified[:500],'latest_backup_at':backup.created_at.isoformat() if backup else None,'backup_age_hours':backup_age}
 
 @router.get('/reports/final-assurance')
 def report(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))): return snapshot(db)
@@ -77,4 +79,6 @@ def export(db:Session=Depends(get_db),_:User=Depends(require_permission('reports
     for check in data['checks']: writer.writerow([check['key'],check['label'],check['status'],check['count']])
     writer.writerow([]); writer.writerow(['item','location','ledger_quantity','balance_quantity','difference'])
     for row in data['stock_mismatches']: writer.writerow([row['item'],row['location'],row['ledger_quantity'],row['balance_quantity'],row['difference']])
+    writer.writerow([]); writer.writerow(['unclassified_sku','name','workspace_id','item_type_id','record_class_id'])
+    for row in data['unclassified_items']: writer.writerow([row['sku'],row['name'],row['primary_workspace_id'],row['item_type_id'],row['record_class_id']])
     return StreamingResponse(iter([out.getvalue()]),media_type='text/csv',headers={'Content-Disposition':'attachment; filename=hidden-oasis-final-assurance.csv'})

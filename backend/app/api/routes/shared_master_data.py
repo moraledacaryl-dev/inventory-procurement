@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
 from app.db.session import get_db
+from app.models.classification import OperationalDimension
 from app.models.inventory import Item, Location
 from app.models.procurement import Supplier
 from app.models.user import User
@@ -61,26 +62,59 @@ def resolve_identity_by_email(email: str, db: Session = Depends(get_db), _: User
     return identity_row(row)
 
 
+def dimension_row(row: OperationalDimension) -> dict:
+    return {
+        "canonical_id": row.id,
+        "dimension_type": row.dimension_type,
+        "code": row.code,
+        "name": row.name,
+        "behavior_key": row.behavior_key,
+        "parent_id": row.parent_id,
+        "workspace_id": row.workspace_id,
+        "sort_order": row.sort_order,
+        "settings": row.settings or {},
+        "is_active": row.is_active,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
 @router.get("/master-data/workspace")
 def master_data_workspace(db: Session = Depends(get_db), _: User = Depends(require_permission("integrations.read"))):
     users = db.scalars(select(User).order_by(User.full_name)).all()
     items = db.scalars(select(Item).order_by(Item.sku)).all()
     locations = db.scalars(select(Location).order_by(Location.code)).all()
     suppliers = db.scalars(select(Supplier).order_by(Supplier.code)).all()
+    dimensions = db.scalars(select(OperationalDimension).order_by(OperationalDimension.dimension_type, OperationalDimension.sort_order, OperationalDimension.name)).all()
     return {
         "summary": {
             "identity_count": len(users),
             "active_identity_count": sum(1 for row in users if row.is_active),
             "item_count": len(items),
             "active_item_count": sum(1 for row in items if row.is_active),
+            "unclassified_item_count": sum(1 for row in items if not row.primary_workspace_id or not row.item_type_id or not row.record_class_id),
             "location_count": len(locations),
             "active_location_count": sum(1 for row in locations if row.is_active),
             "supplier_count": len(suppliers),
             "active_supplier_count": sum(1 for row in suppliers if row.is_active),
+            "classification_count": len(dimensions),
+            "active_classification_count": sum(1 for row in dimensions if row.is_active),
         },
         "identities": [identity_row(row) for row in users],
-        "items": [{"canonical_id": row.id, "code": row.sku, "name": row.name, "is_active": row.is_active, "updated_at": row.updated_at.isoformat() if row.updated_at else None} for row in items],
-        "locations": [{"canonical_id": row.id, "code": row.code, "name": row.name, "is_active": row.is_active} for row in locations],
+        "items": [{
+            "canonical_id": row.id,
+            "code": row.sku,
+            "name": row.name,
+            "record_class_id": row.record_class_id,
+            "item_type_id": row.item_type_id,
+            "primary_workspace_id": row.primary_workspace_id,
+            "department_id": row.department_id,
+            "cost_center_id": row.cost_center_id,
+            "default_location_id": row.default_location_id,
+            "is_active": row.is_active,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        } for row in items],
+        "operating_structure": [dimension_row(row) for row in dimensions],
+        "locations": [{"canonical_id": row.id, "code": row.code, "name": row.name, "location_type": row.location_type, "is_active": row.is_active} for row in locations],
         "suppliers": [{"canonical_id": row.id, "code": row.code, "name": row.name, "is_active": row.is_active} for row in suppliers],
     }
 

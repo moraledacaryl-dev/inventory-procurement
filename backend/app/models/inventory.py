@@ -1,20 +1,27 @@
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.base import Base
+
 
 def uid(): return str(uuid.uuid4())
 def utcnow(): return datetime.now(timezone.utc)
+
 
 class Category(Base):
     __tablename__ = "categories"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("categories.id"), nullable=True, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
 
 class UnitOfMeasure(Base):
     __tablename__ = "units_of_measure"
@@ -23,6 +30,7 @@ class UnitOfMeasure(Base):
     name: Mapped[str] = mapped_column(String(80))
     precision: Mapped[int] = mapped_column(default=3)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
 
 class Location(Base):
     __tablename__ = "locations"
@@ -33,6 +41,7 @@ class Location(Base):
     parent_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("locations.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+
 class Item(Base):
     __tablename__ = "items"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -41,6 +50,12 @@ class Item(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category_id: Mapped[str] = mapped_column(String(36), ForeignKey("categories.id"))
     base_unit_id: Mapped[str] = mapped_column(String(36), ForeignKey("units_of_measure.id"))
+    record_class_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("operational_dimensions.id"), nullable=True, index=True)
+    item_type_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("operational_dimensions.id"), nullable=True, index=True)
+    primary_workspace_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("operational_dimensions.id"), nullable=True, index=True)
+    department_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("operational_dimensions.id"), nullable=True, index=True)
+    cost_center_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("operational_dimensions.id"), nullable=True, index=True)
+    default_location_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("locations.id"), nullable=True, index=True)
     track_stock: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_negative_stock: Mapped[bool] = mapped_column(Boolean, default=False)
     minimum_stock: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
@@ -48,6 +63,7 @@ class Item(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
 
 class StockDocument(Base):
     __tablename__ = "stock_documents"
@@ -63,6 +79,7 @@ class StockDocument(Base):
     reversed_document_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("stock_documents.id"), nullable=True)
     movements: Mapped[list["StockMovement"]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
+
 class StockMovement(Base):
     __tablename__ = "stock_movements"
     __table_args__ = (UniqueConstraint("document_id", "line_number", name="uq_stock_document_line"),)
@@ -77,6 +94,7 @@ class StockMovement(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     document: Mapped[StockDocument] = relationship(back_populates="movements")
 
+
 class StockBalance(Base):
     __tablename__ = "stock_balances"
     __table_args__ = (UniqueConstraint("item_id", "location_id", name="uq_stock_balance_item_location"),)
@@ -86,6 +104,7 @@ class StockBalance(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
     average_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
 
 class CountSession(Base):
     __tablename__ = "count_sessions"
@@ -102,6 +121,7 @@ class CountSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     posted_document_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("stock_documents.id"), nullable=True)
     lines: Mapped[list["CountLine"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+
 
 class CountLine(Base):
     __tablename__ = "count_lines"

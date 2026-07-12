@@ -9,10 +9,11 @@ import { HelpPanel } from "./HelpPanel";
 import { NotificationCenter } from "./NotificationCenter";
 import { SessionProvider, useSession } from "./SessionContext";
 import { SystemHealth } from "./SystemHealth";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 type NavItem = { href: string; label: string; icon: IconName; module: string };
 type NavGroup = { label: string; items: NavItem[] };
-type IconName = "home"|"box"|"map"|"layers"|"factory"|"cart"|"truck"|"clipboard"|"chart"|"plug"|"shield"|"rocket"|"users";
+type IconName = "home"|"box"|"map"|"layers"|"factory"|"cart"|"truck"|"clipboard"|"chart"|"plug"|"shield"|"rocket"|"users"|"settings";
 
 const groups: NavGroup[] = [
   { label: "Overview", items: [{ href: "/dashboard", label: "Dashboard", icon: "home", module: "dashboard" }] },
@@ -31,6 +32,7 @@ const groups: NavGroup[] = [
   { label: "Production", items: [{ href: "/production", label: "Recipes & Production", icon: "factory", module: "production" }] },
   { label: "Reports", items: [{ href: "/reports", label: "Reports", icon: "chart", module: "reports" }] },
   { label: "System", items: [
+    { href: "/settings/classification", label: "Operating Structure", icon: "settings", module: "items" },
     { href: "/integrations", label: "Integrations", icon: "plug", module: "integrations" },
     { href: "/readiness", label: "Readiness", icon: "shield", module: "readiness" },
     { href: "/rollout", label: "Rollout", icon: "rocket", module: "rollout" },
@@ -53,6 +55,7 @@ function Icon({ name }: { name: IconName }) {
     shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></>,
     rocket: <><path d="M14 4c3-3 6-2 6-2s1 3-2 6l-6 6-4-4Z"/><path d="m9 15-4 1 3-3M13 19l1-4-3 3M5 19l-1 2 2-1"/></>,
     users: <><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7"/><path d="M16 4c3 0 5 2 5 5M17 14c3 1 5 3 5 7"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3h4v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -83,7 +86,7 @@ function AppShellContent({ title, children, description }: { title: string; chil
           <button className="desktop-menu-button" type="button" onClick={() => setCollapsed(value => !value)} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} aria-pressed={collapsed}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
           <GlobalSearch />
         </div>
-        <div className="header-actions"><NotificationCenter /><HelpPanel /><AuthenticatedUserMenu /></div>
+        <div className="header-actions"><WorkspaceSwitcher /><NotificationCenter /><HelpPanel /><AuthenticatedUserMenu /></div>
       </header>
       <div className="page-heading-bar"><div className="page-heading"><div className="page-kicker">Operations workspace</div><h1>{title}</h1><p>{pageDescription}</p></div></div>
       <div className="page-content">{routeDenied ? <section className="card access-denied" role="alert"><div className="access-denied__icon" aria-hidden="true">!</div><h2>Access restricted</h2><p>Your current role does not include access to this module. Use the available navigation or contact an administrator if your duties require it.</p><Link className="primary compact" href="/dashboard">Return to dashboard</Link></section> : children}</div>

@@ -63,6 +63,11 @@ export default function Page() {
           <p>Review journal intent, delivery status, queued value, external acknowledgements, failures, and dead-letter events.</p>
           <Link className="primary compact" href="/integrations/accounting">Open accounting workspace</Link>
         </div>
+        <div className="card">
+          <h2>Staff & Command Center</h2>
+          <p>Receive employee-linked operational requests, assign accountability, and publish governed status updates.</p>
+          <Link className="primary compact" href="/integrations/operations">Open operations workspace</Link>
+        </div>
       </section>
       <section className="card section-gap">
         <div className="topline">

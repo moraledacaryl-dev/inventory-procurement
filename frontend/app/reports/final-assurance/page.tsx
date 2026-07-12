@@ -1,0 +1,32 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { AppShell } from "../../../components/AppShell";
+import { FeedbackBanner } from "../../../components/FeedbackBanner";
+import { StatusBadge } from "../../../components/StatusBadge";
+import { API, api } from "../../../lib/api";
+import { formatDateTime } from "../../../lib/formatters";
+
+type Check={key:string;label:string;status:string;count:number};
+type Mismatch={item_id:string;item:string;location_id:string;location:string;ledger_quantity:string;balance_quantity:string;difference:string};
+type Negative={item_id:string;item:string;location_id:string;location:string;quantity:string};
+type EmptyDoc={id:string;document_number:string;document_type:string};
+type Snapshot={generated_at:string;overall_status:string;latest_backup_at:string|null;summary:{failed_checks:number;attention_checks:number;stock_mismatches:number;negative_stock_violations:number;empty_posted_documents:number;pending_integrations:number;failed_integrations:number;dead_letter_integrations:number;unmapped_accounting_events:number;unresolved_operational_requests:number;open_count_sessions:number;open_production_batches:number};checks:Check[];stock_mismatches:Mismatch[];negative_stock:Negative[];empty_documents:EmptyDoc[]};
+
+export default function Page(){
+ const[data,setData]=useState<Snapshot|null>(null);const[busy,setBusy]=useState(false);const[feedback,setFeedback]=useState<{tone:"success"|"error"|"info";title:string;message?:string}|null>(null);
+ const load=useCallback(async()=>{try{setData(await api<Snapshot>("/reports/final-assurance"))}catch(error){setFeedback({tone:"error",title:"Final assurance report unavailable",message:(error as Error).message})}},[]);
+ useEffect(()=>{void load()},[load]);
+ async function record(){setBusy(true);try{setData(await api<Snapshot>("/reports/final-assurance/record",{method:"POST"}));setFeedback({tone:"success",title:"Assurance snapshot recorded",message:"The result was written to the immutable audit trail."})}catch(error){setFeedback({tone:"error",title:"Snapshot could not be recorded",message:(error as Error).message})}finally{setBusy(false)}}
+ async function download(){try{const response=await fetch(`${API}/reports/final-assurance.csv`,{credentials:"include",headers:{"X-Requested-With":"HiddenOasisInventory"}});if(!response.ok)throw new Error("Export failed");const blob=await response.blob(),url=URL.createObjectURL(blob),anchor=document.createElement("a");anchor.href=url;anchor.download="hidden-oasis-final-assurance.csv";anchor.click();URL.revokeObjectURL(url)}catch(error){setFeedback({tone:"error",title:"Export failed",message:(error as Error).message})}}
+ return <AppShell title="Final Assurance" description="Operational closeout, stock reconciliation, integration health, exception visibility, and audit-ready evidence for the complete Inventory & Procurement program.">
+  {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}
+  <div className="topline"><div><Link href="/reports">← Back to reports</Link>{data?<p className="section-copy">Generated {formatDateTime(data.generated_at)}</p>:null}</div><div className="button-row"><button className="secondary compact" onClick={download}>Export CSV</button><button className="primary compact" disabled={busy} onClick={record}>Record snapshot</button></div></div>
+  <section className="grid section-gap"><div className="card"><h2>Overall status</h2><StatusBadge status={data?.overall_status||"loading"}/></div><div className="card"><h2>Failed checks</h2><strong>{data?.summary.failed_checks??0}</strong></div><div className="card"><h2>Stock mismatches</h2><strong>{data?.summary.stock_mismatches??0}</strong></div><div className="card"><h2>Integration failures</h2><strong>{(data?.summary.failed_integrations??0)+(data?.summary.dead_letter_integrations??0)}</strong></div></section>
+  <section className="card section-gap"><h2>Control checks</h2><div className="table-wrap"><table><thead><tr><th>Control</th><th>Status</th><th>Exceptions</th></tr></thead><tbody>{(data?.checks||[]).map(check=><tr key={check.key}><td>{check.label}</td><td><StatusBadge status={check.status}/></td><td>{check.count}</td></tr>)}</tbody></table></div></section>
+  <section className="grid section-gap"><div className="card"><h2>Open operational work</h2><p>{data?.summary.unresolved_operational_requests??0} Staff/Command Center requests</p><p>{data?.summary.open_count_sessions??0} count sessions</p><p>{data?.summary.open_production_batches??0} production batches</p></div><div className="card"><h2>Integration queue</h2><p>{data?.summary.pending_integrations??0} pending</p><p>{data?.summary.failed_integrations??0} failed</p><p>{data?.summary.dead_letter_integrations??0} dead letter</p><p>{data?.summary.unmapped_accounting_events??0} unmapped accounting</p></div><div className="card"><h2>Backup evidence</h2><p>{data?.latest_backup_at?`Latest record: ${formatDateTime(data.latest_backup_at)}`:"No backup record found"}</p></div></section>
+  <section className="card section-gap"><h2>Stock reconciliation exceptions</h2><div className="table-wrap"><table><thead><tr><th>Item</th><th>Location</th><th>Ledger</th><th>Balance</th><th>Difference</th></tr></thead><tbody>{(data?.stock_mismatches||[]).length?(data?.stock_mismatches||[]).map(row=><tr key={`${row.item_id}:${row.location_id}`}><td>{row.item}</td><td>{row.location}</td><td>{row.ledger_quantity}</td><td>{row.balance_quantity}</td><td>{row.difference}</td></tr>):<tr><td colSpan={5}>No stock reconciliation exceptions.</td></tr>}</tbody></table></div></section>
+  <section className="card section-gap"><h2>Other integrity exceptions</h2><div className="table-wrap"><table><thead><tr><th>Type</th><th>Reference</th><th>Location / Detail</th></tr></thead><tbody>{(data?.negative_stock||[]).map(row=><tr key={`negative:${row.item_id}:${row.location_id}`}><td>Unauthorized negative stock</td><td>{row.item}</td><td>{row.location}: {row.quantity}</td></tr>)}{(data?.empty_documents||[]).map(row=><tr key={`empty:${row.id}`}><td>Empty posted document</td><td>{row.document_number}</td><td>{row.document_type}</td></tr>)}{!(data?.negative_stock||[]).length&&!(data?.empty_documents||[]).length?<tr><td colSpan={3}>No additional integrity exceptions.</td></tr>:null}</tbody></table></div></section>
+ </AppShell>;
+}

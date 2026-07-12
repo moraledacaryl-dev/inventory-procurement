@@ -9,7 +9,7 @@ import { HelpPanel } from "./HelpPanel";
 import { NotificationCenter } from "./NotificationCenter";
 import { SessionProvider, useSession } from "./SessionContext";
 import { SystemHealth } from "./SystemHealth";
-import { readWorkspaceBehavior, WorkspaceSwitcher } from "./WorkspaceSwitcher";
+import { cachedWorkspaceBehavior, readWorkspaceBehavior, WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 type IconName="home"|"box"|"map"|"layers"|"factory"|"cart"|"truck"|"clipboard"|"chart"|"plug"|"shield"|"rocket"|"users"|"settings"|"hotel"|"linen";
 type NavItem={href:string;label:string;icon:IconName;module:string;scopes?:string[]};
@@ -35,9 +35,9 @@ function Icon({name}:{name:IconName}){
 }
 
 function AppShellContent({title,children,description}:{title:string;children:ReactNode;description?:string}){
- const pathname=usePathname();const[open,setOpen]=useState(false);const[collapsed,setCollapsed]=useState(false);const[scope,setScope]=useState("all");const[navigating,setNavigating]=useState(false);const{loading,canAccessModule}=useSession();
+ const pathname=usePathname();const[open,setOpen]=useState(false);const[collapsed,setCollapsed]=useState(false);const[scope,setScope]=useState(cachedWorkspaceBehavior);const[navigating,setNavigating]=useState(false);const{loading,canAccessModule}=useSession();
  useEffect(()=>{setScope(readWorkspaceBehavior())},[]);
- useEffect(()=>{setScope(readWorkspaceBehavior());setNavigating(false);setOpen(false)},[pathname]);
+ useEffect(()=>{setScope(cachedWorkspaceBehavior());setNavigating(false);setOpen(false)},[pathname]);
  useEffect(()=>{const listener=(event:Event)=>{const detail=(event as CustomEvent<{behavior:string;pending?:boolean}>).detail;if(detail?.pending){setNavigating(true);return}setScope(detail?.behavior||"all");setNavigating(false)};window.addEventListener("hidden-oasis:workspace-change",listener);return()=>window.removeEventListener("hidden-oasis:workspace-change",listener)},[]);
  const visibleGroups=useMemo(()=>{const seen=new Set<string>();return groups.map(group=>({...group,items:group.items.filter(item=>{const visible=(!item.scopes||item.scopes.includes(scope))&&(loading||canAccessModule(item.module));if(!visible||seen.has(item.href))return false;seen.add(item.href);return true})})).filter(group=>group.items.length)},[scope,loading,canAccessModule]);
  const allItems=groups.flatMap(group=>group.items),matchingItems=allItems.filter(item=>pathname===item.href||pathname.startsWith(`${item.href}/`)).sort((a,b)=>b.href.length-a.href.length),currentItem=matchingItems[0],activeHref=currentItem?.href,routeDenied=!loading&&currentItem&&!canAccessModule(currentItem.module),scopeLabel=scope==="fnb"?"F&B workspace":scope==="hotel"?"Hotel workspace":scope==="assets"?"Assets & Property":"All Operations";

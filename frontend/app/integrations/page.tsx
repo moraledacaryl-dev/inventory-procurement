@@ -58,6 +58,11 @@ export default function Page() {
           <p>Publish canonical operational identities, items, locations, and suppliers to Staff, Command Center, and Accounting.</p>
           <Link className="primary compact" href="/integrations/master-data">Open master data</Link>
         </div>
+        <div className="card">
+          <h2>Accounting integration</h2>
+          <p>Review journal intent, delivery status, queued value, external acknowledgements, failures, and dead-letter events.</p>
+          <Link className="primary compact" href="/integrations/accounting">Open accounting workspace</Link>
+        </div>
       </section>
       <section className="card section-gap">
         <div className="topline">

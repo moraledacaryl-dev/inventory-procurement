@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { api } from "../../lib/api";
@@ -46,7 +47,14 @@ export default function Page() {
 
   return (
     <AppShell title="Integrations">
-      <section className="card">
+      <section className="grid">
+        <div className="card">
+          <h2>POS synchronization</h2>
+          <p>Govern product mappings, recipe readiness, sale consumption, refunds, voids, and stock-document traceability.</p>
+          <Link className="primary compact" href="/integrations/pos">Open POS workspace</Link>
+        </div>
+      </section>
+      <section className="card section-gap">
         <div className="topline">
           <div>
             <h2>Event inbox and outbox</h2>

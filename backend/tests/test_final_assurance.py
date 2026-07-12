@@ -1,4 +1,5 @@
 from app.db.session import SessionLocal
+from app.models.audit_log import AuditLog
 from app.models.inventory import StockBalance
 
 
@@ -25,7 +26,9 @@ def test_final_assurance_reconciles_stock(client):
     assert response.status_code==200
     payload=response.json()
     assert payload['summary']['stock_mismatches']==0
+    assert any(check['key']=='database' and check['status']=='passed' for check in payload['checks'])
     assert any(check['key']=='stock_reconciliation' and check['status']=='passed' for check in payload['checks'])
+    assert any(check['key']=='backup' for check in payload['checks'])
 
     with SessionLocal() as db:
         balance=db.query(StockBalance).filter_by(item_id=item['id'],location_id=location['id']).one()
@@ -47,7 +50,13 @@ def test_record_and_export_final_assurance(client):
     recorded=client.post('/api/v1/reports/final-assurance/record',headers=headers)
     assert recorded.status_code==200
     assert recorded.json()['generated_at']
+    with SessionLocal() as db:
+        audit=db.query(AuditLog).filter(AuditLog.action=='assurance.snapshot_recorded').order_by(AuditLog.created_at.desc()).first()
+        assert audit is not None
+        assert audit.details['overall_status']==recorded.json()['overall_status']
+        assert audit.details['checks']
     exported=client.get('/api/v1/reports/final-assurance.csv',headers=headers)
     assert exported.status_code==200
     assert 'text/csv' in exported.headers['content-type']
     assert 'overall_status' in exported.text
+    assert 'stock_reconciliation' in exported.text

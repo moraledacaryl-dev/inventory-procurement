@@ -22,6 +22,7 @@ import "./receiving-workspace.css";
 import "./recipe-costing.css";
 import "./operating-structure.css";
 import "./workspaces.css";
+import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
 
 export const metadata = {
   title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },
@@ -32,5 +33,5 @@ export const metadata = {
 export const viewport = { themeColor: "#14293b", colorScheme: "light" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body><SidebarScrollMemory/>{children}</body></html>;
 }

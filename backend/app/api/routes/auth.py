@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.api.deps import SESSION_COOKIE_NAME, get_current_user
 from app.core.config import settings
@@ -27,7 +27,8 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    normalized_email = payload.email.strip().lower()
+    user = db.scalar(select(User).where(func.lower(User.email) == normalized_email))
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     token = create_access_token(user.id, user.role)

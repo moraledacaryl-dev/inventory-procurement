@@ -1,6 +1,9 @@
+import hashlib
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
@@ -20,7 +23,7 @@ class PublishMasterData(BaseModel):
 def identity_row(user: User) -> dict:
     return {
         "canonical_user_id": user.id,
-        "employee_identity_key": user.email.lower().strip(),
+        "employee_identity_key": user.id,
         "email": user.email,
         "full_name": user.full_name,
         "role": user.role,
@@ -28,6 +31,11 @@ def identity_row(user: User) -> dict:
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "updated_at": user.updated_at.isoformat() if user.updated_at else None,
     }
+
+
+def snapshot_hash(payload: dict) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 @router.get("/shared-identities")
@@ -39,7 +47,7 @@ def shared_identities(db: Session = Depends(get_db), _: User = Depends(require_p
 @router.get("/shared-identities/resolve")
 def resolve_identity(email: str, db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
     normalized = email.lower().strip()
-    row = db.scalar(select(User).where(User.email == normalized))
+    row = db.scalar(select(User).where(func.lower(User.email) == normalized))
     if not row:
         raise HTTPException(404, "Shared identity not found")
     return identity_row(row)
@@ -77,6 +85,7 @@ def publish_master_data(payload: PublishMasterData, db: Session = Depends(get_db
     if invalid:
         raise HTTPException(422, f"Unsupported destination: {', '.join(sorted(invalid))}")
     workspace = master_data_workspace(db, user)
+    revision = snapshot_hash(workspace)
     published = []
     for destination in destinations:
         event = enqueue_event(
@@ -85,10 +94,10 @@ def publish_master_data(payload: PublishMasterData, db: Session = Depends(get_db
             event_type="inventory.master_data.snapshot",
             aggregate_type="master_data",
             aggregate_id="canonical",
-            idempotency_key=f"master-data:{destination}:{workspace['summary']['identity_count']}:{workspace['summary']['item_count']}:{workspace['summary']['location_count']}:{workspace['summary']['supplier_count']}",
-            payload=workspace,
+            idempotency_key=f"master-data:{destination}:{revision}",
+            payload={**workspace, "snapshot_revision": revision},
         )
-        published.append({"destination": destination, "event_id": event.id})
-    add_audit(db, actor_user_id=user.id, action="master_data.published", entity_type="master_data", entity_id="canonical", details={"destinations": destinations})
+        published.append({"destination": destination, "event_id": event.id, "snapshot_revision": revision})
+    add_audit(db, actor_user_id=user.id, action="master_data.published", entity_type="master_data", entity_id="canonical", details={"destinations": destinations, "snapshot_revision": revision})
     db.commit()
-    return {"published": published, "summary": workspace["summary"]}
+    return {"published": published, "summary": workspace["summary"], "snapshot_revision": revision}

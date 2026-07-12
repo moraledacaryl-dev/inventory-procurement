@@ -1,3 +1,7 @@
+from app.db.session import SessionLocal
+from app.models.inventory import Item
+
+
 def auth_headers(client):
     response = client.post("/api/v1/auth/login", json={"email": "owner@example.com", "password": "password123"})
     assert response.status_code == 200
@@ -38,7 +42,10 @@ def test_master_data_workspace_and_publish(client):
     assert {row["destination"] for row in first.json()["published"]} == {"staff", "command-center", "accounting"}
     first_revision = first.json()["snapshot_revision"]
 
-    client.patch(f"/api/v1/items/{item['id']}", headers=headers, json={"name": "Shared Item Updated"})
+    with SessionLocal() as db:
+        row = db.get(Item, item["id"])
+        row.name = "Shared Item Updated"
+        db.commit()
     second = client.post("/api/v1/master-data/publish", headers=headers, json={"destinations": ["staff"]})
     assert second.status_code == 200
     assert second.json()["snapshot_revision"] != first_revision

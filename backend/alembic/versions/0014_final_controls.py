@@ -1,13 +1,13 @@
 """pass 6 final controls
 
 Revision ID: 0014_final_controls
-Revises: 0013_maintenance_treatment_accounting
+Revises: 0013_maintenance
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision='0014_final_controls'
-down_revision='0013_maintenance_treatment_accounting'
+down_revision='0013_maintenance'
 branch_labels=None
 depends_on=None
 

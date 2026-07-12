@@ -53,6 +53,11 @@ export default function Page() {
           <p>Govern product mappings, recipe readiness, sale consumption, refunds, voids, and stock-document traceability.</p>
           <Link className="primary compact" href="/integrations/pos">Open POS workspace</Link>
         </div>
+        <div className="card">
+          <h2>Shared identity & master data</h2>
+          <p>Publish canonical operational identities, items, locations, and suppliers to Staff, Command Center, and Accounting.</p>
+          <Link className="primary compact" href="/integrations/master-data">Open master data</Link>
+        </div>
       </section>
       <section className="card section-gap">
         <div className="topline">

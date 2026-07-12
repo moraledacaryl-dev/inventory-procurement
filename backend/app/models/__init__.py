@@ -11,6 +11,7 @@ from app.models.classification import OperationalDimension, ItemWorkspaceAssignm
 from app.models.property import PropertyBalance, PropertyMovement, HotelParProfile, HotelParLine
 from app.models.assets import FixedAsset, DepreciationRun, DepreciationLine, AssetEvent
 from app.models.pass5 import MaintenancePlan, WorkOrder, WorkOrderPart, PurchaseLineTreatment, AccountingMapping
+from app.models.pass6 import OperationalAccessScope, SavedView
 
 __all__ = [
     'User', 'AuditLog', 'Category', 'UnitOfMeasure', 'Location', 'Item',
@@ -28,4 +29,5 @@ __all__ = [
     'HotelParProfile', 'HotelParLine', 'FixedAsset', 'DepreciationRun',
     'DepreciationLine', 'AssetEvent', 'MaintenancePlan', 'WorkOrder',
     'WorkOrderPart', 'PurchaseLineTreatment', 'AccountingMapping',
+    'OperationalAccessScope', 'SavedView',
 ]

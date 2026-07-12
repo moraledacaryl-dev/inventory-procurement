@@ -11,7 +11,6 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.inventory import Category, UnitOfMeasure, Item, Location, StockBalance, StockMovement
 from app.models.procurement import Supplier, PurchaseRequisition, PurchaseOrder, GoodsReceipt
-from app.models.production import ProductionBatch
 from app.models.operations import BackupRecord, IntegrationEvent
 from app.models.readiness import DataImportJob, AcceptanceRun
 from app.schemas.readiness import *
@@ -94,7 +93,8 @@ def apply_import(job_id:str,db:Session=Depends(get_db),user:User=Depends(require
                 item=db.scalar(select(Item).where(Item.sku==row['sku'])); location=db.scalar(select(Location).where(Location.code==row['location']))
                 if not item or not location: fail(422,f"Unknown item or location: {row['sku']} / {row['location']}")
                 if Decimal(row['quantity'])>0: entries.append({'item_id':item.id,'location_id':location.id,'quantity':Decimal(row['quantity']),'unit_cost':Decimal(row['average_cost']),'reason':'opening balance'})
-            post_document(db,kind='opening_balance',actor_id=user.id,entries=entries,reference=job.id,idempotency_key=f'opening-balance:{job.id}',commit=False,allow_empty=True); created=len(entries)
+            if not entries: fail(422,'Opening balance import contains no positive quantities')
+            post_document(db,kind='opening_balance',actor_id=user.id,entries=entries,reference=job.id,idempotency_key=f'opening-balance:{job.id}',commit=False); created=len(entries)
         job.status='applied'; job.applied_at=now(); job.summary={**job.summary,'created':created,'updated':updated}; add_audit(db,actor_user_id=user.id,action='migration.import_applied',entity_type='data_import_job',entity_id=job.id,details={'created':created,'updated':updated}); db.commit(); return ImportApplyOut(job_id=job.id,status=job.status,summary={'created':created,'updated':updated},applied_at=job.applied_at)
     except InventoryError as exc: db.rollback(); fail(409,str(exc))
     except IntegrityError as exc: db.rollback(); fail(409,f'Import could not be applied: {exc.orig}')
@@ -114,13 +114,6 @@ def cancel_po(document_id:str,db:Session=Depends(get_db),user:User=Depends(requi
     if row.status not in {'draft','approved'}: fail(409,'Purchase order cannot be cancelled')
     if db.scalar(select(func.count()).select_from(GoodsReceipt).where(GoodsReceipt.purchase_order_id==row.id))>0: fail(409,'Purchase order already has receipts')
     row.status='cancelled'; add_audit(db,actor_user_id=user.id,action='purchase_order.cancelled',entity_type='purchase_order',entity_id=row.id); db.commit(); return {'id':row.id,'status':row.status}
-
-@router.post('/production-batches/{document_id}/cancel')
-def cancel_batch(document_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
-    row=db.get(ProductionBatch,document_id)
-    if not row: fail(404,'Production batch not found')
-    if row.status!='planned': fail(409,'Only planned batches can be cancelled')
-    row.status='cancelled'; add_audit(db,actor_user_id=user.id,action='production.cancelled',entity_type='production_batch',entity_id=row.id); db.commit(); return {'id':row.id,'status':row.status}
 
 @router.get('/print/purchase-orders/{document_id}',response_model=PrintableDocumentOut)
 def print_po(document_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.read'))):

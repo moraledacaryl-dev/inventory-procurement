@@ -8,6 +8,7 @@ from app.models.production import Recipe, RecipeLine, ProductionBatch, PosProduc
 from app.models.readiness import DataImportJob, AcceptanceRun
 from app.models.stabilization import StaffFeedback, OperationalIncident
 from app.models.classification import OperationalDimension, ItemWorkspaceAssignment
+from app.models.property import PropertyBalance, PropertyMovement, HotelParProfile, HotelParLine
 
 __all__ = [
     'User', 'AuditLog', 'Category', 'UnitOfMeasure', 'Location', 'Item',
@@ -21,5 +22,6 @@ __all__ = [
     'CycleCountSchedule', 'Recipe', 'RecipeLine', 'ProductionBatch',
     'PosProductMapping', 'PosSaleEvent', 'DataImportJob', 'AcceptanceRun',
     'StaffFeedback', 'OperationalIncident', 'OperationalDimension',
-    'ItemWorkspaceAssignment',
+    'ItemWorkspaceAssignment', 'PropertyBalance', 'PropertyMovement',
+    'HotelParProfile', 'HotelParLine',
 ]

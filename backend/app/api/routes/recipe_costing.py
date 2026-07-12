@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models.inventory import Item, Location, StockBalance
-from app.models.production import Recipe, RecipeLine
+from app.models.production import PosProductMapping, ProductionBatch, Recipe, RecipeLine
 from app.models.user import User
-from app.services.controls import add_audit
+from app.services.controls import add_audit, enqueue_event
 
 router = APIRouter(tags=["recipe-costing"])
 
@@ -70,63 +70,19 @@ def costing_payload(db: Session, recipe: Recipe, location_id: str):
         if not line.optional and required > 0:
             possible.append(available / required * Decimal(recipe.yield_quantity))
         item = items.get(line.ingredient_item_id)
-        lines.append({
-            "id": line.id,
-            "ingredient_item_id": line.ingredient_item_id,
-            "sku": item.sku if item else line.ingredient_item_id,
-            "item_name": item.name if item else "Unknown item",
-            "base_quantity": str(line.quantity),
-            "waste_factor": str(line.waste_factor),
-            "effective_quantity": str(required),
-            "optional": line.optional,
-            "available_quantity": str(available),
-            "unit_cost": str(unit_cost),
-            "line_cost": str(line_cost),
-            "cost_share_percent": "0",
-        })
+        lines.append({"id": line.id, "ingredient_item_id": line.ingredient_item_id, "sku": item.sku if item else line.ingredient_item_id, "item_name": item.name if item else "Unknown item", "base_quantity": str(line.quantity), "waste_factor": str(line.waste_factor), "effective_quantity": str(required), "optional": line.optional, "available_quantity": str(available), "unit_cost": str(unit_cost), "line_cost": str(line_cost), "cost_share_percent": "0"})
     for line in lines:
         line_cost = Decimal(line["line_cost"])
         line["cost_share_percent"] = str((line_cost / total * 100).quantize(Decimal("0.01")) if total else Decimal("0"))
     output = items.get(recipe.output_item_id)
     unit_cost = total / Decimal(recipe.yield_quantity)
-    return {
-        "recipe": {
-            "id": recipe.id,
-            "code": recipe.code,
-            "name": recipe.name,
-            "output_item_id": recipe.output_item_id,
-            "output_sku": output.sku if output else recipe.output_item_id,
-            "output_name": output.name if output else "Unknown output",
-            "yield_quantity": str(recipe.yield_quantity),
-            "version": recipe.version,
-            "status": recipe.status,
-            "notes": recipe.notes,
-            "created_by_user_id": recipe.created_by_user_id,
-            "approved_by_user_id": recipe.approved_by_user_id,
-            "created_at": recipe.created_at.isoformat(),
-            "approved_at": recipe.approved_at.isoformat() if recipe.approved_at else None,
-        },
-        "location": {"id": location.id, "code": location.code, "name": location.name},
-        "summary": {
-            "ingredient_count": len(lines),
-            "total_batch_cost": str(total),
-            "cost_per_output_unit": str(unit_cost),
-            "available_output_quantity": str(min(possible) if possible else Decimal("0")),
-            "missing_cost_lines": sum(1 for line in lines if Decimal(line["unit_cost"]) == 0),
-            "constrained_lines": sum(1 for line in lines if not line["optional"] and Decimal(line["available_quantity"]) < Decimal(line["effective_quantity"])),
-        },
-        "lines": lines,
-    }
+    return {"recipe": {"id": recipe.id, "code": recipe.code, "name": recipe.name, "output_item_id": recipe.output_item_id, "output_sku": output.sku if output else recipe.output_item_id, "output_name": output.name if output else "Unknown output", "yield_quantity": str(recipe.yield_quantity), "version": recipe.version, "status": recipe.status, "notes": recipe.notes, "created_by_user_id": recipe.created_by_user_id, "approved_by_user_id": recipe.approved_by_user_id, "created_at": recipe.created_at.isoformat(), "approved_at": recipe.approved_at.isoformat() if recipe.approved_at else None}, "location": {"id": location.id, "code": location.code, "name": location.name}, "summary": {"ingredient_count": len(lines), "total_batch_cost": str(total), "cost_per_output_unit": str(unit_cost), "available_output_quantity": str(min(possible) if possible else Decimal("0")), "missing_cost_lines": sum(1 for line in lines if Decimal(line["unit_cost"]) == 0), "constrained_lines": sum(1 for line in lines if not line["optional"] and Decimal(line["available_quantity"]) < Decimal(line["effective_quantity"]))}, "lines": lines}
 
 
 @router.get("/recipes/costing/workspace")
 def recipe_costing_workspace(location_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("reports.read"))):
     recipes = db.scalars(select(Recipe).options(selectinload(Recipe.lines)).order_by(Recipe.code, Recipe.version.desc())).unique().all()
-    rows = []
-    for recipe in recipes:
-        payload = costing_payload(db, recipe, location_id)
-        rows.append({**payload["recipe"], **payload["summary"]})
-    return {"location_id": location_id, "recipes": rows}
+    return {"location_id": location_id, "recipes": [{**costing_payload(db, recipe, location_id)["recipe"], **costing_payload(db, recipe, location_id)["summary"]} for recipe in recipes]}
 
 
 @router.get("/recipes/{recipe_id}/costing-detail")
@@ -145,13 +101,7 @@ def recipe_margin(recipe_id: str, payload: MarginScenario, db: Session = Depends
     costing = costing_payload(db, recipe, payload.location_id)
     cost = Decimal(costing["summary"]["cost_per_output_unit"])
     gross_profit = payload.selling_price - cost
-    return {
-        "selling_price": str(payload.selling_price),
-        "cost_per_output_unit": str(cost),
-        "gross_profit_per_unit": str(gross_profit),
-        "food_cost_percent": str((cost / payload.selling_price * 100).quantize(Decimal("0.01"))),
-        "gross_margin_percent": str((gross_profit / payload.selling_price * 100).quantize(Decimal("0.01"))),
-    }
+    return {"selling_price": str(payload.selling_price), "cost_per_output_unit": str(cost), "gross_profit_per_unit": str(gross_profit), "food_cost_percent": str((cost / payload.selling_price * 100).quantize(Decimal("0.01"))), "gross_margin_percent": str((gross_profit / payload.selling_price * 100).quantize(Decimal("0.01")))}
 
 
 @router.post("/recipes/{recipe_id}/revise", status_code=201)
@@ -167,39 +117,13 @@ def revise_recipe(recipe_id: str, payload: RecipeRevisionCreate, db: Session = D
             fail(422, "Ingredient item not found")
     version = current.version + 1
     base_code = current.code.rsplit("-V", 1)[0] if "-V" in current.code else current.code
-    row = Recipe(
-        code=f"{base_code}-V{version}",
-        name=(payload.name or current.name).strip(),
-        output_item_id=current.output_item_id,
-        yield_quantity=payload.yield_quantity,
-        version=version,
-        status="draft",
-        notes=payload.notes,
-        created_by_user_id=user.id,
-    )
+    row = Recipe(code=f"{base_code}-V{version}", name=(payload.name or current.name).strip(), output_item_id=current.output_item_id, yield_quantity=payload.yield_quantity, version=version, status="draft", notes=payload.notes, created_by_user_id=user.id)
     row.lines = [RecipeLine(**line.model_dump()) for line in payload.lines]
     try:
-        db.add(row)
-        db.flush()
-        add_audit(db, actor_user_id=user.id, action="recipe.revised", entity_type="recipe", entity_id=row.id, details={"source_recipe_id": current.id, "source_version": current.version, "new_version": version})
-        db.commit()
-        revised = load_recipe(db, row.id)
-        return {
-            "recipe": {
-                "id": revised.id,
-                "code": revised.code,
-                "name": revised.name,
-                "output_item_id": revised.output_item_id,
-                "yield_quantity": str(revised.yield_quantity),
-                "version": revised.version,
-                "status": revised.status,
-                "notes": revised.notes,
-            },
-            "source_recipe_id": current.id,
-        }
+        db.add(row); db.flush(); add_audit(db, actor_user_id=user.id, action="recipe.revised", entity_type="recipe", entity_id=row.id, details={"source_recipe_id": current.id, "source_version": current.version, "new_version": version}); db.commit(); revised = load_recipe(db, row.id)
+        return {"recipe": {"id": revised.id, "code": revised.code, "name": revised.name, "output_item_id": revised.output_item_id, "yield_quantity": str(revised.yield_quantity), "version": revised.version, "status": revised.status, "notes": revised.notes}, "source_recipe_id": current.id}
     except IntegrityError:
-        db.rollback()
-        fail(409, "Recipe revision could not be created")
+        db.rollback(); fail(409, "Recipe revision could not be created")
 
 
 @router.post("/recipes/{recipe_id}/retire")
@@ -208,8 +132,15 @@ def retire_recipe(recipe_id: str, db: Session = Depends(get_db), user: User = De
     if not recipe:
         fail(404, "Recipe not found")
     if recipe.status == "retired":
-        return {"id": recipe.id, "status": recipe.status}
+        return {"id": recipe.id, "status": recipe.status, "deactivated_mappings": 0}
+    open_batch = db.scalar(select(ProductionBatch).where(ProductionBatch.recipe_id == recipe.id, ProductionBatch.status.in_(["planned", "in_progress"])))
+    if open_batch:
+        fail(409, "Recipe cannot be retired while an open production batch uses it")
+    mappings = db.scalars(select(PosProductMapping).where(PosProductMapping.recipe_id == recipe.id, PosProductMapping.is_active.is_(True))).all()
+    for mapping in mappings:
+        mapping.is_active = False
+        enqueue_event(db, destination_system="pos", event_type="inventory.pos_mapping.deactivated", aggregate_type="pos_product_mapping", aggregate_id=mapping.id, idempotency_key=f"pos-mapping-deactivated:{mapping.id}:recipe-retired", payload={"mapping_id": mapping.id, "recipe_id": recipe.id, "reason": "recipe_retired"})
     recipe.status = "retired"
-    add_audit(db, actor_user_id=user.id, action="recipe.retired", entity_type="recipe", entity_id=recipe.id)
+    add_audit(db, actor_user_id=user.id, action="recipe.retired", entity_type="recipe", entity_id=recipe.id, details={"deactivated_mapping_ids": [mapping.id for mapping in mappings]})
     db.commit()
-    return {"id": recipe.id, "status": recipe.status}
+    return {"id": recipe.id, "status": recipe.status, "deactivated_mappings": len(mappings)}

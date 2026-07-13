@@ -19,6 +19,7 @@
 .exception-card__category,
 .exception-card p,
 .exception-card__meta span,
+.exception-card__footer span,
 .metric-label,
 .metric-note,
 .dashboard-panel .panel-header p,
@@ -26,6 +27,7 @@
 .chart-labels,
 .dashboard-panel th,
 .dashboard-panel .empty-row td,
+.dashboard-panel td[colspan],
 .dashboard-panel .list-copy span,
 .dashboard-panel .list-value,
 .user-copy span{

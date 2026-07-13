@@ -2,9 +2,9 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_inventory.db")
 os.environ.setdefault("JWT_SECRET", "test-secret-that-is-long-enough-for-tests")
-os.environ.setdefault("STAFF_INTEGRATION_TOKEN", "test-" + "staff-token")
-os.environ.setdefault("COMMAND_CENTER_INTEGRATION_TOKEN", "test-" + "command-token")
-os.environ.setdefault("ACCOUNTING_INTEGRATION_TOKEN", "test-" + "accounting-token")
+os.environ.setdefault("STAFF_INTEGRATION_TOKEN", "test-" + "staff-integration-token")
+os.environ.setdefault("COMMAND_CENTER_INTEGRATION_TOKEN", "test-" + "command-center-integration-token")
+os.environ.setdefault("ACCOUNTING_INTEGRATION_TOKEN", "test-" + "accounting-integration-token")
 
 import pytest
 from fastapi.testclient import TestClient

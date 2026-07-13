@@ -1,7 +1,8 @@
 name: CI
 on: [push, pull_request]
+
 jobs:
-  backend:
+  backend-sqlite:
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: backend}}
     steps:
@@ -10,16 +11,16 @@ jobs:
         with: {python-version: "3.12"}
       - run: pip install -q -r requirements.txt
       - run: python -m compileall -q app tests scripts
-      - name: Run pytest
+      - name: Run SQLite pytest
         run: |
           set -o pipefail
-          pytest -x -vv 2>&1 | tee pytest.log
-      - name: Upload pytest log
+          pytest -x -vv 2>&1 | tee pytest-sqlite.log
+      - name: Upload SQLite pytest log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-pytest-log
-          path: backend/pytest.log
+          name: backend-pytest-sqlite-log
+          path: backend/pytest-sqlite.log
       - name: Production preflight
         env:
           APP_ENV: production
@@ -38,6 +39,56 @@ jobs:
           path: backend/preflight.log
       - run: alembic upgrade head --sql > /tmp/migration.sql
       - run: pip check
+
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: inventory_test
+          POSTGRES_USER: inventory
+          POSTGRES_PASSWORD: inventory_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U inventory -d inventory_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    defaults: {run: {working-directory: backend}}
+    env:
+      DATABASE_URL: postgresql+psycopg://inventory:inventory_test@localhost:5432/inventory_test
+      JWT_SECRET: test-secret-that-is-long-enough-for-postgres-ci
+      STAFF_INTEGRATION_TOKEN: test-staff-token
+      COMMAND_CENTER_INTEGRATION_TOKEN: test-command-token
+      ACCOUNTING_INTEGRATION_TOKEN: test-accounting-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -q -r requirements.txt
+      - name: Build populated historical schema
+        run: |
+          alembic upgrade 0012_fixed_assets
+          python scripts/seed_demo.py
+      - name: Upgrade populated schema and verify data
+        run: |
+          alembic upgrade head
+          python scripts/verify_demo_data.py
+          alembic current
+      - name: Run PostgreSQL pytest
+        run: |
+          set -o pipefail
+          pytest -x -vv 2>&1 | tee pytest-postgres.log
+      - name: Upload PostgreSQL pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-pytest-postgres-log
+          path: backend/pytest-postgres.log
+      - run: pip check
+
   frontend:
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: frontend}}

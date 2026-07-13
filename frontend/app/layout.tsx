@@ -22,6 +22,8 @@ import "./receiving-workspace.css";
 import "./recipe-costing.css";
 import "./operating-structure.css";
 import "./workspaces.css";
+import "./accessibility.css";
+import { ScrollableRegionA11y } from "../components/ScrollableRegionA11y";
 import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
 
 export const metadata = {
@@ -33,5 +35,5 @@ export const metadata = {
 export const viewport = { themeColor: "#14293b", colorScheme: "light" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body><SidebarScrollMemory/>{children}</body></html>;
+  return <html lang="en"><body><SidebarScrollMemory/><ScrollableRegionA11y/>{children}</body></html>;
 }

@@ -11,7 +11,7 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.db.session import SessionLocal, engine
 from app.models.inventory import Item, Location, StockBalance, StockDocument
@@ -130,6 +130,12 @@ def concurrent_worker_claims() -> dict:
     marker = uuid4().hex
     event_ids: list[str] = []
     with SessionLocal() as db:
+        now = datetime.now(timezone.utc)
+        db.execute(
+            update(IntegrationEvent)
+            .where(IntegrationEvent.direction == "outbound", IntegrationEvent.status.in_(["pending", "failed"]))
+            .values(status="completed", processed_at=now, locked_at=None, locked_by=None)
+        )
         for index in range(12):
             event = IntegrationEvent(
                 direction="outbound",

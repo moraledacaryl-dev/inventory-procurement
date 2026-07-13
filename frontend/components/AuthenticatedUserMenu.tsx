@@ -49,9 +49,9 @@ export function AuthenticatedUserMenu() {
 
   return (
     <div className="authenticated-user" ref={containerRef}>
-      <button className="user-menu user-menu-button" type="button" onClick={() => setOpen(value => !value)} aria-haspopup="menu" aria-expanded={open}>
+      <button className="user-menu user-menu-button" type="button" onClick={() => setOpen(value => !value)} aria-label={`Account menu for ${displayName}`} aria-haspopup="menu" aria-expanded={open}>
         <div className="user-avatar" aria-hidden="true">{user ? initials(user.full_name).slice(0, 2).toUpperCase() : "…"}</div>
-        <div className="user-copy"><strong>{displayName}</strong><span>{displayRole}</span></div>
+        <div className="user-copy" aria-hidden="true"><strong>{displayName}</strong><span>{displayRole}</span></div>
         <span className="user-menu-chevron" aria-hidden="true">⌄</span>
       </button>
       {open ? (

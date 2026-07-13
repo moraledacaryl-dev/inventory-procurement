@@ -74,9 +74,18 @@ jobs:
           python scripts/seed_demo.py
       - name: Upgrade populated schema and verify data
         run: |
-          alembic upgrade head
-          python scripts/verify_demo_data.py
-          alembic current
+          set -o pipefail
+          {
+            alembic upgrade head
+            python scripts/verify_demo_data.py
+            alembic current
+          } 2>&1 | tee postgres-migration.log
+      - name: Upload PostgreSQL migration log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-postgres-migration-log
+          path: backend/postgres-migration.log
       - name: Run PostgreSQL pytest
         run: |
           set -o pipefail

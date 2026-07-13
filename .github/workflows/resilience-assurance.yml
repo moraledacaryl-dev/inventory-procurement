@@ -38,6 +38,11 @@ jobs:
         run: |
           alembic upgrade head
           python scripts/seed_acceptance.py
+      - name: Run PostgreSQL concurrency and failure assurance
+        working-directory: backend
+        run: |
+          set -o pipefail
+          python scripts/run_resilience_checks.py 2>&1 | tee resilience-checks.log
       - name: Create native PostgreSQL backup
         run: |
           pg_dump \
@@ -73,12 +78,13 @@ jobs:
           DATABASE_URL: postgresql+psycopg://inventory:inventory_resilience@127.0.0.1:5432/inventory_restored
         run: |
           alembic current
-          python scripts/verify_demo_data.py || true
-      - name: Upload recovery evidence
+          python scripts/verify_demo_data.py
+      - name: Upload recovery and resilience evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: resilience-backup-restore-evidence
+          name: resilience-assurance-evidence
           path: |
             /tmp/inventory-resilience.dump
+            backend/resilience-checks.log
             backend/restore-verification.log

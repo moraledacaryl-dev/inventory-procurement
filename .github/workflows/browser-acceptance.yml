@@ -47,7 +47,7 @@ jobs:
           npm install --silent
           npm install --no-save --silent @playwright/test@1.55.0 @axe-core/playwright@4.10.2
           npm run build
-          cp -R public .next/standalone/public
+          if [ -d public ]; then cp -R public .next/standalone/public; fi
           mkdir -p .next/standalone/.next
           cp -R .next/static .next/standalone/.next/static
           npx playwright install --with-deps chromium

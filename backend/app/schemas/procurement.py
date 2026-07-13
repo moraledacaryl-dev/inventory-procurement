@@ -2,19 +2,22 @@ from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
+ZERO = Decimal("0")
+ONE = Decimal("1")
+
 class ORMModel(BaseModel): model_config = ConfigDict(from_attributes=True)
 class SupplierCreate(BaseModel):
     code:str=Field(min_length=1,max_length=40); name:str=Field(min_length=1,max_length=180); contact_name:str|None=None; email:EmailStr|None=None; phone:str|None=None; address:str|None=None; payment_terms_days:int=Field(default=0,ge=0); tax_id:str|None=None
 class SupplierOut(ORMModel):
     id:str; code:str; name:str; contact_name:str|None; email:str|None; phone:str|None; address:str|None; payment_terms_days:int; tax_id:str|None; is_active:bool
 class SupplierItemCreate(BaseModel):
-    item_id:str; supplier_sku:str|None=None; last_price:Decimal=Field(default=0,ge=0); lead_time_days:int=Field(default=0,ge=0); minimum_order_quantity:Decimal=Field(default=1,gt=0); is_preferred:bool=False
+    item_id:str; supplier_sku:str|None=None; last_price:Decimal=Field(default=ZERO,ge=0); lead_time_days:int=Field(default=0,ge=0); minimum_order_quantity:Decimal=Field(default=ONE,gt=0); is_preferred:bool=False
 class SupplierItemOut(ORMModel):
     id:str; supplier_id:str; item_id:str; supplier_sku:str|None; last_price:Decimal; lead_time_days:int; minimum_order_quantity:Decimal; is_preferred:bool
 class SupplierPerformance(BaseModel):
     supplier_id:str; supplier_code:str; supplier_name:str; purchase_orders:int; completed_orders:int; ordered_value:Decimal; received_value:Decimal; accepted_value:Decimal; rejected_value:Decimal; acceptance_rate:Decimal; on_time_rate:Decimal; average_delivery_variance_days:Decimal
 class PRLineIn(BaseModel):
-    item_id:str; quantity:Decimal=Field(gt=0); estimated_unit_cost:Decimal=Field(default=0,ge=0); notes:str|None=None
+    item_id:str; quantity:Decimal=Field(gt=0); estimated_unit_cost:Decimal=Field(default=ZERO,ge=0); notes:str|None=None
 class PRCreate(BaseModel):
     department:str=Field(min_length=1,max_length=100); needed_by:date|None=None; justification:str|None=None; lines:list[PRLineIn]=Field(min_length=1)
 class ReorderRequisitionCreate(BaseModel):
@@ -42,7 +45,7 @@ class POLineOut(ORMModel):
 class POOut(ORMModel):
     id:str; purchase_order_number:str; supplier_id:str; requisition_id:str|None; quotation_id:str|None; delivery_location_id:str; expected_delivery_date:date|None; status:str; notes:str|None; created_by_user_id:str; approved_by_user_id:str|None; approved_at:datetime|None; created_at:datetime; lines:list[POLineOut]
 class ReceiptLineIn(BaseModel):
-    purchase_order_line_id:str; received_quantity:Decimal=Field(gt=0); accepted_quantity:Decimal=Field(ge=0); rejected_quantity:Decimal=Field(default=0,ge=0)
+    purchase_order_line_id:str; received_quantity:Decimal=Field(gt=0); accepted_quantity:Decimal=Field(ge=0); rejected_quantity:Decimal=Field(default=ZERO,ge=0)
     @model_validator(mode='after')
     def total_matches(self):
         if self.accepted_quantity+self.rejected_quantity!=self.received_quantity: raise ValueError('Accepted plus rejected must equal received')

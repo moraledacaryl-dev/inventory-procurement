@@ -22,6 +22,7 @@ import "./receiving-workspace.css";
 import "./recipe-costing.css";
 import "./operating-structure.css";
 import "./workspaces.css";
+import "./accessibility.css";
 import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
 
 export const metadata = {

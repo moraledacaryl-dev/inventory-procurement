@@ -1,0 +1,79 @@
+name: Browser Acceptance
+on: [push, pull_request]
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: inventory_e2e
+          POSTGRES_USER: inventory
+          POSTGRES_PASSWORD: inventory_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U inventory -d inventory_e2e"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql+psycopg://inventory:inventory_e2e@127.0.0.1:5432/inventory_e2e
+      JWT_SECRET: browser-acceptance-secret-that-is-long-enough
+      BOOTSTRAP_OWNER_EMAIL: owner@example.com
+      BOOTSTRAP_OWNER_PASSWORD: password123
+      BOOTSTRAP_OWNER_NAME: Acceptance Owner
+      CORS_ORIGINS: '["http://127.0.0.1:3300"]'
+      TRUSTED_HOSTS: '["127.0.0.1","localhost","testserver"]'
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8300/api/v1
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3300
+      E2E_OWNER_EMAIL: owner@example.com
+      E2E_OWNER_PASSWORD: password123
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "20"}
+      - name: Prepare acceptance database
+        working-directory: backend
+        run: |
+          pip install -q -r requirements.txt
+          alembic upgrade head
+          python scripts/seed_acceptance.py
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install --silent
+          npm install --no-save --silent @playwright/test@1.55.0 @axe-core/playwright@4.10.2
+          npm run build
+          npx playwright install --with-deps chromium
+      - name: Start application
+        run: |
+          (cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8300 > /tmp/inventory-backend.log 2>&1 &)
+          (cd frontend && npm start -- --hostname 127.0.0.1 --port 3300 > /tmp/inventory-frontend.log 2>&1 &)
+          for attempt in $(seq 1 45); do
+            curl -fsS http://127.0.0.1:8300/api/v1/ready >/dev/null && curl -fsS http://127.0.0.1:3300/login >/dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/inventory-backend.log
+          cat /tmp/inventory-frontend.log
+          exit 1
+      - name: Run desktop and mobile acceptance tests
+        working-directory: frontend
+        run: npx playwright test
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+      - name: Upload application logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-acceptance-application-logs
+          path: |
+            /tmp/inventory-backend.log
+            /tmp/inventory-frontend.log

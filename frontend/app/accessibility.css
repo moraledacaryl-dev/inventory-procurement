@@ -33,6 +33,7 @@
 .data-table-sort,
 .data-table-footer,
 .data-table-pagination,
+.section-copy,
 .user-copy span{
   color:#536173;
 }
@@ -41,7 +42,8 @@
 .dashboard-panel .empty-row td,
 .data-table-sort,
 .data-table-footer,
-.data-table-pagination{
+.data-table-pagination,
+.section-copy{
   color:#536173 !important;
 }
 

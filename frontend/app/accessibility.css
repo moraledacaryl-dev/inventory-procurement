@@ -1,0 +1,42 @@
+:root{
+  --muted:#536173;
+  --subtle:#536173;
+}
+
+.app-shell{
+  --muted:#536173;
+  --subtle:#536173;
+  --text-muted:#536173;
+  --text-subtle:#536173;
+  --slate-500:#536173;
+  --slate-600:#455468;
+}
+
+.page-kicker,
+.page-heading p,
+.dashboard-welcome p,
+.dashboard-filters label > span,
+.exception-card__category,
+.exception-card p,
+.exception-card__meta span,
+.metric-label,
+.metric-note,
+.dashboard-panel .panel-header p,
+.chart-axis,
+.chart-labels,
+.dashboard-panel th,
+.dashboard-panel .empty-row td,
+.dashboard-panel .list-copy span,
+.dashboard-panel .list-value,
+.user-copy span{
+  color:#536173;
+}
+
+@media(max-width:900px){
+  .app-header,
+  .header-actions,
+  .workspace-label,
+  .user-copy span{
+    color:#455468;
+  }
+}

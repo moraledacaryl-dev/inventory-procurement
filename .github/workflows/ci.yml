@@ -60,9 +60,9 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://inventory:inventory_test@localhost:5432/inventory_test
       JWT_SECRET: test-secret-that-is-long-enough-for-postgres-ci
-      STAFF_INTEGRATION_TOKEN: test-staff-token
-      COMMAND_CENTER_INTEGRATION_TOKEN: test-command-token
-      ACCOUNTING_INTEGRATION_TOKEN: test-accounting-token
+      STAFF_INTEGRATION_TOKEN: test-staff-integration-token
+      COMMAND_CENTER_INTEGRATION_TOKEN: test-command-center-integration-token
+      ACCOUNTING_INTEGRATION_TOKEN: test-accounting-integration-token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

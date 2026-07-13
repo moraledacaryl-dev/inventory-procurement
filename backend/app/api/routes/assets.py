@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.controls import add_audit, enqueue_event
 
 router = APIRouter(tags=["assets"])
+ZERO = Decimal("0")
 
 def fail(code:int,message:str): raise HTTPException(code,message)
 def now(): return datetime.now(timezone.utc)
@@ -40,7 +41,7 @@ class AssetIn(BaseModel):
     location_id:str|None=None; department_id:str|None=None; cost_center_id:str|None=None; custodian_user_id:str|None=None
     supplier_id:str|None=None; purchase_order_id:str|None=None; goods_receipt_id:str|None=None
     serial_number:str|None=None; model_number:str|None=None; acquisition_date:date; placed_in_service_date:date|None=None
-    acquisition_cost:Decimal=Field(ge=0); capitalized_cost:Decimal=Field(default=0,ge=0); residual_value:Decimal=Field(default=0,ge=0)
+    acquisition_cost:Decimal=Field(ge=0); capitalized_cost:Decimal=Field(default=ZERO,ge=0); residual_value:Decimal=Field(default=ZERO,ge=0)
     useful_life_months:int=Field(default=60,ge=1,le=1200); warranty_expiry:date|None=None; notes:str|None=None
 
 class AssetEventIn(BaseModel):

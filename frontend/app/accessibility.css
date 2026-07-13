@@ -34,6 +34,11 @@
   color:#536173;
 }
 
+.dashboard-panel td[colspan],
+.dashboard-panel .empty-row td{
+  color:#536173 !important;
+}
+
 @media(max-width:900px){
   .app-header,
   .header-actions,

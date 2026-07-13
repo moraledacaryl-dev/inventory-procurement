@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from app.models.audit_log import AuditLog
 from app.models.operations import DocumentSequence, IntegrationEvent, Notification
@@ -8,6 +8,8 @@ def utcnow(): return datetime.now(timezone.utc)
 
 def next_document_number(db:Session,prefix:str,width:int=6)->str:
     prefix=prefix.upper().strip()
+    if db.bind is not None and db.bind.dialect.name == 'postgresql':
+        db.execute(text('select pg_advisory_xact_lock(hashtext(:prefix))'), {'prefix': prefix})
     row=db.scalar(select(DocumentSequence).where(DocumentSequence.prefix==prefix).with_for_update())
     if row is None:
         row=DocumentSequence(prefix=prefix,next_value=2); db.add(row); value=1

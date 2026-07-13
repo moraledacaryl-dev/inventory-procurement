@@ -1,0 +1,90 @@
+name: Resilience Assurance
+on: [push, pull_request]
+
+jobs:
+  backup-restore:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: inventory_resilience
+          POSTGRES_USER: inventory
+          POSTGRES_PASSWORD: inventory_resilience
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U inventory -d inventory_resilience"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql+psycopg://inventory:inventory_resilience@127.0.0.1:5432/inventory_resilience
+      RESTORED_DATABASE_URL: postgresql+psycopg://inventory:inventory_resilience@127.0.0.1:5432/inventory_restored
+      PGPASSWORD: inventory_resilience
+      JWT_SECRET: resilience-assurance-secret-that-is-long-enough
+      BOOTSTRAP_OWNER_EMAIL: owner@example.com
+      BOOTSTRAP_OWNER_PASSWORD: acceptance-owner-password
+      BOOTSTRAP_OWNER_NAME: Resilience Owner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -q -r requirements.txt
+      - name: Build representative source database
+        working-directory: backend
+        run: |
+          alembic upgrade head
+          python scripts/seed_acceptance.py
+      - name: Run PostgreSQL concurrency and failure assurance
+        working-directory: backend
+        run: |
+          set -o pipefail
+          python scripts/run_resilience_checks.py 2>&1 | tee resilience-checks.log
+      - name: Create native PostgreSQL backup
+        run: |
+          pg_dump \
+            --host=127.0.0.1 \
+            --port=5432 \
+            --username=inventory \
+            --dbname=inventory_resilience \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            --file=/tmp/inventory-resilience.dump
+          test -s /tmp/inventory-resilience.dump
+      - name: Restore into clean database
+        run: |
+          createdb --host=127.0.0.1 --port=5432 --username=inventory inventory_restored
+          pg_restore \
+            --host=127.0.0.1 \
+            --port=5432 \
+            --username=inventory \
+            --dbname=inventory_restored \
+            --no-owner \
+            --no-privileges \
+            --exit-on-error \
+            /tmp/inventory-resilience.dump
+      - name: Verify restored database equivalence
+        working-directory: backend
+        run: |
+          set -o pipefail
+          python scripts/verify_database_equivalence.py "$DATABASE_URL" "$RESTORED_DATABASE_URL" 2>&1 | tee restore-verification.log
+      - name: Run restored database readiness checks
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://inventory:inventory_resilience@127.0.0.1:5432/inventory_restored
+        run: |
+          alembic current
+          python scripts/verify_demo_data.py
+      - name: Upload recovery and resilience evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resilience-assurance-evidence
+          path: |
+            /tmp/inventory-resilience.dump
+            backend/resilience-checks.log
+            backend/restore-verification.log

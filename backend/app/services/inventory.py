@@ -1,5 +1,5 @@
 from decimal import Decimal
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.models.inventory import Item, Location, StockBalance, StockDocument, StockMovement
@@ -23,6 +23,8 @@ def _balance(db: Session, item_id: str, location_id: str) -> StockBalance:
 
 def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict], reference: str | None = None, notes: str | None = None, idempotency_key: str | None = None, commit: bool = True, allow_empty: bool = False) -> StockDocument:
     if idempotency_key:
+        if db.bind is not None and db.bind.dialect.name == 'postgresql':
+            db.execute(text('select pg_advisory_xact_lock(hashtext(:key))'), {'key': idempotency_key})
         existing = db.scalar(select(StockDocument).where(StockDocument.idempotency_key == idempotency_key))
         if existing: return existing
     if not entries and not allow_empty: raise InventoryError("At least one stock line is required")

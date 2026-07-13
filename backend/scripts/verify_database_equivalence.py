@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import psycopg
+from psycopg import sql
 
 
 def normalize_url(value: str) -> str:
@@ -48,9 +49,8 @@ def application_tables(connection: psycopg.Connection[Any]) -> list[str]:
 
 
 def table_digest(connection: psycopg.Connection[Any], table: str) -> tuple[int, str]:
-    quoted = connection.adapters.quote_identifier(table)
     with connection.cursor() as cursor:
-        cursor.execute(f"select * from {quoted}")
+        cursor.execute(sql.SQL("select * from {}").format(sql.Identifier(table)))
         columns = [column.name for column in cursor.description or []]
         rows = []
         for record in cursor.fetchall():

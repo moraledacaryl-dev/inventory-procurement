@@ -3,6 +3,9 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, ConfigDict
 
 
+ZERO = Decimal("0")
+
+
 class ORMModel(BaseModel): model_config = ConfigDict(from_attributes=True)
 
 
@@ -66,8 +69,8 @@ class ItemCreate(BaseModel):
     default_location_id: str | None = None
     track_stock: bool = True
     allow_negative_stock: bool = False
-    minimum_stock: Decimal = Field(default=0, ge=0)
-    standard_cost: Decimal = Field(default=0, ge=0)
+    minimum_stock: Decimal = Field(default=ZERO, ge=0)
+    standard_cost: Decimal = Field(default=ZERO, ge=0)
 
 
 class ItemUpdate(BaseModel):
@@ -126,7 +129,7 @@ class ItemDetail(BaseModel):
 
 
 class StockLineIn(BaseModel):
-    item_id: str; quantity: Decimal = Field(gt=0); unit_cost: Decimal = Field(default=0, ge=0); reason: str | None = None
+    item_id: str; quantity: Decimal = Field(gt=0); unit_cost: Decimal = Field(default=ZERO, ge=0); reason: str | None = None
 
 
 class ReceiptCreate(BaseModel):
@@ -141,7 +144,7 @@ class TransferCreate(BaseModel):
 
 
 class AdjustmentLineIn(BaseModel):
-    item_id: str; quantity_delta: Decimal; unit_cost: Decimal = Field(default=0, ge=0); reason: str = Field(min_length=1)
+    item_id: str; quantity_delta: Decimal; unit_cost: Decimal = Field(default=ZERO, ge=0); reason: str = Field(min_length=1)
 
 
 class AdjustmentCreate(BaseModel):
@@ -161,7 +164,7 @@ class BalanceOut(ORMModel):
 
 
 class CountCreate(BaseModel):
-    location_id: str; notes: str | None = None; blind_count: bool = True; approval_threshold: Decimal = Field(default=0, ge=0)
+    location_id: str; notes: str | None = None; blind_count: bool = True; approval_threshold: Decimal = Field(default=ZERO, ge=0)
 
 
 class CountEntry(BaseModel):

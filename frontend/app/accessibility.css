@@ -30,13 +30,24 @@
 .dashboard-panel td[colspan],
 .dashboard-panel .list-copy span,
 .dashboard-panel .list-value,
+.data-table-sort,
+.data-table-footer,
+.data-table-pagination,
 .user-copy span{
   color:#536173;
 }
 
 .dashboard-panel td[colspan],
-.dashboard-panel .empty-row td{
+.dashboard-panel .empty-row td,
+.data-table-sort,
+.data-table-footer,
+.data-table-pagination{
   color:#536173 !important;
+}
+
+.badge.warning{
+  color:#744800 !important;
+  background:#fff0c7;
 }
 
 @media(max-width:900px){

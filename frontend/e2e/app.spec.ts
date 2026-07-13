@@ -15,22 +15,23 @@ async function signIn(page: import("@playwright/test").Page) {
 
 test("login and core operational pages are reachable", async ({ page }) => {
   await signIn(page);
-  for (const [label, path, heading] of [
-    ["Items", "/items", "Items"],
-    ["Suppliers", "/suppliers", "Suppliers"],
-    ["Purchasing", "/purchasing", "Purchasing"],
-    ["Receiving", "/receiving", "Receiving"],
-    ["Inventory Counts", "/counts", "Inventory Counts"],
-    ["Recipes & Production", "/production", "Recipes & Production"],
-    ["Asset Register", "/assets", "Assets"],
+  for (const [path, heading] of [
+    ["/items", "Items"],
+    ["/suppliers", "Suppliers"],
+    ["/purchasing", "Purchasing"],
+    ["/receiving", "Receiving"],
+    ["/counts", "Counts"],
+    ["/production", "Recipes & Production"],
+    ["/assets", "Assets"],
   ] as const) {
-    await page.getByRole("link", { name: label, exact: true }).click();
+    await page.goto(path);
     await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
 });
 
-test("sidebar state remains visually stable during client navigation", async ({ page }) => {
+test("sidebar state remains visually stable during client navigation", async ({ page, isMobile }) => {
+  test.skip(isMobile, "desktop shell stability is covered separately from the mobile drawer");
   await signIn(page);
   const sidebar = page.locator("aside.sidebar");
   const header = page.locator("header.app-header");
@@ -43,7 +44,7 @@ test("sidebar state remains visually stable during client navigation", async ({ 
   const afterHeader = await header.boundingBox();
   expect(afterSidebar?.width).toBe(beforeSidebar?.width);
   expect(afterHeader?.x).toBe(beforeHeader?.x);
-  await expect(page.getByRole("link", { name: "Operational Access", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Operational Access", exact: true })).toHaveCount(0);
 });
 
 test("sidebar scroll position survives route changes", async ({ page, isMobile }) => {

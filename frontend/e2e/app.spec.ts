@@ -22,7 +22,7 @@ test("login and core operational pages are reachable", async ({ page }) => {
     ["/receiving", "Receiving"],
     ["/counts", "Counts"],
     ["/production", "Recipes & Production"],
-    ["/assets", "Assets"],
+    ["/assets", "Assets & Property"],
   ] as const) {
     await page.goto(path);
     await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));

@@ -10,6 +10,7 @@ def _expected_token(source_system: str) -> str:
         "staff": settings.staff_integration_token,
         "command-center": settings.command_center_integration_token,
         "accounting": settings.accounting_integration_token,
+        "hidden-oasis-pos": settings.pos_integration_token,
     }
     return mapping.get(source_system, "")
 

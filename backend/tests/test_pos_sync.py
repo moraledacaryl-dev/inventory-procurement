@@ -1,11 +1,20 @@
+from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.production import Recipe
+
+
+POS_TOKEN = "test-hidden-oasis-pos-token"
 
 
 def auth_headers(client):
     response = client.post("/api/v1/auth/login", json={"email": "owner@example.com", "password": "password123"})
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def pos_headers():
+    settings.pos_integration_token = POS_TOKEN
+    return {"X-Integration-Token": POS_TOKEN}
 
 
 def seed_mapping(client, headers):
@@ -52,17 +61,30 @@ def test_pos_workspace_and_mapping_lifecycle(client):
     assert blocked.status_code == 409
 
 
+def test_pos_event_requires_machine_credential(client):
+    headers = auth_headers(client)
+    seed_mapping(client, headers)
+    settings.pos_integration_token = POS_TOKEN
+    event = {"external_event_id": "evt-auth", "external_sale_id": "sale-auth", "pos_system": "hidden-oasis-pos", "event_type": "sale_completed", "lines": [{"external_product_id": "CAFE-001", "quantity": 1}]}
+
+    missing = client.post("/api/v1/integrations/pos/events", json=event)
+    assert missing.status_code == 401
+    wrong = client.post("/api/v1/integrations/pos/events", headers={"X-Integration-Token": "wrong-token"}, json=event)
+    assert wrong.status_code == 401
+
+
 def test_pos_event_idempotency_and_reversal(client):
     headers = auth_headers(client)
     _location, _ingredient, _recipe, _mapping = seed_mapping(client, headers)
+    integration_headers = pos_headers()
     event = {"external_event_id": "evt-001", "external_sale_id": "sale-001", "pos_system": "hidden-oasis-pos", "event_type": "sale_completed", "lines": [{"external_product_id": "CAFE-001", "quantity": 2}]}
-    first = client.post("/api/v1/integrations/pos/events", headers=headers, json=event)
+    first = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json=event)
     assert first.status_code == 201
-    duplicate = client.post("/api/v1/integrations/pos/events", headers=headers, json=event)
+    duplicate = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json=event)
     assert duplicate.status_code == 201
     assert duplicate.json()["id"] == first.json()["id"]
 
-    reversal = client.post("/api/v1/integrations/pos/events", headers=headers, json={**event, "external_event_id": "evt-002", "event_type": "sale_refunded"})
+    reversal = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json={**event, "external_event_id": "evt-002", "event_type": "sale_refunded"})
     assert reversal.status_code == 201
     assert reversal.json()["reversal_of_event_id"] == first.json()["id"]
 

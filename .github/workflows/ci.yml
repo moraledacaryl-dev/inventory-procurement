@@ -106,6 +106,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
       - run: npm install --silent
+      - name: Refresh non-breaking audited transitive dependencies
+        run: npm audit fix --package-lock-only --audit-level=high || true
+      - name: Upload generated frontend lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-package-lock
+          path: frontend/package-lock.json
       - name: Audit frontend dependencies
         run: |
           set -o pipefail

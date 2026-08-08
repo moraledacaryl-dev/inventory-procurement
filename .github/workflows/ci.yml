@@ -1,6 +1,9 @@
 name: CI
 on: [push, pull_request]
 
+permissions:
+  contents: write
+
 jobs:
   backend-sqlite:
     runs-on: ubuntu-latest
@@ -103,16 +106,24 @@ jobs:
     defaults: {run: {working-directory: frontend}}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || github.event.pull_request.head.ref }}
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
       - run: npm install --silent
       - name: Refresh non-breaking audited transitive dependencies
         run: npm audit fix --package-lock-only --audit-level=high || true
-      - name: Upload generated frontend lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-package-lock
-          path: frontend/package-lock.json
+      - name: Persist generated frontend lockfile
+        if: github.event_name == 'push' && !contains(github.event.head_commit.message, 'Update frontend security lockfile')
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update frontend security lockfile"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
       - name: Audit frontend dependencies
         run: |
           set -o pipefail

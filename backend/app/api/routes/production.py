@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from app.api.deps import require_permission
+from app.api.integration_auth import require_integration_actor
 from app.db.session import get_db
 from app.models.user import User
 from app.models.inventory import Item, Location, StockBalance, StockDocument, StockMovement
@@ -146,7 +147,8 @@ def create_mapping(p:PosMappingCreate,db:Session=Depends(get_db),user:User=Depen
     try: db.flush(); add_audit(db,actor_user_id=user.id,action='pos.mapping_created',entity_type='pos_product_mapping',entity_id=row.id); db.commit(); db.refresh(row); return row
     except IntegrityError: db.rollback(); fail(409,'POS product is already mapped')
 @router.post('/integrations/pos/events',response_model=PosSaleEventOut,status_code=201)
-def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depends(require_permission('integrations.*'))):
+def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depends(require_integration_actor('hidden-oasis-pos'))):
+    if p.pos_system!='hidden-oasis-pos': fail(422,'Unsupported POS system')
     existing=db.scalar(select(PosSaleEvent).where(PosSaleEvent.external_event_id==p.external_event_id))
     if existing: return existing
     original=None
@@ -171,7 +173,7 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
             doc=post_document(db,kind='pos_sale_reversal',actor_id=user.id,entries=entries,reference=p.external_sale_id,idempotency_key=f'pos:{p.external_event_id}',commit=False)
             row=PosSaleEvent(external_event_id=p.external_event_id,event_type=p.event_type,external_sale_id=p.external_sale_id,pos_system=p.pos_system,payload=p.model_dump(mode='json'),stock_document_id=doc.id,reversal_of_event_id=original.id)
             db.add(row); db.flush(); enqueue_event(db,destination_system='accounting',event_type='inventory.pos_sale_reversed',aggregate_type='pos_sale_event',aggregate_id=row.id,idempotency_key=f'accounting-pos:{p.external_event_id}',payload={'sale_id':p.external_sale_id,'event_type':p.event_type,'stock_document_id':doc.id})
-        add_audit(db,actor_user_id=user.id,action=f'pos.{p.event_type}',entity_type='pos_sale_event',entity_id=row.id,details={'external_sale_id':p.external_sale_id}); db.commit(); db.refresh(row); return row
+        add_audit(db,actor_user_id=user.id,action=f'pos.{p.event_type}',entity_type='pos_sale_event',entity_id=row.id,details={'external_sale_id':p.external_sale_id,'source_system':'hidden-oasis-pos'}); db.commit(); db.refresh(row); return row
     except (InventoryError,IntegrityError): db.rollback(); raise
 
 @router.get('/integrations/reconciliation',response_model=ReconciliationOut)

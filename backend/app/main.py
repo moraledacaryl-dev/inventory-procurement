@@ -20,6 +20,7 @@ app.add_middleware(
 SERVICE_MUTATION_PATHS = {
     f"{settings.api_v1_prefix}/integrations/accounting/receipts",
     f"{settings.api_v1_prefix}/integrations/operations/requests",
+    f"{settings.api_v1_prefix}/integrations/pos/events",
 }
 
 

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     staff_integration_token: str = ""
     command_center_integration_token: str = ""
     accounting_integration_token: str = ""
+    pos_integration_token: str = ""
     max_request_bytes: int = 10_485_760
     backup_max_age_hours: int = 48
     trusted_hosts: list[str] | str = ["localhost","127.0.0.1","testserver"]

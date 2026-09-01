@@ -8,6 +8,20 @@ from app.models.operations import IntegrationEvent
 from app.services.controls import add_audit, add_notification
 
 ACCOUNTING_ENDPOINT='/api/integration-review/service-intake'
+OPERATIONS_SOURCE_APP='inventory_procurement'
+OPERATIONS_ENDPOINT=f'/api/integrations/v2/events/{OPERATIONS_SOURCE_APP}'
+OPERATIONS_EVENT_TYPES={
+    'inventory.exception.created',
+    'stock.low.alert',
+    'stockout.alert',
+    'count.variance.pending_review',
+    'transfer.pending_review',
+    'requisition.pending_review',
+    'purchase.need.created',
+    'receiving.exception.created',
+    'expiry.alert',
+    'wastage.alert',
+}
 
 def utcnow(): return datetime.now(timezone.utc)
 def endpoint_map()->dict[str,str]:
@@ -20,6 +34,13 @@ def _money(value)->Decimal:
     except (InvalidOperation,ValueError,TypeError):return Decimal('0')
 
 def _join_url(base:str,path:str)->str:return f"{base.rstrip('/')}/{path.lstrip('/')}"
+
+def _operations_url(base:str)->str:
+    clean=base.rstrip('/')
+    if clean.endswith(OPERATIONS_ENDPOINT):return clean
+    if clean.endswith('/api'):
+        return _join_url(clean,OPERATIONS_ENDPOINT.removeprefix('/api'))
+    return _join_url(clean,OPERATIONS_ENDPOINT)
 
 def accounting_envelope(event:IntegrationEvent)->dict:
     payload=event.payload if isinstance(event.payload,dict) else {}
@@ -38,6 +59,34 @@ def accounting_envelope(event:IntegrationEvent)->dict:
         links={'sale_id':payload.get('sale_id'),'stock_document_id':payload.get('stock_document_id'),'category':'Cost of goods sold','reversal':event.event_type.endswith('reversed')}
     return {'source_app':'inventory','source_event_id':event.id,'source_entity_type':event.aggregate_type,'source_entity_id':event.aggregate_id,'source_revision':max(1,int(event.attempts or 0)+1),'financial_effect':effect,'amount':float(amount.quantize(Decimal('0.01'))),'currency':str(payload.get('currency') or 'PHP').upper(),'proposed_account_id':payload.get('accounting_account_id'),'proposed_journal':payload.get('proposed_journal'),'proposed_links':links,'payload':{'event_type':event.event_type,'aggregate_type':event.aggregate_type,'aggregate_id':event.aggregate_id,'data':payload},'idempotency_key':event.idempotency_key,'correlation_id':str(payload.get('correlation_id') or event.aggregate_id)}
 
+def operations_envelope(event:IntegrationEvent)->dict:
+    if event.event_type not in OPERATIONS_EVENT_TYPES:
+        raise ValueError(f'Operations v2 does not accept {event.event_type}')
+    payload=event.payload if isinstance(event.payload,dict) else {}
+    priority=str(payload.get('priority') or 'Normal').title()
+    if priority not in {'Low','Normal','High','Critical'}:priority='Normal'
+    title=str(payload.get('title') or payload.get('name') or event.event_type.replace('.', ' ').replace('_',' ').title())
+    summary=str(payload.get('summary') or payload.get('description') or payload.get('reason') or '')
+    occurred_at=event.created_at or utcnow()
+    subject={'type':event.aggregate_type,'id':str(event.aggregate_id)}
+    body={
+        'event_id':event.idempotency_key or event.id,
+        'event_type':event.event_type,
+        'schema_version':1,
+        'occurred_at':occurred_at.isoformat(),
+        'priority':priority,
+        'title':title,
+        'summary':summary,
+        'subject':subject,
+        'payload':payload,
+        'metadata':{'source_event_id':event.id,'source_system':event.source_system},
+    }
+    department_id=payload.get('department_id')
+    if isinstance(department_id,int):body['department_id']=department_id
+    correlation_id=payload.get('correlation_id')
+    if correlation_id:body['correlation_id']=str(correlation_id)
+    return body
+
 def claim_events(db:Session,worker_id:str,limit:int=25)->list[IntegrationEvent]:
     now=utcnow();stale=now-timedelta(minutes=10)
     stmt=(select(IntegrationEvent).where(IntegrationEvent.direction=='outbound',IntegrationEvent.available_at<=now,IntegrationEvent.status.in_(['pending','failed']),or_(IntegrationEvent.locked_at==None,IntegrationEvent.locked_at<stale),IntegrationEvent.attempts<IntegrationEvent.max_attempts).order_by(IntegrationEvent.created_at).limit(limit).with_for_update(skip_locked=True))
@@ -51,13 +100,18 @@ def process_event(db:Session,event_id:str,worker_id:str,endpoints:dict[str,str]|
     event.attempts+=1;base=endpoints.get(event.destination_system)
     try:
         if not base:raise RuntimeError(f'No endpoint configured for {event.destination_system}')
-        body={'id':event.id,'event_type':event.event_type,'aggregate_type':event.aggregate_type,'aggregate_id':event.aggregate_id,'payload':event.payload};headers={'Idempotency-Key':event.idempotency_key}
-        url=base
+        body={'id':event.id,'event_type':event.event_type,'aggregate_type':event.aggregate_type,'aggregate_id':event.aggregate_id,'payload':event.payload};headers={'Idempotency-Key':event.idempotency_key};url=base
         if event.destination_system=='accounting':
             url=_join_url(base,ACCOUNTING_ENDPOINT) if not base.rstrip('/').endswith(ACCOUNTING_ENDPOINT) else base
             body=accounting_envelope(event)
             token=os.getenv('INTEGRATION_API_KEY','').strip()
             if token:headers['X-Integration-Api-Key']=token
+        elif event.destination_system=='operations':
+            url=_operations_url(base)
+            body=operations_envelope(event)
+            token=os.getenv('OPERATIONS_INTEGRATION_KEY','').strip()
+            if not token:raise RuntimeError('OPERATIONS_INTEGRATION_KEY is not configured')
+            headers['X-Integration-Api-Key']=token
         owns_client=client is None;client=client or httpx.Client(timeout=15)
         try:
             response=client.post(url,json=body,headers=headers);response.raise_for_status()

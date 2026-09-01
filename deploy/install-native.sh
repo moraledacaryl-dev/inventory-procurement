@@ -5,6 +5,7 @@ APP_DIR=/opt/inventory-procurement-online
 BACKEND_ENV=/etc/hiddenoasis/inventory-backend.env
 FRONTEND_ENV=/etc/hiddenoasis/inventory-frontend.env
 CERT_DIR=/etc/letsencrypt/live/inventory.hiddenoasis.app
+NPM_CACHE=/var/cache/hiddenoasis/inventory-npm
 
 wait_for_url() {
   local url="$1"
@@ -31,16 +32,21 @@ wait_for_url() {
 [[ -f "$FRONTEND_ENV" ]] || { echo "Missing $FRONTEND_ENV"; exit 1; }
 [[ -f "$CERT_DIR/fullchain.pem" && -f "$CERT_DIR/privkey.pem" ]] || { echo "Missing TLS certificate for inventory.hiddenoasis.app. Run certbot before deployment."; exit 1; }
 
-install -d -o hiddenoasis -g hiddenoasis /var/backups/hiddenoasis/inventory
+install -d -o hiddenoasis -g hiddenoasis /var/backups/hiddenoasis/inventory "$NPM_CACHE"
 python3 -m venv "$APP_DIR/backend/.venv"
 "$APP_DIR/backend/.venv/bin/pip" install --upgrade pip
 "$APP_DIR/backend/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
-sudo -H -u hiddenoasis bash -lc "cd '$APP_DIR/frontend' && set -a && source '$FRONTEND_ENV' && set +a && npm install --include=dev && npm run build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -a .next/static .next/standalone/.next/static && if [ -d public ]; then rm -rf .next/standalone/public && cp -a public .next/standalone/public; fi"
+# Keep Git-owned frontend source immutable during deployment. npm ci consumes the
+# committed lockfile without rewriting it, while generated artifacts and cache
+# live in explicitly writable locations owned by the runtime/build account.
+rm -rf "$APP_DIR/frontend/node_modules" "$APP_DIR/frontend/.next"
+install -d -o hiddenoasis -g hiddenoasis "$APP_DIR/frontend/node_modules" "$APP_DIR/frontend/.next"
+sudo -u hiddenoasis env HOME=/tmp NPM_CONFIG_CACHE="$NPM_CACHE" bash -c "cd '$APP_DIR/frontend' && set -a && source '$FRONTEND_ENV' && set +a && npm ci --include=dev && npm run build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -a .next/static .next/standalone/.next/static && if [ -d public ]; then rm -rf .next/standalone/public && cp -a public .next/standalone/public; fi"
 
 # Apply schema changes before account bootstrap. When OWNER_EMAIL and OWNER_PASSWORD
 # are present in the protected backend environment file, create or reset the owner.
-sudo -H -u hiddenoasis bash -lc "cd '$APP_DIR/backend' && set -a && source '$BACKEND_ENV' && set +a && .venv/bin/alembic upgrade head && if [[ -n \"\${OWNER_EMAIL:-}\" && -n \"\${OWNER_PASSWORD:-}\" ]]; then .venv/bin/python scripts/ensure_owner.py --non-interactive; else echo 'OWNER_EMAIL/OWNER_PASSWORD not set; owner bootstrap skipped.'; fi"
+sudo -u hiddenoasis env HOME=/tmp bash -c "cd '$APP_DIR/backend' && set -a && source '$BACKEND_ENV' && set +a && .venv/bin/alembic upgrade head && if [[ -n \"\${OWNER_EMAIL:-}\" && -n \"\${OWNER_PASSWORD:-}\" ]]; then .venv/bin/python scripts/ensure_owner.py --non-interactive; else echo 'OWNER_EMAIL/OWNER_PASSWORD not set; owner bootstrap skipped.'; fi"
 
 install -m 0644 "$APP_DIR/deploy/systemd/hiddenoasis-inventory-backend.service" /etc/systemd/system/
 install -m 0644 "$APP_DIR/deploy/systemd/hiddenoasis-inventory-frontend.service" /etc/systemd/system/

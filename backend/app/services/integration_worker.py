@@ -9,6 +9,7 @@ from app.models.operations import IntegrationEvent
 from app.services.controls import add_audit, add_notification, enqueue_event
 
 ACCOUNTING_ENDPOINT='/api/integration-review/service-intake'
+ACCOUNTING_DELIVERED_STATUSES={'ready_for_review','accepted','rejected'}
 OPERATIONS_SOURCE_APP='inventory_procurement'
 OPERATIONS_ENDPOINT=f'/api/integrations/v2/events/{OPERATIONS_SOURCE_APP}'
 OPERATIONS_EVENT_TYPES={
@@ -34,6 +35,20 @@ def _operations_url(base:str)->str:
     if clean.endswith(OPERATIONS_ENDPOINT):return clean
     if clean.endswith('/api'):return _join_url(clean,OPERATIONS_ENDPOINT.removeprefix('/api'))
     return _join_url(clean,OPERATIONS_ENDPOINT)
+
+def _validate_accounting_response(response:httpx.Response)->dict:
+    try:payload=response.json()
+    except (ValueError,TypeError) as exc:raise RuntimeError('Accounting intake returned invalid JSON') from exc
+    if not isinstance(payload,dict):raise RuntimeError('Accounting intake returned an invalid response envelope')
+    status=str(payload.get('status') or '').strip().lower()
+    if status=='validation_failed':
+        validation=payload.get('validation') if isinstance(payload.get('validation'),dict) else {}
+        errors=validation.get('errors') if isinstance(validation.get('errors'),list) else []
+        detail='; '.join(str(error) for error in errors if error) or 'Accounting rejected the integration payload'
+        raise RuntimeError(f'Accounting intake validation_failed: {detail}')
+    if status not in ACCOUNTING_DELIVERED_STATUSES:
+        raise RuntimeError(f'Accounting intake returned unexpected status: {status or "missing"}')
+    return payload
 
 def accounting_envelope(event:IntegrationEvent)->dict:
     payload=event.payload if isinstance(event.payload,dict) else {}
@@ -100,7 +115,9 @@ def process_event(db:Session,event_id:str,worker_id:str,endpoints:dict[str,str]|
             if not token:raise RuntimeError('OPERATIONS_INTEGRATION_KEY is not configured')
             headers['X-Integration-Api-Key']=token
         owns_client=client is None;client=client or httpx.Client(timeout=15)
-        try:response=client.post(url,json=body,headers=headers);response.raise_for_status()
+        try:
+            response=client.post(url,json=body,headers=headers);response.raise_for_status()
+            if event.destination_system=='accounting':_validate_accounting_response(response)
         finally:
             if owns_client:client.close()
         event.status='completed';event.processed_at=utcnow();event.last_error=None;event.locked_at=None;event.locked_by=None;add_audit(db,actor_user_id=None,action='integration.delivered',entity_type='integration_event',entity_id=event.id,details={'destination':event.destination_system,'attempts':event.attempts})

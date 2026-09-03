@@ -145,6 +145,8 @@ def test_controlled_return_is_limited_to_accepted_quantity(client):
         json={"reason": "attempt rejected return", "lines": [{"purchase_order_line_id": line_id, "quantity": 2}]},
     )
     assert too_much.status_code == 409
+    workspace = client.get("/api/v1/receiving/workspace", headers=headers).json()
+    assert Decimal(workspace["purchase_orders"][0]["lines"][0]["returnable_quantity"]) == Decimal("1")
     valid = client.post(
         f"/api/v1/receiving/purchase-orders/{po['id']}/returns",
         headers=headers,

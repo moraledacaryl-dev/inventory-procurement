@@ -201,7 +201,7 @@ def receiving_workspace(db: Session = Depends(get_db), _: User = Depends(require
                     "received_quantity": str(line.received_quantity),
                     "returned_quantity": str(line.returned_quantity),
                     "outstanding_quantity": str(max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity))),
-                    "returnable_quantity": str(max(Decimal("0"), Decimal(line.received_quantity) - Decimal(line.returned_quantity))),
+                    "returnable_quantity": str(max(Decimal("0"), accepted_received_quantity(db, line.id) - Decimal(line.returned_quantity))),
                     "unit_price": str(line.unit_price),
                 }
                 for line in po.lines

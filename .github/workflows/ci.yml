@@ -105,7 +105,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
-      - run: npm install --silent
+      - run: npm ci --include=dev --silent
       - name: Audit frontend dependencies
         run: |
           set -o pipefail

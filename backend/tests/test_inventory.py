@@ -8,7 +8,8 @@ def test_inventory_flow(client):
     r=client.post('/api/v1/stock/receipts',headers=h,json={'location_id':a['id'],'idempotency_key':'receipt-1','lines':[{'item_id':item['id'],'quantity':'10','unit_cost':'40'}]}); assert r.status_code==201
     same=client.post('/api/v1/stock/receipts',headers=h,json={'location_id':a['id'],'idempotency_key':'receipt-1','lines':[{'item_id':item['id'],'quantity':'10','unit_cost':'40'}]}); assert same.json()['id']==r.json()['id']
     t=client.post('/api/v1/stock/transfers',headers=h,json={'source_location_id':a['id'],'destination_location_id':b['id'],'lines':[{'item_id':item['id'],'quantity':'3'}]}); assert t.status_code==201 and len(t.json()['movements'])==2
-    i=client.post('/api/v1/stock/issues',headers=h,json={'location_id':b['id'],'lines':[{'item_id':item['id'],'quantity':'1'}]}); assert i.status_code==201
+    i=client.post('/api/v1/stock/issues',headers=h,json={'location_id':b['id'],'lines':[{'item_id':item['id'],'quantity':'1','unit_cost':'999'}]}); assert i.status_code==201
+    assert i.json()['movements'][0]['unit_cost']=='40.0000'
     balances=client.get('/api/v1/stock/balances',headers=h).json(); values={x['location_id']:x['quantity'] for x in balances}; costs={x['location_id']:x['average_cost'] for x in balances}
     assert values[a['id']]=='7.0000' and values[b['id']]=='2.0000'
     assert costs[b['id']]=='40.0000'

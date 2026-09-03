@@ -1,0 +1,65 @@
+name: Pass19 Patch
+on:
+  push:
+    paths:
+      - '.github/workflows/pass19-patch.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/pass-19-procurement-lifecycle
+      - name: Apply procurement lifecycle fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p=Path('backend/app/api/routes/procurement.py')
+          s=p.read_text()
+          old="""def unique_items(lines):\n    ids=[x.item_id for x in lines]\n    if len(ids)!=len(set(ids)): fail(422,'Duplicate item lines are not allowed')\n"""
+          new=old+"""def accepted_received_quantity(db:Session,purchase_order_line_id:str)->Decimal:\n    values=db.scalars(select(GoodsReceiptLine.accepted_quantity).where(GoodsReceiptLine.purchase_order_line_id==purchase_order_line_id)).all()\n    return sum((Decimal(value) for value in values),Decimal('0'))\ndef ensure_new_delivery_reference(db:Session,po_id:str,delivery_reference:str|None):\n    if not delivery_reference: return\n    existing=db.scalar(select(GoodsReceipt.id).where(GoodsReceipt.purchase_order_id==po_id,GoodsReceipt.delivery_reference==delivery_reference))\n    if existing: fail(409,'Delivery reference already received for this purchase order')\n"""
+          assert old in s
+          s=s.replace(old,new,1)
+          old="""    if po.status not in {'approved','partially_received'}: fail(409,'Purchase order is not receivable')\n    ids=[x.purchase_order_line_id for x in p.lines]\n"""
+          new="""    if po.status not in {'approved','partially_received'}: fail(409,'Purchase order is not receivable')\n    ensure_new_delivery_reference(db,po.id,p.delivery_reference)\n    ids=[x.purchase_order_line_id for x in p.lines]\n"""
+          assert old in s
+          s=s.replace(old,new,1)
+          old="""        returnable=Decimal(line.received_quantity)-Decimal(line.returned_quantity)\n        if x.quantity>returnable: fail(409,'Return quantity exceeds received quantity')\n"""
+          new="""        returnable=accepted_received_quantity(db,line.id)-Decimal(line.returned_quantity)\n        if x.quantity>returnable: fail(409,'Return quantity exceeds accepted received quantity')\n"""
+          assert old in s
+          s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('backend/app/api/routes/receiving_workspace.py')
+          s=p.read_text()
+          anchor="""def load_po(db: Session, po_id: str, lock: bool = False):\n    stmt = select(PurchaseOrder).where(PurchaseOrder.id == po_id).options(selectinload(PurchaseOrder.lines))\n    if lock:\n        stmt = stmt.with_for_update()\n    return db.scalar(stmt)\n"""
+          addition=anchor+"""\n\ndef accepted_received_quantity(db: Session, purchase_order_line_id: str) -> Decimal:\n    values = db.scalars(select(GoodsReceiptLine.accepted_quantity).where(GoodsReceiptLine.purchase_order_line_id == purchase_order_line_id)).all()\n    return sum((Decimal(value) for value in values), Decimal(\"0\"))\n\n\ndef ensure_new_delivery_reference(db: Session, po_id: str, delivery_reference: str):\n    existing = db.scalar(select(GoodsReceipt.id).where(GoodsReceipt.purchase_order_id == po_id, GoodsReceipt.delivery_reference == delivery_reference))\n    if existing:\n        fail(409, \"Delivery reference already received for this purchase order\")\n"""
+          assert anchor in s
+          s=s.replace(anchor,addition,1)
+          old="""    if po.status not in {\"approved\", \"partially_received\"}:\n        fail(409, \"Purchase order is not receivable\")\n    po_lines = {line.id: line for line in po.lines}\n"""
+          new="""    if po.status not in {\"approved\", \"partially_received\"}:\n        fail(409, \"Purchase order is not receivable\")\n    ensure_new_delivery_reference(db, po.id, payload.delivery_reference)\n    po_lines = {line.id: line for line in po.lines}\n"""
+          assert old in s
+          s=s.replace(old,new,1)
+          old="""        returnable = Decimal(line.received_quantity) - Decimal(line.returned_quantity)\n        if returned.quantity > returnable:\n            fail(409, \"Return quantity exceeds received quantity\")\n"""
+          new="""        returnable = accepted_received_quantity(db, line.id) - Decimal(line.returned_quantity)\n        if returned.quantity > returnable:\n            fail(409, \"Return quantity exceeds accepted received quantity\")\n"""
+          assert old in s
+          s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('backend/tests/test_procurement.py')
+          s=p.read_text()
+          s += """\n\ndef test_delivery_reference_cannot_be_replayed_with_new_idempotency_key(client):\n    h=auth(client); item,loc,supplier=masters(client,h); po,_,_=approved_po(client,h,item,loc,supplier,quantity='5'); line=po['lines'][0]\n    first=client.post(f\"/api/v1/purchase-orders/{po['id']}/receipts\",headers=h,json={'delivery_reference':'DR-DUP','idempotency_key':'dup-a','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'2','accepted_quantity':'2','rejected_quantity':'0'}]})\n    assert first.status_code==201\n    duplicate=client.post(f\"/api/v1/purchase-orders/{po['id']}/receipts\",headers=h,json={'delivery_reference':'DR-DUP','idempotency_key':'dup-b','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'2','accepted_quantity':'2','rejected_quantity':'0'}]})\n    assert duplicate.status_code==409\n    after=client.get('/api/v1/purchase-orders',headers=h).json()[0]\n    assert after['lines'][0]['received_quantity']=='2.0000'\n\ndef test_purchase_return_is_limited_to_accepted_quantity(client):\n    h=auth(client); item,loc,supplier=masters(client,h); po,_,_=approved_po(client,h,item,loc,supplier,quantity='5'); line=po['lines'][0]\n    receipt=client.post(f\"/api/v1/purchase-orders/{po['id']}/receipts\",headers=h,json={'delivery_reference':'DR-MIXED','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'3','accepted_quantity':'1','rejected_quantity':'2'}]})\n    assert receipt.status_code==201\n    too_much=client.post(f\"/api/v1/purchase-orders/{po['id']}/returns\",headers=h,json={'reason':'Return rejected delivery','lines':[{'purchase_order_line_id':line['id'],'quantity':'2'}]})\n    assert too_much.status_code==409\n    valid=client.post(f\"/api/v1/purchase-orders/{po['id']}/returns\",headers=h,json={'reason':'Return accepted unit','lines':[{'purchase_order_line_id':line['id'],'quantity':'1'}]})\n    assert valid.status_code==201\n"""
+          p.write_text(s)
+          PY
+      - name: Compile
+        run: python -m compileall -q backend/app backend/tests
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/app/api/routes/procurement.py backend/app/api/routes/receiving_workspace.py backend/tests/test_procurement.py
+          git commit -m 'Harden procurement receipt and return lifecycle'
+          git push origin HEAD:audit/pass-19-procurement-lifecycle

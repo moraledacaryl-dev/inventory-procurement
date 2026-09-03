@@ -42,11 +42,13 @@ def test_browser_session_cookie_and_logout(client):
 def test_role_permission_matrix():
     assert has_permission("owner", "procurement.approve")
     assert has_permission("inventory_manager", "items.read")
+    assert has_permission("inventory_manager", "counts.approve")
     assert has_permission("procurement_officer", "procurement.approve")
     assert has_permission("receiver", "receiving.create")
     assert has_permission("receiver", "procurement.read")
     assert not has_permission("receiver", "procurement.approve")
     assert has_permission("counter", "counts.submit")
+    assert not has_permission("counter", "counts.approve")
     assert not has_permission("counter", "suppliers.read")
     assert has_permission("viewer", "reports.read")
     assert not has_permission("viewer", "items.create")

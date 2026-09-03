@@ -44,6 +44,12 @@ def test_reservation_transfer_acknowledgement_and_availability(client):
     client.post(f"/api/v1/reservations/{reservation['id']}/release",headers=h)
     transfer=client.post('/api/v1/transfer-orders',headers=h,json={'source_location_id':main['id'],'destination_location_id':kitchen['id'],'lines':[{'item_id':item['id'],'quantity':'8'}]}).json(); assert transfer['status']=='draft'
     dispatched=client.post(f"/api/v1/transfer-orders/{transfer['id']}/dispatch",headers=h).json(); assert dispatched['status']=='dispatched'
+    in_transit=client.get(f"/api/v1/availability?item_id={item['id']}&location_id={main['id']}",headers=h).json()[0]
+    assert Decimal(in_transit['physical_quantity'])==Decimal('10')
+    assert Decimal(in_transit['reserved_quantity'])==Decimal('8')
+    assert Decimal(in_transit['available_quantity'])==Decimal('2')
+    blocked_by_dispatch=client.post('/api/v1/reservations',headers=h,json={'item_id':item['id'],'location_id':main['id'],'quantity':'3','reference_type':'event','reference_id':'EVT-2'})
+    assert blocked_by_dispatch.status_code==409
     received=client.post(f"/api/v1/transfer-orders/{transfer['id']}/receive",headers=h).json(); assert received['status']=='received' and received['stock_document_id']
     balances=client.get('/api/v1/stock/balances',headers=h).json(); values={x['location_id']:Decimal(x['quantity']) for x in balances}; assert values[main['id']]==Decimal('2') and values[kitchen['id']]==Decimal('8')
 

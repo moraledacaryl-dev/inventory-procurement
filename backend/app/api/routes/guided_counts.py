@@ -66,6 +66,7 @@ def serialize_session(db: Session, session: CountSession) -> dict:
     variance_lines = 0
     absolute_variance = Decimal("0")
     value_variance = Decimal("0")
+    hide_blind_values = session.blind_count and session.status in {"open", "pending_approval"}
     lines = []
     for line in sorted(session.lines, key=lambda row: items.get(row.item_id).sku if items.get(row.item_id) else row.item_id):
         item = items.get(line.item_id)
@@ -85,12 +86,12 @@ def serialize_session(db: Session, session: CountSession) -> dict:
             "item_id": line.item_id,
             "sku": item.sku if item else line.item_id,
             "item_name": item.name if item else "Unknown item",
-            "system_quantity": None if session.blind_count and session.status == "open" else str(snapshot),
-            "snapshot_quantity": str(snapshot),
-            "live_quantity": str(live),
+            "system_quantity": None if hide_blind_values else str(snapshot),
+            "snapshot_quantity": None if hide_blind_values else str(snapshot),
+            "live_quantity": None if hide_blind_values else str(live),
             "counted_quantity": str(counted_quantity) if counted_quantity is not None else None,
-            "variance_quantity": str(variance) if variance is not None else None,
-            "live_drift_quantity": str(drift),
+            "variance_quantity": None if hide_blind_values else (str(variance) if variance is not None else None),
+            "live_drift_quantity": None if hide_blind_values else str(drift),
             "note": line.note,
         })
     return {
@@ -113,10 +114,10 @@ def serialize_session(db: Session, session: CountSession) -> dict:
             "counted_lines": counted,
             "remaining_lines": len(lines) - counted,
             "completion_percent": round((counted / len(lines) * 100), 1) if lines else 100,
-            "variance_lines": variance_lines,
-            "absolute_variance": str(absolute_variance),
-            "estimated_value_variance": str(value_variance),
-            "live_drift_lines": sum(1 for row in lines if Decimal(row["live_drift_quantity"]) != 0),
+            "variance_lines": None if hide_blind_values else variance_lines,
+            "absolute_variance": None if hide_blind_values else str(absolute_variance),
+            "estimated_value_variance": None if hide_blind_values else str(value_variance),
+            "live_drift_lines": None if hide_blind_values else sum(1 for row in lines if Decimal(row["live_drift_quantity"]) != 0),
         },
         "lines": lines,
     }
@@ -200,7 +201,7 @@ def submit_count(count_id: str, db: Session = Depends(get_db), user: User = Depe
 
 
 @router.post("/{count_id}/recount")
-def request_recount(count_id: str, payload: RecountRequest, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.submit"))):
+def request_recount(count_id: str, payload: RecountRequest, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.approve"))):
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")
@@ -243,7 +244,7 @@ def approve_guided_count(count_id: str, db: Session = Depends(get_db), user: Use
 
 
 @router.post("/{count_id}/cancel-guided")
-def cancel_guided_count(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.submit"))):
+def cancel_guided_count(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.approve"))):
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")

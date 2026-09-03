@@ -150,3 +150,26 @@ def test_transfer_variance_requires_reason(client):
         json={"lines": [{"item_id": item["id"], "received_quantity": 1}]},
     )
     assert response.status_code == 422
+
+def test_transfer_availability_locks_balance_before_reservations(monkeypatch):
+    from types import SimpleNamespace
+    from app.api.routes import controlled_inventory
+
+    calls = []
+
+    def fake_balance_row(db, item_id, location_id, lock=False):
+        calls.append(("balance", lock))
+        return SimpleNamespace(quantity="10")
+
+    def fake_reserved_quantity(db, item_id, location_id):
+        calls.append(("reserved", None))
+        return controlled_inventory.Decimal("3")
+
+    monkeypatch.setattr(controlled_inventory, "balance_row", fake_balance_row)
+    monkeypatch.setattr(controlled_inventory, "reserved_quantity", fake_reserved_quantity)
+
+    available = controlled_inventory.locked_available_quantity(object(), "item-1", "source-1")
+
+    assert available == controlled_inventory.Decimal("7")
+    assert calls == [("balance", True), ("reserved", None)]
+

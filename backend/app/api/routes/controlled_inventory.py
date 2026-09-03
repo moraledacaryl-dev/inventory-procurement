@@ -131,6 +131,14 @@ def physical_quantity(db: Session, item_id: str, location_id: str) -> Decimal:
     return Decimal(row.quantity) if row else Decimal("0")
 
 
+def locked_available_quantity(db: Session, item_id: str, location_id: str) -> Decimal:
+    # Reservation creation locks this same balance row before checking availability.
+    # Lock it here first so dispatch and reservation decisions serialize.
+    row = balance_row(db, item_id, location_id, lock=True)
+    physical = Decimal(row.quantity) if row else Decimal("0")
+    return physical - reserved_quantity(db, item_id, location_id)
+
+
 def reserved_quantity(db: Session, item_id: str, location_id: str) -> Decimal:
     current = now()
     rows = db.scalars(
@@ -492,8 +500,10 @@ def dispatch_transfer_controlled(
 
     transit = transit_location(db)
     entries = []
-    for line in row.lines:
-        available = physical_quantity(db, line.item_id, row.source_location_id) - reserved_quantity(db, line.item_id, row.source_location_id)
+    # Acquire source balance locks in deterministic item order to serialize against
+    # reservations and avoid deadlocks between concurrent multi-line dispatches.
+    for line in sorted(row.lines, key=lambda transfer_line: transfer_line.item_id):
+        available = locked_available_quantity(db, line.item_id, row.source_location_id)
         if Decimal(line.quantity) > available:
             item = db.get(Item, line.item_id)
             fail(409, f"Insufficient available stock for {item.sku if item else line.item_id}")

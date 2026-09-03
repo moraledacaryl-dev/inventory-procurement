@@ -48,10 +48,12 @@ def test_purchase_order_is_reference_only_commitment():
         )
     )
     assert result["financial_effect"] == "reference_only"
+    assert result["proposed_links"]["target_type"] == "purchase_order"
+    assert result["proposed_links"]["target_id"] == "po-42"
     assert result["proposed_links"]["commitment_total"] == "2500"
 
 
-def test_production_and_pos_consumption_are_linked_without_duplicate_cash():
+def test_production_and_pos_consumption_are_valid_reference_links():
     production = accounting_envelope(
         event("inventory.production.completed", {"batch_id": "batch-1", "total_cost": "900"})
     )
@@ -59,10 +61,23 @@ def test_production_and_pos_consumption_are_linked_without_duplicate_cash():
         event("inventory.pos_sale_consumed", {"sale_id": "sale-1", "stock_document_id": "doc-1"})
     )
     assert production["financial_effect"] == "reference_only"
+    assert production["proposed_links"]["target_type"] == "production_batch"
+    assert production["proposed_links"]["target_id"] == "batch-1"
     assert consumption["financial_effect"] == "reference_only"
+    assert consumption["proposed_links"]["target_type"] == "pos_sale"
+    assert consumption["proposed_links"]["target_id"] == "sale-1"
     assert consumption["proposed_links"]["category"] == "Cost of goods sold"
+
+
+def test_generic_reference_event_has_accounting_target_link():
+    result = accounting_envelope(event("inventory.stock_document.posted", {"document_id": "doc-9"}))
+    assert result["financial_effect"] == "reference_only"
+    assert result["proposed_links"]["target_type"] == "test_record"
+    assert result["proposed_links"]["target_id"] == "record-42"
 
 
 def test_idempotency_key_is_preserved():
     result = accounting_envelope(event("procurement.purchase_return.posted", {"purchase_return_id": "ret-1"}))
     assert result["idempotency_key"] == "inventory:procurement.purchase_return.posted:42"
+    assert result["proposed_links"]["target_type"] == "purchase_return"
+    assert result["proposed_links"]["target_id"] == "ret-1"

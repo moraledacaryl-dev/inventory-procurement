@@ -1,0 +1,41 @@
+name: Pass19 Workspace Projection
+on:
+  push:
+    paths:
+      - '.github/workflows/pass19-workspace-projection.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/pass-19-procurement-lifecycle
+      - name: Align returnable workspace projection
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('backend/app/api/routes/receiving_workspace.py')
+          s=p.read_text()
+          old='"returnable_quantity": str(max(Decimal("0"), Decimal(line.received_quantity) - Decimal(line.returned_quantity))),'
+          new='"returnable_quantity": str(max(Decimal("0"), accepted_received_quantity(db, line.id) - Decimal(line.returned_quantity))),'
+          assert old in s
+          p.write_text(s.replace(old,new,1))
+
+          p=Path('backend/tests/test_receiving_workspace.py')
+          s=p.read_text()
+          needle='    assert too_much.status_code == 409\n    valid = client.post('
+          replacement='    assert too_much.status_code == 409\n    workspace = client.get("/api/v1/receiving/workspace", headers=headers).json()\n    assert Decimal(workspace["purchase_orders"][0]["lines"][0]["returnable_quantity"]) == Decimal("1")\n    valid = client.post('
+          assert needle in s
+          p.write_text(s.replace(needle,replacement,1))
+          PY
+      - name: Compile
+        run: python -m compileall -q backend/app backend/tests
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/app/api/routes/receiving_workspace.py backend/tests/test_receiving_workspace.py
+          git commit -m 'Align receiving returnable projection with accepted stock'
+          git push origin HEAD:audit/pass-19-procurement-lifecycle

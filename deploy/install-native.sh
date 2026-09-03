@@ -37,12 +37,14 @@ python3 -m venv "$APP_DIR/backend/.venv"
 "$APP_DIR/backend/.venv/bin/pip" install --upgrade pip
 "$APP_DIR/backend/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
-# Keep Git-owned frontend source immutable during deployment. npm ci consumes the
-# committed lockfile without rewriting it, while generated artifacts and cache
-# live in explicitly writable locations owned by the runtime/build account.
+# Keep Git-owned frontend source unchanged after deployment. Next.js updates
+# next-env.d.ts during builds, so temporarily make that generated declaration
+# writable by the build account and restore its committed contents afterwards.
 rm -rf "$APP_DIR/frontend/node_modules" "$APP_DIR/frontend/.next"
 install -d -o hiddenoasis -g hiddenoasis "$APP_DIR/frontend/node_modules" "$APP_DIR/frontend/.next"
+chown hiddenoasis:hiddenoasis "$APP_DIR/frontend/next-env.d.ts"
 sudo -u hiddenoasis env HOME=/tmp NPM_CONFIG_CACHE="$NPM_CACHE" bash -c "cd '$APP_DIR/frontend' && set -a && source '$FRONTEND_ENV' && set +a && npm ci --include=dev && npm run build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -a .next/static .next/standalone/.next/static && if [ -d public ]; then rm -rf .next/standalone/public && cp -a public .next/standalone/public; fi"
+git -C "$APP_DIR" restore -- frontend/next-env.d.ts
 
 # Apply schema changes before account bootstrap. When OWNER_EMAIL and OWNER_PASSWORD
 # are present in the protected backend environment file, create or reset the owner.

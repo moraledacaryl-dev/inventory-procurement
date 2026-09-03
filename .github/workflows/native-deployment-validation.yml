@@ -7,6 +7,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate installer shell syntax
         run: bash -n deploy/install-native.sh
+      - name: Validate generated frontend file handling
+        run: |
+          grep -q 'chown hiddenoasis:hiddenoasis.*frontend/next-env.d.ts' deploy/install-native.sh
+          grep -q 'git -C.*restore -- frontend/next-env.d.ts' deploy/install-native.sh
+          grep -q 'npm ci --include=dev' deploy/install-native.sh
       - name: Validate systemd unit structure
         run: |
           for unit in deploy/systemd/*.service deploy/systemd/*.timer; do

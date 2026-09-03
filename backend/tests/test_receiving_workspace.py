@@ -109,3 +109,45 @@ def test_controlled_supplier_return(client):
 def test_missing_receiving_purchase_order(client):
     response = client.post("/api/v1/receiving/purchase-orders/not-real", headers=auth_headers(client), json={"delivery_reference": "DR-X", "lines": [{"purchase_order_line_id": "missing", "received_quantity": 1, "accepted_quantity": 1, "rejected_quantity": 0}]})
     assert response.status_code == 404
+
+
+def test_controlled_receipt_rejects_duplicate_delivery_reference(client):
+    headers = auth_headers(client)
+    _location, _item, _supplier, po = seed_receiving(client, headers)
+    line_id = po["lines"][0]["id"]
+    first = client.post(
+        f"/api/v1/receiving/purchase-orders/{po['id']}",
+        headers=headers,
+        json={"delivery_reference": "DR-CONTROL-DUP", "idempotency_key": "controlled-a", "lines": [{"purchase_order_line_id": line_id, "received_quantity": 2, "accepted_quantity": 2, "rejected_quantity": 0}]},
+    )
+    assert first.status_code == 201
+    duplicate = client.post(
+        f"/api/v1/receiving/purchase-orders/{po['id']}",
+        headers=headers,
+        json={"delivery_reference": "DR-CONTROL-DUP", "idempotency_key": "controlled-b", "lines": [{"purchase_order_line_id": line_id, "received_quantity": 2, "accepted_quantity": 2, "rejected_quantity": 0}]},
+    )
+    assert duplicate.status_code == 409
+
+
+def test_controlled_return_is_limited_to_accepted_quantity(client):
+    headers = auth_headers(client)
+    _location, _item, _supplier, po = seed_receiving(client, headers)
+    line_id = po["lines"][0]["id"]
+    receipt = client.post(
+        f"/api/v1/receiving/purchase-orders/{po['id']}",
+        headers=headers,
+        json={"delivery_reference": "DR-CONTROL-MIXED", "lines": [{"purchase_order_line_id": line_id, "received_quantity": 3, "accepted_quantity": 1, "rejected_quantity": 2, "discrepancy_reason": "two rejected"}]},
+    )
+    assert receipt.status_code == 201
+    too_much = client.post(
+        f"/api/v1/receiving/purchase-orders/{po['id']}/returns",
+        headers=headers,
+        json={"reason": "attempt rejected return", "lines": [{"purchase_order_line_id": line_id, "quantity": 2}]},
+    )
+    assert too_much.status_code == 409
+    valid = client.post(
+        f"/api/v1/receiving/purchase-orders/{po['id']}/returns",
+        headers=headers,
+        json={"reason": "return accepted unit", "lines": [{"purchase_order_line_id": line_id, "quantity": 1}]},
+    )
+    assert valid.status_code == 201

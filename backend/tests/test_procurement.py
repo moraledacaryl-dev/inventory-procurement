@@ -51,3 +51,22 @@ def test_supplier_performance_and_sequence_numbers(client):
     client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'lines':[{'purchase_order_line_id':line['id'],'received_quantity':'2','accepted_quantity':'1.5','rejected_quantity':'0.5'}]})
     score=client.get('/api/v1/supplier-performance',headers=h).json()[0]; assert Decimal(score['acceptance_rate'])==Decimal('75.00') and score['purchase_orders']==1
     reqs=client.get('/api/v1/requisitions',headers=h).json(); assert all(x['requisition_number'].startswith('PR-') for x in reqs)
+
+
+def test_delivery_reference_cannot_be_replayed_with_new_idempotency_key(client):
+    h=auth(client); item,loc,supplier=masters(client,h); po,_,_=approved_po(client,h,item,loc,supplier,quantity='5'); line=po['lines'][0]
+    first=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-DUP','idempotency_key':'dup-a','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'2','accepted_quantity':'2','rejected_quantity':'0'}]})
+    assert first.status_code==201
+    duplicate=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-DUP','idempotency_key':'dup-b','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'2','accepted_quantity':'2','rejected_quantity':'0'}]})
+    assert duplicate.status_code==409
+    after=client.get('/api/v1/purchase-orders',headers=h).json()[0]
+    assert after['lines'][0]['received_quantity']=='2.0000'
+
+def test_purchase_return_is_limited_to_accepted_quantity(client):
+    h=auth(client); item,loc,supplier=masters(client,h); po,_,_=approved_po(client,h,item,loc,supplier,quantity='5'); line=po['lines'][0]
+    receipt=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-MIXED','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'3','accepted_quantity':'1','rejected_quantity':'2'}]})
+    assert receipt.status_code==201
+    too_much=client.post(f"/api/v1/purchase-orders/{po['id']}/returns",headers=h,json={'reason':'Return rejected delivery','lines':[{'purchase_order_line_id':line['id'],'quantity':'2'}]})
+    assert too_much.status_code==409
+    valid=client.post(f"/api/v1/purchase-orders/{po['id']}/returns",headers=h,json={'reason':'Return accepted unit','lines':[{'purchase_order_line_id':line['id'],'quantity':'1'}]})
+    assert valid.status_code==201

@@ -29,6 +29,13 @@ def load_po(db,id,lock:bool=False):
 def unique_items(lines):
     ids=[x.item_id for x in lines]
     if len(ids)!=len(set(ids)): fail(422,'Duplicate item lines are not allowed')
+def accepted_received_quantity(db:Session,purchase_order_line_id:str)->Decimal:
+    values=db.scalars(select(GoodsReceiptLine.accepted_quantity).where(GoodsReceiptLine.purchase_order_line_id==purchase_order_line_id)).all()
+    return sum((Decimal(value) for value in values),Decimal('0'))
+def ensure_new_delivery_reference(db:Session,po_id:str,delivery_reference:str|None):
+    if not delivery_reference: return
+    existing=db.scalar(select(GoodsReceipt.id).where(GoodsReceipt.purchase_order_id==po_id,GoodsReceipt.delivery_reference==delivery_reference))
+    if existing: fail(409,'Delivery reference already received for this purchase order')
 
 def reorder_rows(db:Session,location_id:str|None=None)->list[ReorderSuggestion]:
     if location_id and not db.get(Location,location_id): fail(404,'Location not found')
@@ -195,6 +202,7 @@ def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:Us
     po=load_po(db,po_id,lock=True)
     if not po: fail(404,'Purchase order not found')
     if po.status not in {'approved','partially_received'}: fail(409,'Purchase order is not receivable')
+    ensure_new_delivery_reference(db,po.id,p.delivery_reference)
     ids=[x.purchase_order_line_id for x in p.lines]
     if len(ids)!=len(set(ids)): fail(422,'Duplicate purchase order receipt lines are not allowed')
     po_lines={x.id:x for x in po.lines}; entries=[]
@@ -233,8 +241,8 @@ def create_return(po_id:str,p:ReturnCreate,db:Session=Depends(get_db),user:User=
     for x in p.lines:
         line=lines.get(x.purchase_order_line_id)
         if not line: fail(422,'Purchase order line not found')
-        returnable=Decimal(line.received_quantity)-Decimal(line.returned_quantity)
-        if x.quantity>returnable: fail(409,'Return quantity exceeds received quantity')
+        returnable=accepted_received_quantity(db,line.id)-Decimal(line.returned_quantity)
+        if x.quantity>returnable: fail(409,'Return quantity exceeds accepted received quantity')
         entries.append({'item_id':line.item_id,'location_id':po.delivery_location_id,'quantity':-x.quantity,'unit_cost':line.unit_price,'reason':'purchase return'})
     try:
         doc=post_document(db,kind='purchase_return',actor_id=user.id,entries=entries,reference=po.purchase_order_number,notes=p.reason,idempotency_key=p.idempotency_key,commit=False)

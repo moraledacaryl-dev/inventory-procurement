@@ -85,6 +85,17 @@ def load_po(db: Session, po_id: str, lock: bool = False):
     return db.scalar(stmt)
 
 
+def accepted_received_quantity(db: Session, purchase_order_line_id: str) -> Decimal:
+    values = db.scalars(select(GoodsReceiptLine.accepted_quantity).where(GoodsReceiptLine.purchase_order_line_id == purchase_order_line_id)).all()
+    return sum((Decimal(value) for value in values), Decimal("0"))
+
+
+def ensure_new_delivery_reference(db: Session, po_id: str, delivery_reference: str):
+    existing = db.scalar(select(GoodsReceipt.id).where(GoodsReceipt.purchase_order_id == po_id, GoodsReceipt.delivery_reference == delivery_reference))
+    if existing:
+        fail(409, "Delivery reference already received for this purchase order")
+
+
 def receipt_payload(db: Session, receipt: GoodsReceipt) -> dict:
     po = load_po(db, receipt.purchase_order_id)
     supplier = db.get(Supplier, po.supplier_id) if po else None
@@ -228,6 +239,7 @@ def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Se
         fail(404, "Purchase order not found")
     if po.status not in {"approved", "partially_received"}:
         fail(409, "Purchase order is not receivable")
+    ensure_new_delivery_reference(db, po.id, payload.delivery_reference)
     po_lines = {line.id: line for line in po.lines}
     entries = []
     lot_updates = []
@@ -296,9 +308,9 @@ def post_controlled_return(po_id: str, payload: ControlledReturnCreate, db: Sess
         line = po_lines.get(returned.purchase_order_line_id)
         if not line:
             fail(422, "Purchase order line not found")
-        returnable = Decimal(line.received_quantity) - Decimal(line.returned_quantity)
+        returnable = accepted_received_quantity(db, line.id) - Decimal(line.returned_quantity)
         if returned.quantity > returnable:
-            fail(409, "Return quantity exceeds received quantity")
+            fail(409, "Return quantity exceeds accepted received quantity")
         entries.append({"item_id": line.item_id, "location_id": po.delivery_location_id, "quantity": -returned.quantity, "unit_cost": line.unit_price, "reason": f"purchase return: {payload.reason}"})
     try:
         document = post_document(db, kind="purchase_return", actor_id=user.id, entries=entries, reference=payload.supplier_reference or po.purchase_order_number, notes=payload.notes or payload.reason, idempotency_key=payload.idempotency_key, commit=False)

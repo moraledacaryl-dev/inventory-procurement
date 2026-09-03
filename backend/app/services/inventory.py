@@ -36,9 +36,12 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         qty = Decimal(entry["quantity"]); cost = Decimal(entry.get("unit_cost", 0))
         if qty == 0: raise InventoryError("Movement quantity cannot be zero")
         source_location_id = entry.get("cost_from_location_id")
-        if qty > 0 and cost == 0 and source_location_id:
+        bal = _balance(db, item.id, entry["location_id"])
+        if qty < 0:
+            cost = Decimal(bal.average_cost)
+        elif cost == 0 and source_location_id:
             source_balance = _balance(db, item.id, source_location_id); cost = Decimal(source_balance.average_cost)
-        bal = _balance(db, item.id, entry["location_id"]); new_qty = Decimal(bal.quantity) + qty
+        new_qty = Decimal(bal.quantity) + qty
         if new_qty < 0 and not item.allow_negative_stock: raise InventoryError(f"Insufficient stock for {item.sku} at location")
         if qty > 0:
             current_value = Decimal(bal.quantity) * Decimal(bal.average_cost); incoming_value = qty * cost

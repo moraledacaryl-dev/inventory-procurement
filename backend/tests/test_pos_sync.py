@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.production import Recipe
@@ -75,7 +77,7 @@ def test_pos_event_requires_machine_credential(client):
 
 def test_pos_event_idempotency_and_reversal(client):
     headers = auth_headers(client)
-    _location, _ingredient, _recipe, _mapping = seed_mapping(client, headers)
+    location, ingredient, _recipe, _mapping = seed_mapping(client, headers)
     integration_headers = pos_headers()
     event = {"external_event_id": "evt-001", "external_sale_id": "sale-001", "pos_system": "hidden-oasis-pos", "event_type": "sale_completed", "lines": [{"external_product_id": "CAFE-001", "quantity": 2}]}
     first = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json=event)
@@ -84,9 +86,27 @@ def test_pos_event_idempotency_and_reversal(client):
     assert duplicate.status_code == 201
     assert duplicate.json()["id"] == first.json()["id"]
 
+    replayed_sale = client.post(
+        "/api/v1/integrations/pos/events",
+        headers=integration_headers,
+        json={**event, "external_event_id": "evt-001-replay"},
+    )
+    assert replayed_sale.status_code == 409
+    after_sale = client.get(f"/api/v1/stock/balances?item_id={ingredient['id']}&location_id={location['id']}", headers=headers).json()[0]
+    assert Decimal(after_sale["quantity"]) == Decimal("96")
+
     reversal = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json={**event, "external_event_id": "evt-002", "event_type": "sale_refunded"})
     assert reversal.status_code == 201
     assert reversal.json()["reversal_of_event_id"] == first.json()["id"]
+
+    second_reversal = client.post(
+        "/api/v1/integrations/pos/events",
+        headers=integration_headers,
+        json={**event, "external_event_id": "evt-003", "event_type": "sale_voided"},
+    )
+    assert second_reversal.status_code == 409
+    after_reversal = client.get(f"/api/v1/stock/balances?item_id={ingredient['id']}&location_id={location['id']}", headers=headers).json()[0]
+    assert Decimal(after_reversal["quantity"]) == Decimal("100")
 
     workspace = client.get("/api/v1/integrations/pos/workspace", headers=headers)
     assert workspace.status_code == 200

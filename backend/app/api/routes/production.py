@@ -152,10 +152,13 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
     existing=db.scalar(select(PosSaleEvent).where(PosSaleEvent.external_event_id==p.external_event_id))
     if existing: return existing
     original=None
-    if p.event_type!='sale_completed':
-        original=db.scalar(select(PosSaleEvent).where(PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed',PosSaleEvent.status=='processed'))
+    if p.event_type=='sale_completed':
+        prior_sale=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed'))
+        if prior_sale: fail(409,'Sale has already been consumed')
+    else:
+        original=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed',PosSaleEvent.status=='processed'))
         if not original or not original.stock_document_id: fail(409,'Original completed sale was not found')
-        prior=db.scalar(select(PosSaleEvent).where(PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type.in_(['sale_voided','sale_refunded']),PosSaleEvent.status=='processed'))
+        prior=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type.in_(['sale_voided','sale_refunded'])))
         if prior: fail(409,'Sale has already been reversed')
     try:
         if p.event_type=='sale_completed':
@@ -164,17 +167,20 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
                 mapping=db.scalar(select(PosProductMapping).where(PosProductMapping.pos_system==p.pos_system,PosProductMapping.external_product_id==sale_line.external_product_id,PosProductMapping.is_active==True))
                 if not mapping: fail(422,f'POS product {sale_line.external_product_id} is not mapped')
                 recipe=load_recipe(db,mapping.recipe_id); line_entries,cost=recipe_entries(db,recipe,mapping.location_id,sale_line.quantity,consume_only=True); entries.extend(line_entries); accounting_lines.append({'external_product_id':sale_line.external_product_id,'quantity':str(sale_line.quantity),'cost':str(cost)})
-            doc=post_document(db,kind='pos_sale_consumption',actor_id=user.id,entries=entries,reference=p.external_sale_id,idempotency_key=f'pos:{p.external_event_id}',commit=False)
+            doc=post_document(db,kind='pos_sale_consumption',actor_id=user.id,entries=entries,reference=p.external_sale_id,idempotency_key=f'pos:sale:{p.pos_system}:{p.external_sale_id}',commit=False)
             row=PosSaleEvent(external_event_id=p.external_event_id,event_type=p.event_type,external_sale_id=p.external_sale_id,pos_system=p.pos_system,payload=p.model_dump(mode='json'),stock_document_id=doc.id)
             db.add(row); db.flush(); enqueue_event(db,destination_system='accounting',event_type='inventory.pos_sale_consumed',aggregate_type='pos_sale_event',aggregate_id=row.id,idempotency_key=f'accounting-pos:{p.external_event_id}',payload={'sale_id':p.external_sale_id,'stock_document_id':doc.id,'lines':accounting_lines})
         else:
             original_doc=db.scalar(select(StockDocument).where(StockDocument.id==original.stock_document_id).options(selectinload(StockDocument.movements)))
             entries=[{'item_id':m.item_id,'location_id':m.location_id,'quantity':-Decimal(m.quantity),'unit_cost':Decimal(m.unit_cost),'reason':p.event_type} for m in original_doc.movements]
-            doc=post_document(db,kind='pos_sale_reversal',actor_id=user.id,entries=entries,reference=p.external_sale_id,idempotency_key=f'pos:{p.external_event_id}',commit=False)
+            doc=post_document(db,kind='pos_sale_reversal',actor_id=user.id,entries=entries,reference=p.external_sale_id,idempotency_key=f'pos:reversal:{p.pos_system}:{p.external_sale_id}',commit=False)
             row=PosSaleEvent(external_event_id=p.external_event_id,event_type=p.event_type,external_sale_id=p.external_sale_id,pos_system=p.pos_system,payload=p.model_dump(mode='json'),stock_document_id=doc.id,reversal_of_event_id=original.id)
             db.add(row); db.flush(); enqueue_event(db,destination_system='accounting',event_type='inventory.pos_sale_reversed',aggregate_type='pos_sale_event',aggregate_id=row.id,idempotency_key=f'accounting-pos:{p.external_event_id}',payload={'sale_id':p.external_sale_id,'event_type':p.event_type,'stock_document_id':doc.id})
         add_audit(db,actor_user_id=user.id,action=f'pos.{p.event_type}',entity_type='pos_sale_event',entity_id=row.id,details={'external_sale_id':p.external_sale_id,'source_system':'hidden-oasis-pos'}); db.commit(); db.refresh(row); return row
-    except (InventoryError,IntegrityError): db.rollback(); raise
+    except IntegrityError:
+        db.rollback(); fail(409,'POS sale lifecycle conflict')
+    except InventoryError as exc:
+        db.rollback(); fail(409,str(exc))
 
 @router.get('/integrations/reconciliation',response_model=ReconciliationOut)
 def reconciliation(db:Session=Depends(get_db),_:User=Depends(require_permission('integrations.read'))):

@@ -6,6 +6,7 @@ from app.services.integration_worker import claim_events, process_event
 
 class SuccessResponse:
     def raise_for_status(self): return None
+    def json(self): return {'id': 1, 'status': 'ready_for_review', 'validation': {'valid': True, 'errors': []}}
 class SuccessClient:
     def post(self,*args,**kwargs): return SuccessResponse()
 class FailureClient:

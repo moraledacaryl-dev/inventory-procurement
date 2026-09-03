@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, JSON, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -63,6 +63,22 @@ class PosProductMapping(Base):
 
 class PosSaleEvent(Base):
     __tablename__='pos_sale_events'
+    __table_args__=(
+        Index(
+            'uq_pos_sale_completed_lifecycle',
+            'pos_system','external_sale_id',
+            unique=True,
+            sqlite_where=text("event_type = 'sale_completed'"),
+            postgresql_where=text("event_type = 'sale_completed'"),
+        ),
+        Index(
+            'uq_pos_sale_reversal_lifecycle',
+            'pos_system','external_sale_id',
+            unique=True,
+            sqlite_where=text("event_type IN ('sale_voided','sale_refunded')"),
+            postgresql_where=text("event_type IN ('sale_voided','sale_refunded')"),
+        ),
+    )
     id:Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
     external_event_id:Mapped[str]=mapped_column(String(140),unique=True,index=True)
     event_type:Mapped[str]=mapped_column(String(30),index=True)

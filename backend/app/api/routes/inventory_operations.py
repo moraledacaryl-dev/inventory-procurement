@@ -22,13 +22,25 @@ def save(db,row):
     try: db.commit(); db.refresh(row); return row
     except IntegrityError: db.rollback(); fail(409,'Duplicate or invalid record')
 
-def get_balance(db:Session,item_id:str,location_id:str)->Decimal:
-    row=db.scalar(select(StockBalance).where(StockBalance.item_id==item_id,StockBalance.location_id==location_id))
+def get_balance(db:Session,item_id:str,location_id:str,lock:bool=False)->Decimal:
+    stmt=select(StockBalance).where(StockBalance.item_id==item_id,StockBalance.location_id==location_id)
+    if lock: stmt=stmt.with_for_update()
+    row=db.scalar(stmt)
     return Decimal(row.quantity) if row else Decimal('0')
 def active_reserved(db:Session,item_id:str,location_id:str)->Decimal:
     current=now()
     rows=db.scalars(select(StockReservation).where(StockReservation.item_id==item_id,StockReservation.location_id==location_id,StockReservation.status=='active')).all()
-    return sum((Decimal(x.quantity) for x in rows if x.expires_at is None or x.expires_at>current),Decimal('0'))
+    reservation_total=sum((Decimal(x.quantity) for x in rows if x.expires_at is None or x.expires_at>current),Decimal('0'))
+    transfer_total=db.scalar(
+        select(func.coalesce(func.sum(TransferOrderLine.quantity),0))
+        .join(TransferOrder,TransferOrder.id==TransferOrderLine.transfer_order_id)
+        .where(
+            TransferOrderLine.item_id==item_id,
+            TransferOrder.source_location_id==location_id,
+            TransferOrder.status=='dispatched',
+        )
+    )
+    return reservation_total+Decimal(transfer_total or 0)
 def lot_balance(db:Session,lot_id:str,location_id:str,lock:bool=False):
     stmt=select(LotBalance).where(LotBalance.lot_id==lot_id,LotBalance.location_id==location_id)
     if lock: stmt=stmt.with_for_update()
@@ -132,7 +144,8 @@ def availability(item_id:str|None=None,location_id:str|None=None,db:Session=Depe
 @router.post('/reservations',response_model=ReservationOut,status_code=201)
 def create_reservation(p:ReservationCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     if not db.get(Item,p.item_id) or not db.get(Location,p.location_id): fail(422,'Item or location not found')
-    available=get_balance(db,p.item_id,p.location_id)-active_reserved(db,p.item_id,p.location_id)
+    physical=get_balance(db,p.item_id,p.location_id,lock=True)
+    available=physical-active_reserved(db,p.item_id,p.location_id)
     if p.quantity>available: fail(409,'Insufficient available stock')
     row=StockReservation(reservation_number=next_document_number(db,'RSV'),created_by_user_id=user.id,**p.model_dump()); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='inventory.reserved',entity_type='stock_reservation',entity_id=row.id,details={'quantity':str(row.quantity)}); db.commit(); db.refresh(row); return row
 @router.post('/reservations/{reservation_id}/release',response_model=ReservationOut)
@@ -163,8 +176,9 @@ def dispatch_transfer(transfer_id:str,db:Session=Depends(get_db),user:User=Depen
     row=db.scalar(select(TransferOrder).where(TransferOrder.id==transfer_id).options(selectinload(TransferOrder.lines)).with_for_update())
     if not row: fail(404,'Transfer order not found')
     if row.status!='draft': fail(409,'Only draft transfers can be dispatched')
-    for line in row.lines:
-        if line.quantity>get_balance(db,line.item_id,row.source_location_id)-active_reserved(db,line.item_id,row.source_location_id): fail(409,'Insufficient available stock at dispatch')
+    for line in sorted(row.lines,key=lambda x:x.item_id):
+        physical=get_balance(db,line.item_id,row.source_location_id,lock=True)
+        if line.quantity>physical-active_reserved(db,line.item_id,row.source_location_id): fail(409,'Insufficient available stock at dispatch')
     row.status='dispatched'; row.dispatched_by_user_id=user.id; row.dispatched_at=now(); add_audit(db,actor_user_id=user.id,action='transfer_order.dispatched',entity_type='transfer_order',entity_id=row.id); db.commit(); return row
 @router.post('/transfer-orders/{transfer_id}/receive',response_model=TransferOrderOut)
 def receive_transfer(transfer_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):

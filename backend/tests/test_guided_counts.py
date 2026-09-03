@@ -1,7 +1,20 @@
-def auth_headers(client):
-    response = client.post("/api/v1/auth/login", json={"email": "owner@example.com", "password": "password123"})
+from app.core.security import hash_password
+from app.db.session import SessionLocal
+from app.models.user import User
+
+
+def auth_headers(client, email="owner@example.com"):
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def counter_headers(client):
+    with SessionLocal() as db:
+        if not db.query(User).filter(User.email == "count-counter@example.com").first():
+            db.add(User(email="count-counter@example.com", full_name="Count Counter", password_hash=hash_password("password123"), role="counter"))
+            db.commit()
+    return auth_headers(client, "count-counter@example.com")
 
 
 def seed_count_context(client, headers):
@@ -81,6 +94,47 @@ def test_guided_count_recount_flow(client):
     assert payload["status"] == "open"
     assert payload["lines"][0]["counted_quantity"] is None
     assert "Recount requested" in payload["lines"][0]["note"]
+
+
+def test_blind_pending_approval_stays_hidden_and_counter_cannot_recount_or_cancel(client):
+    owner = auth_headers(client)
+    location, item = seed_count_context(client, owner)
+    counter = counter_headers(client)
+    created = client.post(
+        "/api/v1/counts",
+        headers=counter,
+        json={"location_id": location["id"], "blind_count": True, "approval_threshold": 1},
+    )
+    assert created.status_code == 201
+    count_id = created.json()["id"]
+    saved = client.put(
+        f"/api/v1/counts/{count_id}/entries",
+        headers=counter,
+        json={"lines": [{"item_id": item["id"], "counted_quantity": 1}]},
+    )
+    assert saved.status_code == 200
+    submitted = client.post(f"/api/v1/counts/{count_id}/submit", headers=counter)
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "pending_approval"
+
+    detail = client.get(f"/api/v1/counts/{count_id}/detail", headers=counter)
+    assert detail.status_code == 200
+    line = detail.json()["lines"][0]
+    assert line["system_quantity"] is None
+    assert line["snapshot_quantity"] is None
+    assert line["live_quantity"] is None
+    assert line["variance_quantity"] is None
+    assert line["live_drift_quantity"] is None
+    assert detail.json()["progress"]["absolute_variance"] is None
+
+    recount = client.post(
+        f"/api/v1/counts/{count_id}/recount",
+        headers=counter,
+        json={"item_ids": [item["id"]], "reason": "learn expected quantity"},
+    )
+    assert recount.status_code == 403
+    cancelled = client.post(f"/api/v1/counts/{count_id}/cancel-guided", headers=counter)
+    assert cancelled.status_code == 403
 
 
 def test_guided_count_workspace_and_missing(client):

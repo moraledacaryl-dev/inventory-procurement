@@ -222,7 +222,7 @@ def request_recount(count_id: str, payload: RecountRequest, db: Session = Depend
 
 
 @router.post("/{count_id}/approve-guided")
-def approve_guided_count(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.submit"))):
+def approve_guided_count(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.approve"))):
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")

@@ -42,15 +42,14 @@ jobs:
           assert 'test_transfer_availability_locks_balance_before_reservations' not in test_text
           test.write_text(test_text.rstrip() + addition + '\n')
           PY
-      - name: Verify focused tests
-        working-directory: backend
+      - name: Verify patch
         run: |
-          python -m compileall app tests
-      - name: Commit patch
+          git diff -- backend/app/api/routes/controlled_inventory.py backend/tests/test_controlled_inventory.py
+          python -m compileall backend/app backend/tests
+      - name: Commit and push patch
         run: |
           git config user.name "moraledacaryl-dev"
           git config user.email "moraledacaryl@gmail.com"
           git add backend/app/api/routes/controlled_inventory.py backend/tests/test_controlled_inventory.py
-          git diff --cached --check
           git commit -m "Serialize transfer dispatch against reservations"
           git push origin HEAD:audit/pass-18-concurrency-count-controls

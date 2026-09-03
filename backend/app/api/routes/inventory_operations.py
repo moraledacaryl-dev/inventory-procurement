@@ -30,17 +30,7 @@ def get_balance(db:Session,item_id:str,location_id:str,lock:bool=False)->Decimal
 def active_reserved(db:Session,item_id:str,location_id:str)->Decimal:
     current=now()
     rows=db.scalars(select(StockReservation).where(StockReservation.item_id==item_id,StockReservation.location_id==location_id,StockReservation.status=='active')).all()
-    reservation_total=sum((Decimal(x.quantity) for x in rows if x.expires_at is None or x.expires_at>current),Decimal('0'))
-    transfer_total=db.scalar(
-        select(func.coalesce(func.sum(TransferOrderLine.quantity),0))
-        .join(TransferOrder,TransferOrder.id==TransferOrderLine.transfer_order_id)
-        .where(
-            TransferOrderLine.item_id==item_id,
-            TransferOrder.source_location_id==location_id,
-            TransferOrder.status=='dispatched',
-        )
-    )
-    return reservation_total+Decimal(transfer_total or 0)
+    return sum((Decimal(x.quantity) for x in rows if x.expires_at is None or x.expires_at>current),Decimal('0'))
 def lot_balance(db:Session,lot_id:str,location_id:str,lock:bool=False):
     stmt=select(LotBalance).where(LotBalance.lot_id==lot_id,LotBalance.location_id==location_id)
     if lock: stmt=stmt.with_for_update()

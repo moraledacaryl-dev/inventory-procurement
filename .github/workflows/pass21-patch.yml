@@ -1,0 +1,72 @@
+name: Pass21 Patch
+
+on:
+  push:
+    branches:
+      - audit/pass-21-final-recertification
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Add one-shot Pass 21 recovery patch workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/pass-21-final-recertification
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch stale integration recovery and assurance
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          worker = Path('backend/app/services/integration_worker.py')
+          text = worker.read_text()
+          old = "IntegrationEvent.status.in_(['pending','failed'])"
+          new = "IntegrationEvent.status.in_(['pending','failed','processing'])"
+          if old not in text:
+              raise SystemExit('worker claim status pattern not found')
+          worker.write_text(text.replace(old, new, 1))
+
+          assurance = Path('backend/app/api/routes/final_assurance.py')
+          text = assurance.read_text()
+          old = 'from datetime import date, datetime, timezone'
+          new = 'from datetime import date, datetime, timedelta, timezone'
+          if old not in text:
+              raise SystemExit('final assurance datetime import pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = "events=db.scalars(select(IntegrationEvent)).all(); failed=sum(x.status=='failed' for x in events); dead=sum(x.status=='dead_letter' for x in events); pending=sum(x.status in {'pending','processing'} for x in events)"
+          new = "events=db.scalars(select(IntegrationEvent)).all(); failed=sum(x.status=='failed' for x in events); dead=sum(x.status=='dead_letter' for x in events); pending=sum(x.status in {'pending','processing'} for x in events); stale_cutoff=now()-timedelta(minutes=10); stale_processing=sum(x.status=='processing' and (x.locked_at is None or aware(x.locked_at)<stale_cutoff) for x in events)"
+          if old not in text:
+              raise SystemExit('final assurance integration summary pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = "('integration_failures','No failed or dead-letter integrations','passed' if failed==0 and dead==0 else 'failed',failed+dead),"
+          new = "('integration_failures','No failed, dead-letter, or stale processing integrations','passed' if failed==0 and dead==0 and stale_processing==0 else 'failed',failed+dead+stale_processing),"
+          if old not in text:
+              raise SystemExit('final assurance integration check pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = "'pending_integrations':pending,'failed_integrations':failed,'dead_letter_integrations':dead,"
+          new = "'pending_integrations':pending,'failed_integrations':failed,'dead_letter_integrations':dead,'stale_processing_integrations':stale_processing,"
+          if old not in text:
+              raise SystemExit('final assurance summary fields pattern not found')
+          text = text.replace(old, new, 1)
+          assurance.write_text(text)
+
+          Path('backend/tests/test_integration_worker_recovery.py').write_text('''from datetime import timedelta\n\nfrom app.api.routes.final_assurance import snapshot\nfrom app.db.session import SessionLocal\nfrom app.models.operations import IntegrationEvent\nfrom app.services.integration_worker import claim_events, utcnow\n\n\ndef event(*, key: str, status: str = "processing", locked_at=None, locked_by: str = "crashed-worker") -> IntegrationEvent:\n    return IntegrationEvent(\n        direction="outbound",\n        source_system="inventory",\n        destination_system="operations",\n        event_type="stock.low.alert",\n        aggregate_type="stock_balance",\n        aggregate_id=key,\n        idempotency_key=key,\n        payload={"title": "Recovery test"},\n        status=status,\n        attempts=0,\n        max_attempts=8,\n        available_at=utcnow() - timedelta(minutes=20),\n        locked_at=locked_at,\n        locked_by=locked_by,\n    )\n\n\ndef test_claim_events_reclaims_stale_processing_without_stealing_fresh_work():\n    with SessionLocal() as db:\n        stale = event(key="stale-processing", locked_at=utcnow() - timedelta(minutes=11))\n        fresh = event(key="fresh-processing", locked_at=utcnow() - timedelta(minutes=1))\n        db.add_all([stale, fresh])\n        db.commit()\n        stale_id, fresh_id = stale.id, fresh.id\n\n        claimed = claim_events(db, "replacement-worker", limit=25)\n        assert [row.id for row in claimed] == [stale_id]\n\n        stale = db.get(IntegrationEvent, stale_id)\n        fresh = db.get(IntegrationEvent, fresh_id)\n        assert stale.status == "processing"\n        assert stale.locked_by == "replacement-worker"\n        assert fresh.status == "processing"\n        assert fresh.locked_by == "crashed-worker"\n\n\ndef test_final_assurance_flags_stale_processing_integrations():\n    with SessionLocal() as db:\n        db.add(event(key="assurance-stale-processing", locked_at=utcnow() - timedelta(minutes=11)))\n        db.commit()\n\n        data = snapshot(db)\n        check = next(row for row in data["checks"] if row["key"] == "integration_failures")\n        assert check["status"] == "failed"\n        assert check["count"] == 1\n        assert data["summary"]["stale_processing_integrations"] == 1\n''')
+          PY
+          python -m compileall -q backend/app backend/tests/test_integration_worker_recovery.py
+      - name: Commit patch
+        run: |
+          git config user.name "moraledacaryl-dev"
+          git config user.email "moraledacaryl@gmail.com"
+          git add backend/app/services/integration_worker.py backend/app/api/routes/final_assurance.py backend/tests/test_integration_worker_recovery.py
+          git commit -m "Recover stale integration worker claims"
+          git push origin HEAD:audit/pass-21-final-recertification

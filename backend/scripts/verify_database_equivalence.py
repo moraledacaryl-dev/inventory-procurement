@@ -12,6 +12,9 @@ import psycopg
 from psycopg import sql
 
 
+IGNORED_TABLES = {"backup_records"}
+
+
 def normalize_url(value: str) -> str:
     return value.replace("postgresql+psycopg://", "postgresql://", 1)
 
@@ -45,7 +48,7 @@ def application_tables(connection: psycopg.Connection[Any]) -> list[str]:
             order by tablename
             """
         )
-        return [row[0] for row in cursor.fetchall()]
+        return [row[0] for row in cursor.fetchall() if row[0] not in IGNORED_TABLES]
 
 
 def table_digest(connection: psycopg.Connection[Any], table: str) -> tuple[int, str]:
@@ -93,7 +96,16 @@ def main() -> None:
         raise SystemExit("Database restore mismatch:\n" + json.dumps(differences, indent=2, sort_keys=True))
 
     total_rows = sum(item["rows"] for item in source.values())
-    print(json.dumps({"tables_verified": len(source), "rows_verified": total_rows}, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "tables_verified": len(source),
+                "rows_verified": total_rows,
+                "ignored_post_backup_tables": sorted(IGNORED_TABLES),
+            },
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

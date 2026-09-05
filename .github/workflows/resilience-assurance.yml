@@ -26,6 +26,7 @@ jobs:
       BOOTSTRAP_OWNER_EMAIL: owner@example.com
       BOOTSTRAP_OWNER_PASSWORD: acceptance-owner-password
       BOOTSTRAP_OWNER_NAME: Resilience Owner
+      BACKUP_DIR: /tmp/inventory-production-backups
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,30 +44,57 @@ jobs:
         run: |
           set -o pipefail
           python scripts/run_resilience_checks.py 2>&1 | tee resilience-checks.log
-      - name: Create native PostgreSQL backup
+      - name: Create production-format PostgreSQL backup
+        working-directory: backend
         run: |
-          pg_dump \
-            --host=127.0.0.1 \
-            --port=5432 \
-            --username=inventory \
-            --dbname=inventory_resilience \
-            --format=custom \
-            --no-owner \
-            --no-privileges \
-            --file=/tmp/inventory-resilience.dump
-          test -s /tmp/inventory-resilience.dump
-      - name: Restore into clean database
+          set -euo pipefail
+          rm -rf "$BACKUP_DIR"
+          mkdir -p "$BACKUP_DIR"
+          python scripts/backup_database.py | tee production-backup.log
+          BACKUP_FILE="$(tail -n 1 production-backup.log)"
+          test -s "$BACKUP_FILE"
+          case "$BACKUP_FILE" in
+            "$BACKUP_DIR"/inventory-*.sql.gz) ;;
+            *) echo "Unexpected backup path: $BACKUP_FILE" >&2; exit 1 ;;
+          esac
+          gzip -t "$BACKUP_FILE"
+          printf '%s\n' "$BACKUP_FILE" > /tmp/inventory-backup-path
+      - name: Verify production backup record and checksum
+        working-directory: backend
         run: |
+          set -euo pipefail
+          BACKUP_FILE="$(cat /tmp/inventory-backup-path)"
+          python - "$BACKUP_FILE" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+          from sqlalchemy import select
+          from app.db.session import SessionLocal
+          from app.models.operations import BackupRecord
+
+          path = pathlib.Path(sys.argv[1])
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          with SessionLocal() as db:
+              record = db.scalar(
+                  select(BackupRecord)
+                  .where(BackupRecord.filename == path.name)
+                  .order_by(BackupRecord.id.desc())
+              )
+              assert record is not None, "backup record missing"
+              assert record.size_bytes == path.stat().st_size, "backup size mismatch"
+              assert record.checksum_sha256 == digest, "backup checksum mismatch"
+          PY
+      - name: Restore production backup into clean database
+        run: |
+          set -euo pipefail
+          BACKUP_FILE="$(cat /tmp/inventory-backup-path)"
           createdb --host=127.0.0.1 --port=5432 --username=inventory inventory_restored
-          pg_restore \
+          gzip -dc "$BACKUP_FILE" | psql \
             --host=127.0.0.1 \
             --port=5432 \
             --username=inventory \
             --dbname=inventory_restored \
-            --no-owner \
-            --no-privileges \
-            --exit-on-error \
-            /tmp/inventory-resilience.dump
+            --set=ON_ERROR_STOP=1
       - name: Verify restored database equivalence
         working-directory: backend
         run: |
@@ -85,6 +113,7 @@ jobs:
         with:
           name: resilience-assurance-evidence
           path: |
-            /tmp/inventory-resilience.dump
+            /tmp/inventory-production-backups/
+            backend/production-backup.log
             backend/resilience-checks.log
             backend/restore-verification.log

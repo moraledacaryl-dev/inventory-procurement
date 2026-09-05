@@ -96,7 +96,7 @@ def enqueue_operations_stock_alerts(db:Session,endpoints:dict[str,str]|None=None
     return queued
 
 def claim_events(db:Session,worker_id:str,limit:int=25)->list[IntegrationEvent]:
-    now=utcnow();stale=now-timedelta(minutes=10);stmt=(select(IntegrationEvent).where(IntegrationEvent.direction=='outbound',IntegrationEvent.available_at<=now,IntegrationEvent.status.in_(['pending','failed']),or_(IntegrationEvent.locked_at==None,IntegrationEvent.locked_at<stale),IntegrationEvent.attempts<IntegrationEvent.max_attempts).order_by(IntegrationEvent.created_at).limit(limit).with_for_update(skip_locked=True));rows=db.scalars(stmt).all()
+    now=utcnow();stale=now-timedelta(minutes=10);stmt=(select(IntegrationEvent).where(IntegrationEvent.direction=='outbound',IntegrationEvent.available_at<=now,IntegrationEvent.status.in_(['pending','failed','processing']),or_(IntegrationEvent.locked_at==None,IntegrationEvent.locked_at<stale),IntegrationEvent.attempts<IntegrationEvent.max_attempts).order_by(IntegrationEvent.created_at).limit(limit).with_for_update(skip_locked=True));rows=db.scalars(stmt).all()
     for row in rows:row.status='processing';row.locked_at=now;row.locked_by=worker_id
     db.commit();return rows
 

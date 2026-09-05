@@ -1,5 +1,5 @@
 import csv, io
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -59,7 +59,7 @@ def snapshot(db:Session):
     unscoped_users=[{'user_id':x.id,'email':x.email,'role':x.role} for x in users if x.id not in scoped_users]
     movement_counts=dict(db.execute(select(StockMovement.document_id,func.count()).group_by(StockMovement.document_id)).all())
     empty=[{'id':doc.id,'document_number':doc.document_number,'document_type':doc.document_type} for doc in db.scalars(select(StockDocument).where(StockDocument.status=='posted')).all() if movement_counts.get(doc.id,0)==0]
-    events=db.scalars(select(IntegrationEvent)).all(); failed=sum(x.status=='failed' for x in events); dead=sum(x.status=='dead_letter' for x in events); pending=sum(x.status in {'pending','processing'} for x in events)
+    events=db.scalars(select(IntegrationEvent)).all(); failed=sum(x.status=='failed' for x in events); dead=sum(x.status=='dead_letter' for x in events); pending=sum(x.status in {'pending','processing'} for x in events); stale_cutoff=now()-timedelta(minutes=10); stale_processing=sum(x.status=='processing' and (x.locked_at is None or aware(x.locked_at)<stale_cutoff) for x in events)
     unresolved=sum(1 for e in events if e.event_type=='operations.request.submitted' and (e.payload or {}).get('workflow_status','submitted') in {'submitted','accepted'})
     unmapped_events=[e for e in events if e.destination_system=='accounting' and e.event_type not in MAPPED_ACCOUNTING_EVENTS and e.event_type not in active_mapping_keys]
     open_counts=db.scalar(select(func.count()).select_from(CountSession).where(CountSession.status.in_(['open','submitted','pending_approval']))) or 0
@@ -79,7 +79,7 @@ def snapshot(db:Session):
       ('access_scopes','Active non-owner users have operational scopes','passed' if not unscoped_users else 'attention',len(unscoped_users)),
       ('posted_documents','Posted documents contain movements','passed' if not empty else 'failed',len(empty)),
       ('item_classification','All active items have workspace, item type, and record class','passed' if not unclassified else 'attention',len(unclassified)),
-      ('integration_failures','No failed or dead-letter integrations','passed' if failed==0 and dead==0 else 'failed',failed+dead),
+      ('integration_failures','No failed, dead-letter, or stale processing integrations','passed' if failed==0 and dead==0 and stale_processing==0 else 'failed',failed+dead+stale_processing),
       ('accounting_mapping','Accounting events are mapped','passed' if not unmapped_events else 'failed',len(unmapped_events)),
       ('backup','Completed backup is within freshness limit','passed' if backup_problem==0 else 'failed',backup_problem),
       ('open_counts','No unfinished count sessions','passed' if open_counts==0 else 'attention',open_counts),
@@ -87,7 +87,7 @@ def snapshot(db:Session):
       ('operational_requests','No unresolved Staff/Command Center requests','passed' if unresolved==0 else 'attention',unresolved),
     ]
     checks=[{'key':k,'label':label,'status':status,'count':count} for k,label,status,count in controls]; failed_checks=sum(x['status']=='failed' for x in checks); attention=sum(x['status']=='attention' for x in checks)
-    return {'generated_at':now().isoformat(),'overall_status':'critical' if failed_checks else 'attention' if attention else 'healthy','summary':{'failed_checks':failed_checks,'attention_checks':attention,'stock_mismatches':len(mismatches),'negative_stock_violations':len(negative),'negative_property_balances':len(property_negative),'invalid_hotel_pars':len(invalid_pars),'fixed_asset_issues':len(asset_issues),'duplicate_depreciation_periods':len(duplicate_periods),'overdue_maintenance':len(overdue_maintenance),'open_maintenance_work_orders':open_work_orders,'untreated_purchase_lines':len(untreated),'unscoped_users':len(unscoped_users),'empty_posted_documents':len(empty),'unclassified_items':len(unclassified),'pending_integrations':pending,'failed_integrations':failed,'dead_letter_integrations':dead,'unmapped_accounting_events':len(unmapped_events),'unresolved_operational_requests':unresolved,'open_count_sessions':open_counts,'open_production_batches':open_production},'checks':checks,'stock_mismatches':mismatches[:200],'negative_stock':negative[:200],'negative_property_balances':property_negative[:200],'invalid_hotel_pars':invalid_pars[:200],'fixed_asset_issues':asset_issues[:200],'overdue_maintenance':overdue_maintenance[:200],'untreated_purchase_lines':untreated[:200],'unscoped_users':unscoped_users[:200],'empty_documents':empty[:200],'unclassified_items':unclassified[:500],'latest_backup_at':backup.created_at.isoformat() if backup else None,'backup_age_hours':backup_age}
+    return {'generated_at':now().isoformat(),'overall_status':'critical' if failed_checks else 'attention' if attention else 'healthy','summary':{'failed_checks':failed_checks,'attention_checks':attention,'stock_mismatches':len(mismatches),'negative_stock_violations':len(negative),'negative_property_balances':len(property_negative),'invalid_hotel_pars':len(invalid_pars),'fixed_asset_issues':len(asset_issues),'duplicate_depreciation_periods':len(duplicate_periods),'overdue_maintenance':len(overdue_maintenance),'open_maintenance_work_orders':open_work_orders,'untreated_purchase_lines':len(untreated),'unscoped_users':len(unscoped_users),'empty_posted_documents':len(empty),'unclassified_items':len(unclassified),'pending_integrations':pending,'failed_integrations':failed,'dead_letter_integrations':dead,'stale_processing_integrations':stale_processing,'unmapped_accounting_events':len(unmapped_events),'unresolved_operational_requests':unresolved,'open_count_sessions':open_counts,'open_production_batches':open_production},'checks':checks,'stock_mismatches':mismatches[:200],'negative_stock':negative[:200],'negative_property_balances':property_negative[:200],'invalid_hotel_pars':invalid_pars[:200],'fixed_asset_issues':asset_issues[:200],'overdue_maintenance':overdue_maintenance[:200],'untreated_purchase_lines':untreated[:200],'unscoped_users':unscoped_users[:200],'empty_documents':empty[:200],'unclassified_items':unclassified[:500],'latest_backup_at':backup.created_at.isoformat() if backup else None,'backup_age_hours':backup_age}
 
 @router.get('/reports/final-assurance')
 def report(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))): return snapshot(db)

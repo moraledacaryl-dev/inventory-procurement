@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../../components/AppShell";
 import { FeedbackBanner } from "../../../components/FeedbackBanner";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { api } from "../../../lib/api";
+import { stableDraftIdempotency, type DraftIdempotencyState } from "../../../lib/draftIdempotency";
 
 type Item={id:string;sku:string;name:string;base_unit_id:string;track_stock:boolean;is_active:boolean};
 type Unit={id:string;code:string};
@@ -20,12 +21,12 @@ const money=(value:string|number)=>Number(value||0).toLocaleString("en-PH",{styl
 export default function Page(){
  const[items,setItems]=useState<Item[]>([]);const[units,setUnits]=useState<Unit[]>([]);const[locations,setLocations]=useState<Location[]>([]);const[meals,setMeals]=useState<Meal[]>([]);
  const[mealName,setMealName]=useState("");const[mealPeriod,setMealPeriod]=useState("Lunch");const[servings,setServings]=useState("1");const[locationId,setLocationId]=useState("");const[notes,setNotes]=useState("");const[lines,setLines]=useState<MealLine[]>([blankLine()]);
- const[preview,setPreview]=useState<Preview|null>(null);const[error,setError]=useState("");const[success,setSuccess]=useState("");const[saving,setSaving]=useState(false);
+ const[preview,setPreview]=useState<Preview|null>(null);const[error,setError]=useState("");const[success,setSuccess]=useState("");const[saving,setSaving]=useState(false);const draftIdempotency=useRef<DraftIdempotencyState|null>(null);
  const itemById=useMemo(()=>Object.fromEntries(items.map(x=>[x.id,x])),[items]);const unitById=useMemo(()=>Object.fromEntries(units.map(x=>[x.id,x])),[units]);const locationById=useMemo(()=>Object.fromEntries(locations.map(x=>[x.id,x])),[locations]);
  const load=useCallback(async()=>{try{const[i,u,l,m]=await Promise.all([api<Item[]>("/items?active=true"),api<Unit[]>("/units"),api<Location[]>("/locations"),api<Meal[]>("/staff-meals?limit=50")]);setItems(i.filter(x=>x.track_stock));setUnits(u);setLocations(l.filter(x=>x.is_active));setMeals(m);setLocationId(current=>current||l.find(x=>x.is_active)?.id||"")}catch(e){setError((e as Error).message)}},[]);useEffect(()=>{void load()},[load]);
- const payload=()=>({meal_name:mealName.trim(),meal_period:mealPeriod||null,servings:Number(servings),location_id:locationId,notes:notes.trim()||null,lines:lines.filter(x=>x.item_id&&Number(x.quantity)>0).map(x=>({item_id:x.item_id,quantity:String(x.quantity)})),idempotency_key:crypto.randomUUID()});
+ const payload=()=>{const draft={meal_name:mealName.trim(),meal_period:mealPeriod||null,servings:Number(servings),location_id:locationId,notes:notes.trim()||null,lines:lines.filter(x=>x.item_id&&Number(x.quantity)>0).map(x=>({item_id:x.item_id,quantity:String(x.quantity)}))};const state=stableDraftIdempotency(draft,draftIdempotency.current);draftIdempotency.current=state;return{...draft,idempotency_key:state.key}};
  async function estimate(){setError("");setSuccess("");try{const p=payload();if(!p.meal_name||!p.location_id||p.lines.length===0)throw new Error("Enter a meal name, location, and at least one ingredient.");const result=await api<Preview>("/staff-meals/preview",{method:"POST",body:JSON.stringify(p)});setPreview(result)}catch(e){setPreview(null);setError((e as Error).message)}}
- async function post(){setSaving(true);setError("");setSuccess("");try{const p=payload();if(!p.meal_name||!p.location_id||p.lines.length===0)throw new Error("Enter a meal name, location, and at least one ingredient.");await api<Meal>("/staff-meals",{method:"POST",body:JSON.stringify(p)});setMealName("");setNotes("");setLines([blankLine()]);setPreview(null);setSuccess("Staff meal posted and ingredient stock deducted.");await load()}catch(e){setError((e as Error).message)}finally{setSaving(false)}}
+ async function post(){setSaving(true);setError("");setSuccess("");try{const p=payload();if(!p.meal_name||!p.location_id||p.lines.length===0)throw new Error("Enter a meal name, location, and at least one ingredient.");await api<Meal>("/staff-meals",{method:"POST",body:JSON.stringify(p)});draftIdempotency.current=null;setMealName("");setNotes("");setLines([blankLine()]);setPreview(null);setSuccess("Staff meal posted and ingredient stock deducted.");await load()}catch(e){setError((e as Error).message)}finally{setSaving(false)}}
  async function reverse(meal:Meal){if(!window.confirm(`Reverse ${meal.meal_number} — ${meal.meal_name}? This restores the posted ingredient quantities to inventory.`))return;setError("");try{await api<Meal>(`/staff-meals/${meal.id}/reverse`,{method:"POST"});setSuccess(`${meal.meal_number} reversed.`);await load()}catch(e){setError((e as Error).message)}}
  function copyPrevious(){const previous=meals.find(x=>x.status==="posted")||meals[0];if(!previous){setError("There is no previous staff meal to copy.");return}setMealName(previous.meal_name);setMealPeriod(previous.meal_period||"Lunch");setServings(String(previous.servings));setLocationId(previous.location_id);setLines(previous.lines.map(x=>({item_id:x.item_id,quantity:String(x.quantity)})));setPreview(null);setSuccess(`Copied ${previous.meal_number}. Adjust ingredients and quantities before posting.`)}
  function updateLine(index:number,key:"item_id"|"quantity",value:string){setLines(current=>current.map((row,i)=>i===index?{...row,[key]:value}:row));setPreview(null)}

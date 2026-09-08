@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import accounting_integration, assets, auth, catalogue_configuration, classification, controlled_inventory, controlled_inventory_compat, dashboard, dashboard_exceptions, final_assurance, guided_counts, health, location_controls, modules, inventory, procurement, procurement_planning, quotation_po_workspace, receiving_workspace, recipe_costing, operations, inventory_operations, operational_integrations, pass5_operations, pass6_controls, pos_sync, production, production_execution, property_operations, readiness, shared_master_data, stabilization, stock_ledger, supplier_360
+from app.api.routes import accounting_integration, assets, auth, catalogue_configuration, classification, controlled_inventory, controlled_inventory_compat, dashboard, dashboard_exceptions, final_assurance, guided_counts, health, location_controls, modules, inventory, procurement, procurement_planning, quotation_po_workspace, receiving_workspace, recipe_costing, operations, inventory_operations, operational_integrations, pass5_operations, pass6_controls, pos_sync, production, production_execution, property_operations, readiness, shared_master_data, stabilization, stock_ledger, supplier_360, staff_meals
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
@@ -7,6 +7,7 @@ api_router.include_router(dashboard.router)
 api_router.include_router(dashboard_exceptions.router)
 api_router.include_router(guided_counts.router)
 api_router.include_router(inventory.router)
+api_router.include_router(staff_meals.router)
 api_router.include_router(classification.router)
 api_router.include_router(stock_ledger.router)
 api_router.include_router(supplier_360.router)

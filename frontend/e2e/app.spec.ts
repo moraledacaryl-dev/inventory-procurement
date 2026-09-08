@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { stableDraftIdempotency } from "../lib/draftIdempotency";
 
 const email = process.env.E2E_OWNER_EMAIL || "owner@example.com";
 const password = process.env.E2E_OWNER_PASSWORD || "password123";
@@ -12,6 +13,20 @@ async function signIn(page: import("@playwright/test").Page) {
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 }
+
+test("staff meal draft idempotency survives identical retries and rotates after edits", () => {
+  const keys = ["retry-key", "edited-key"];
+  const makeKey = () => keys.shift()!;
+  const firstDraft = { meal_name: "Adobo", servings: 4, location_id: "kitchen", lines: [{ item_id: "chicken", quantity: "1" }] };
+  const first = stableDraftIdempotency(firstDraft, null, makeKey);
+  const retry = stableDraftIdempotency(firstDraft, first, makeKey);
+  expect(retry.key).toBe(first.key);
+  expect(retry.key).toBe("retry-key");
+
+  const edited = stableDraftIdempotency({ ...firstDraft, servings: 5 }, retry, makeKey);
+  expect(edited.key).toBe("edited-key");
+  expect(edited.key).not.toBe(first.key);
+});
 
 test("login and core operational pages are reachable", async ({ page }) => {
   await signIn(page);

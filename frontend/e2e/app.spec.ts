@@ -37,12 +37,28 @@ test("login and core operational pages are reachable", async ({ page }) => {
     ["/receiving", "Receiving"],
     ["/counts", "Counts"],
     ["/production", "Recipes & Production"],
+    ["/fnb/staff-meals", "Staff Meals"],
     ["/assets", "Assets & Property"],
   ] as const) {
     await page.goto(path);
     await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   }
+});
+
+test("staff meals is available from the F&B sidebar and uses the compact operational workspace", async ({ page, isMobile }) => {
+  await signIn(page);
+  if (isMobile) {
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  }
+  const link = page.getByRole("link", { name: "Staff Meals", exact: true });
+  await expect(link).toBeVisible();
+  await link.click();
+  await expect(page).toHaveURL(/\/fnb\/staff-meals$/);
+  await expect(page.getByRole("heading", { name: "Record staff meal" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Staff meal ingredients" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Preview cost" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Post staff meal" })).toBeVisible();
 });
 
 test("sidebar state remains visually stable during client navigation", async ({ page, isMobile }) => {
@@ -103,7 +119,7 @@ test("mobile navigation opens, routes, and closes", async ({ page, isMobile }) =
 
 test("critical pages have no serious Axe violations", async ({ page }) => {
   await signIn(page);
-  for (const path of ["/dashboard", "/items", "/purchasing", "/receiving", "/counts", "/assets"]) {
+  for (const path of ["/dashboard", "/items", "/purchasing", "/receiving", "/counts", "/fnb/staff-meals", "/assets"]) {
     await page.goto(path);
     await expect(page.locator("main#main-content")).toBeVisible();
     const results = await new AxeBuilder({ page })

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import accounting_integration, assets, auth, catalogue_configuration, classification, controlled_inventory, controlled_inventory_compat, dashboard, dashboard_exceptions, final_assurance, guided_counts, health, location_controls, modules, inventory, procurement, procurement_planning, quotation_po_workspace, receiving_workspace, recipe_costing, operations, inventory_operations, operational_integrations, pass5_operations, pass6_controls, pos_sync, production, production_execution, property_operations, readiness, shared_master_data, stabilization, stock_ledger, supplier_360, staff_meals
+from app.api.routes import accounting_integration, assets, auth, catalogue_configuration, classification, controlled_inventory, controlled_inventory_compat, dashboard, dashboard_exceptions, final_assurance, guided_counts, health, location_controls, modules, inventory, procurement, procurement_planning, quotation_po_workspace, receiving_workspace, recipe_costing, operations, inventory_operations, operational_integrations, pass5_operations, pass6_controls, pos_sync, production, production_execution, property_operations, readiness, shared_master_data, stabilization, stock_ledger, supplier_360, staff_identity_integration, staff_meals
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
@@ -32,6 +32,7 @@ api_router.include_router(pos_sync.router)
 api_router.include_router(shared_master_data.router)
 api_router.include_router(accounting_integration.router)
 api_router.include_router(operational_integrations.router)
+api_router.include_router(staff_identity_integration.router)
 api_router.include_router(final_assurance.router)
 api_router.include_router(readiness.router)
 api_router.include_router(stabilization.router)

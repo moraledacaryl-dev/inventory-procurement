@@ -12,6 +12,7 @@ from app.models.property import PropertyBalance, PropertyMovement, HotelParProfi
 from app.models.assets import FixedAsset, DepreciationRun, DepreciationLine, AssetEvent
 from app.models.pass5 import MaintenancePlan, WorkOrder, WorkOrderPart, PurchaseLineTreatment, AccountingMapping
 from app.models.pass6 import OperationalAccessScope, SavedView
+from app.models.staff_identity import StaffIdentity
 from app.models.staff_meals import StaffMeal, StaffMealLine
 
 __all__ = [
@@ -30,5 +31,5 @@ __all__ = [
     'HotelParProfile', 'HotelParLine', 'FixedAsset', 'DepreciationRun',
     'DepreciationLine', 'AssetEvent', 'MaintenancePlan', 'WorkOrder',
     'WorkOrderPart', 'PurchaseLineTreatment', 'AccountingMapping',
-    'OperationalAccessScope', 'SavedView', 'StaffMeal', 'StaffMealLine',
+    'OperationalAccessScope', 'SavedView', 'StaffIdentity', 'StaffMeal', 'StaffMealLine',
 ]

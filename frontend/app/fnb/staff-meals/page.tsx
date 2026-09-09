@@ -7,41 +7,256 @@ import { StatusBadge } from "../../../components/StatusBadge";
 import { api } from "../../../lib/api";
 import { stableDraftIdempotency, type DraftIdempotencyState } from "../../../lib/draftIdempotency";
 
-type Item={id:string;sku:string;name:string;base_unit_id:string;track_stock:boolean;is_active:boolean};
-type Unit={id:string;code:string};
-type Location={id:string;code:string;name:string;is_active:boolean};
-type MealLine={id?:string;item_id:string;quantity:string|number;unit_cost?:string|number};
-type Meal={id:string;meal_number:string;meal_name:string;meal_period?:string|null;servings:number;location_id:string;status:string;created_at:string;lines:MealLine[]};
-type PreviewLine={item_id:string;sku:string;item_name:string;quantity:string;available_quantity:string;unit_cost:string;line_cost:string};
-type Preview={servings:number;total_cost:string;cost_per_serving:string;lines:PreviewLine[]};
+type Item = { id: string; sku: string; name: string; base_unit_id: string; track_stock: boolean; is_active: boolean };
+type Unit = { id: string; code: string };
+type Location = { id: string; code: string; name: string; is_active: boolean };
+type MealLine = { id?: string; item_id: string; quantity: string | number; unit_cost?: string | number };
+type Meal = { id: string; meal_number: string; meal_name: string; meal_period?: string | null; servings: number; location_id: string; status: string; created_at: string; lines: MealLine[] };
+type PreviewLine = { item_id: string; sku: string; item_name: string; quantity: string; available_quantity: string; unit_cost: string; line_cost: string };
+type Preview = { servings: number; total_cost: string; cost_per_serving: string; lines: PreviewLine[] };
 
-const blankLine=():MealLine=>({item_id:"",quantity:""});
-const money=(value:string|number)=>Number(value||0).toLocaleString("en-PH",{style:"currency",currency:"PHP",minimumFractionDigits:2});
+const blankLine = (): MealLine => ({ item_id: "", quantity: "" });
+const money = (value: string | number) => Number(value || 0).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
+const accessibleTableHeaderStyle = { color: "#445364" } as const;
+const accessibleHelperStyle = { color: "#526173" } as const;
 
-export default function Page(){
- const[items,setItems]=useState<Item[]>([]);const[units,setUnits]=useState<Unit[]>([]);const[locations,setLocations]=useState<Location[]>([]);const[meals,setMeals]=useState<Meal[]>([]);
- const[mealName,setMealName]=useState("");const[mealPeriod,setMealPeriod]=useState("Lunch");const[servings,setServings]=useState("1");const[locationId,setLocationId]=useState("");const[notes,setNotes]=useState("");const[lines,setLines]=useState<MealLine[]>([blankLine()]);
- const[preview,setPreview]=useState<Preview|null>(null);const[error,setError]=useState("");const[success,setSuccess]=useState("");const[saving,setSaving]=useState(false);const draftIdempotency=useRef<DraftIdempotencyState|null>(null);
- const itemById=useMemo(()=>Object.fromEntries(items.map(x=>[x.id,x])),[items]);const unitById=useMemo(()=>Object.fromEntries(units.map(x=>[x.id,x])),[units]);const locationById=useMemo(()=>Object.fromEntries(locations.map(x=>[x.id,x])),[locations]);
- const load=useCallback(async()=>{try{const[i,u,l,m]=await Promise.all([api<Item[]>("/items?active=true"),api<Unit[]>("/units"),api<Location[]>("/locations"),api<Meal[]>("/staff-meals?limit=50")]);setItems(i.filter(x=>x.track_stock));setUnits(u);setLocations(l.filter(x=>x.is_active));setMeals(m);setLocationId(current=>current||l.find(x=>x.is_active)?.id||"")}catch(e){setError((e as Error).message)}},[]);useEffect(()=>{void load()},[load]);
- const payload=()=>{const draft={meal_name:mealName.trim(),meal_period:mealPeriod||null,servings:Number(servings),location_id:locationId,notes:notes.trim()||null,lines:lines.filter(x=>x.item_id&&Number(x.quantity)>0).map(x=>({item_id:x.item_id,quantity:String(x.quantity)}))};const state=stableDraftIdempotency(draft,draftIdempotency.current);draftIdempotency.current=state;return{...draft,idempotency_key:state.key}};
- async function estimate(){setError("");setSuccess("");try{const p=payload();if(!p.meal_name||!p.location_id||p.lines.length===0)throw new Error("Enter a meal name, location, and at least one ingredient.");const result=await api<Preview>("/staff-meals/preview",{method:"POST",body:JSON.stringify(p)});setPreview(result)}catch(e){setPreview(null);setError((e as Error).message)}}
- async function post(){setSaving(true);setError("");setSuccess("");try{const p=payload();if(!p.meal_name||!p.location_id||p.lines.length===0)throw new Error("Enter a meal name, location, and at least one ingredient.");await api<Meal>("/staff-meals",{method:"POST",body:JSON.stringify(p)});draftIdempotency.current=null;setMealName("");setNotes("");setLines([blankLine()]);setPreview(null);setSuccess("Staff meal posted and ingredient stock deducted.");await load()}catch(e){setError((e as Error).message)}finally{setSaving(false)}}
- async function reverse(meal:Meal){if(!window.confirm(`Reverse ${meal.meal_number} — ${meal.meal_name}? This restores the posted ingredient quantities to inventory.`))return;setError("");try{await api<Meal>(`/staff-meals/${meal.id}/reverse`,{method:"POST"});setSuccess(`${meal.meal_number} reversed.`);await load()}catch(e){setError((e as Error).message)}}
- function copyPrevious(){const previous=meals.find(x=>x.status==="posted")||meals[0];if(!previous){setError("There is no previous staff meal to copy.");return}setMealName(previous.meal_name);setMealPeriod(previous.meal_period||"Lunch");setServings(String(previous.servings));setLocationId(previous.location_id);setLines(previous.lines.map(x=>({item_id:x.item_id,quantity:String(x.quantity)})));setPreview(null);setSuccess(`Copied ${previous.meal_number}. Adjust ingredients and quantities before posting.`)}
- function updateLine(index:number,key:"item_id"|"quantity",value:string){setLines(current=>current.map((row,i)=>i===index?{...row,[key]:value}:row));setPreview(null)}
- return <AppShell title="Staff Meals" description="Record the actual ingredients used for daily staff meals. Every posted meal is costed from inventory and remains auditable.">
-  {error?<FeedbackBanner tone="error" title="Staff meal action failed" message={error}/>:null}{success?<FeedbackBanner tone="success" title="Staff meal updated" message={success}/>:null}
-  <section className="card"><div className="topline"><div><span className="page-kicker">Daily consumption</span><h2>New staff meal</h2><p>No recipe is required. Enter what the kitchen actually used today.</p></div><button className="secondary compact" type="button" onClick={copyPrevious}>Copy previous meal</button></div>
-   <div className="form-grid section-gap"><label>Meal name<input value={mealName} onChange={e=>setMealName(e.target.value)} placeholder="e.g. Chicken adobo" maxLength={180}/></label><label>Meal period<select value={mealPeriod} onChange={e=>setMealPeriod(e.target.value)}><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Other</option></select></label><label>Servings<input type="number" min="1" max="500" value={servings} onChange={e=>setServings(e.target.value)}/></label><label>Kitchen / stock location<select value={locationId} onChange={e=>{setLocationId(e.target.value);setPreview(null)}}><option value="">Select location</option>{locations.map(x=><option value={x.id} key={x.id}>{x.code} — {x.name}</option>)}</select></label></div>
-   <div className="section-gap"><div className="topline"><div><h3>Ingredients used</h3><p>Use the exact quantities taken from inventory.</p></div><button className="secondary compact" type="button" onClick={()=>setLines(x=>[...x,blankLine()])}>Add ingredient</button></div>
-    <div className="workspace-record-list">{lines.map((line,index)=>{const item=itemById[line.item_id];const unit=item?unitById[item.base_unit_id]:undefined;return <div key={index} className="card"><div className="form-grid"><label>Ingredient<select value={line.item_id} onChange={e=>updateLine(index,"item_id",e.target.value)}><option value="">Select ingredient</option>{items.map(x=><option value={x.id} key={x.id}>{x.sku} — {x.name}</option>)}</select></label><label>Quantity ({unit?.code||"base unit"})<input type="number" min="0" step="any" value={line.quantity} onChange={e=>updateLine(index,"quantity",e.target.value)}/></label><div><button className="secondary compact" type="button" disabled={lines.length===1} onClick={()=>{setLines(x=>x.filter((_,i)=>i!==index));setPreview(null)}}>Remove</button></div></div></div>})}</div>
-   </div>
-   <label className="section-gap">Notes<textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Optional preparation or service notes"/></label>
-   {preview?<div className="grid section-gap"><div className="card"><h3>Estimated food cost</h3><strong>{money(preview.total_cost)}</strong></div><div className="card"><h3>Cost per serving</h3><strong>{money(preview.cost_per_serving)}</strong></div><div className="card"><h3>Ingredient lines</h3><strong>{preview.lines.length}</strong></div></div>:null}
-   {preview?<div className="workspace-record-list section-gap">{preview.lines.map(x=><div key={x.item_id}><span><strong>{x.sku} — {x.item_name}</strong><small>{x.quantity} used · {x.available_quantity} available</small></span><strong>{money(x.line_cost)}</strong></div>)}</div>:null}
-   <div className="actions section-gap"><button className="secondary" type="button" onClick={estimate}>Preview cost</button><button type="button" disabled={saving} onClick={post}>{saving?"Posting…":"Post staff meal"}</button></div>
-  </section>
-  <section className="card section-gap"><div className="topline"><div><span className="page-kicker">Audit trail</span><h2>Recent staff meals</h2><p>Posted meals cannot be edited. Reverse an incorrect entry, then post the corrected meal.</p></div></div><div className="workspace-record-list">{meals.map(meal=><div key={meal.id}><span><strong>{meal.meal_number} — {meal.meal_name}</strong><small>{new Date(meal.created_at).toLocaleString()} · {meal.servings} servings · {locationById[meal.location_id]?.name||"Unknown location"} · {meal.lines.length} ingredients</small></span><span className="actions"><StatusBadge status={meal.status}/>{meal.status==="posted"?<button className="secondary compact" type="button" onClick={()=>void reverse(meal)}>Reverse</button>:null}</span></div>)}{meals.length===0?<p className="muted">No staff meals have been posted yet.</p>:null}</div></section>
- </AppShell>
+export default function Page() {
+  const [items, setItems] = useState<Item[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [meals, setMeals] = useState<Meal[]>([]);
+  const [mealName, setMealName] = useState("");
+  const [mealPeriod, setMealPeriod] = useState("Lunch");
+  const [servings, setServings] = useState("1");
+  const [locationId, setLocationId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState<MealLine[]>([blankLine()]);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [saving, setSaving] = useState(false);
+  const draftIdempotency = useRef<DraftIdempotencyState | null>(null);
+
+  const itemById = useMemo(() => Object.fromEntries(items.map(x => [x.id, x])), [items]);
+  const unitById = useMemo(() => Object.fromEntries(units.map(x => [x.id, x])), [units]);
+  const locationById = useMemo(() => Object.fromEntries(locations.map(x => [x.id, x])), [locations]);
+
+  const load = useCallback(async () => {
+    try {
+      const [i, u, l, m] = await Promise.all([
+        api<Item[]>("/items?active=true"),
+        api<Unit[]>("/units"),
+        api<Location[]>("/locations"),
+        api<Meal[]>("/staff-meals?limit=50"),
+      ]);
+      setItems(i.filter(x => x.track_stock));
+      setUnits(u);
+      setLocations(l.filter(x => x.is_active));
+      setMeals(m);
+      setLocationId(current => current || l.find(x => x.is_active)?.id || "");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const payload = () => {
+    const draft = {
+      meal_name: mealName.trim(),
+      meal_period: mealPeriod || null,
+      servings: Number(servings),
+      location_id: locationId,
+      notes: notes.trim() || null,
+      lines: lines.filter(x => x.item_id && Number(x.quantity) > 0).map(x => ({ item_id: x.item_id, quantity: String(x.quantity) })),
+    };
+    const state = stableDraftIdempotency(draft, draftIdempotency.current);
+    draftIdempotency.current = state;
+    return { ...draft, idempotency_key: state.key };
+  };
+
+  async function estimate() {
+    setError("");
+    setSuccess("");
+    try {
+      const p = payload();
+      if (!p.meal_name || !p.location_id || p.lines.length === 0) throw new Error("Enter a meal name, location, and at least one ingredient.");
+      const result = await api<Preview>("/staff-meals/preview", { method: "POST", body: JSON.stringify(p) });
+      setPreview(result);
+    } catch (e) {
+      setPreview(null);
+      setError((e as Error).message);
+    }
+  }
+
+  async function post() {
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      const p = payload();
+      if (!p.meal_name || !p.location_id || p.lines.length === 0) throw new Error("Enter a meal name, location, and at least one ingredient.");
+      await api<Meal>("/staff-meals", { method: "POST", body: JSON.stringify(p) });
+      draftIdempotency.current = null;
+      setMealName("");
+      setNotes("");
+      setLines([blankLine()]);
+      setPreview(null);
+      setSuccess("Staff meal posted. Ingredient stock has been deducted and the cost is recorded in the audit trail.");
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function reverse(meal: Meal) {
+    if (!window.confirm(`Reverse ${meal.meal_number} — ${meal.meal_name}? This restores the posted ingredient quantities to inventory.`)) return;
+    setError("");
+    try {
+      await api<Meal>(`/staff-meals/${meal.id}/reverse`, { method: "POST" });
+      setSuccess(`${meal.meal_number} reversed.`);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function copyPrevious() {
+    const previous = meals.find(x => x.status === "posted") || meals[0];
+    if (!previous) {
+      setError("There is no previous staff meal to copy.");
+      return;
+    }
+    draftIdempotency.current = null;
+    setMealName(previous.meal_name);
+    setMealPeriod(previous.meal_period || "Lunch");
+    setServings(String(previous.servings));
+    setLocationId(previous.location_id);
+    setLines(previous.lines.map(x => ({ item_id: x.item_id, quantity: String(x.quantity) })));
+    setPreview(null);
+    setSuccess(`Copied ${previous.meal_number}. Review the quantities before posting today's meal.`);
+  }
+
+  function updateLine(index: number, key: "item_id" | "quantity", value: string) {
+    setLines(current => current.map((row, i) => i === index ? { ...row, [key]: value } : row));
+    setPreview(null);
+  }
+
+  const previewByItem = useMemo(() => Object.fromEntries((preview?.lines || []).map(x => [x.item_id, x])), [preview]);
+
+  return <AppShell title="Staff Meals" description="Record what the kitchen actually used for staff meals. No recipe is required; every posting is costed and auditable.">
+    {error ? <FeedbackBanner tone="error" title="Staff meal action failed" message={error} /> : null}
+    {success ? <FeedbackBanner tone="success" title="Staff meal updated" message={success} /> : null}
+
+    <section className="card">
+      <div className="topline">
+        <div>
+          <span className="page-kicker">Daily internal consumption</span>
+          <h2>Record staff meal</h2>
+          <p>Enter the actual ingredients taken from stock. Preview the cost, then post once the quantities are correct.</p>
+        </div>
+        <button className="secondary compact" type="button" onClick={copyPrevious}>Copy previous</button>
+      </div>
+
+      <div className="form-grid">
+        <label className="field">Meal name
+          <input value={mealName} onChange={e => { setMealName(e.target.value); setPreview(null); }} placeholder="e.g. Chicken adobo" maxLength={180} />
+        </label>
+        <label className="field">Meal period
+          <select value={mealPeriod} onChange={e => { setMealPeriod(e.target.value); setPreview(null); }}>
+            <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Other</option>
+          </select>
+        </label>
+        <label className="field">Servings
+          <input type="number" min="1" max="500" value={servings} onChange={e => { setServings(e.target.value); setPreview(null); }} />
+        </label>
+        <label className="field">Stock location
+          <select value={locationId} onChange={e => { setLocationId(e.target.value); setPreview(null); }}>
+            <option value="">Select location</option>
+            {locations.map(x => <option value={x.id} key={x.id}>{x.code} — {x.name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <div className="section-title">
+        <div><h2>Ingredients used</h2><p>Add only what was actually taken from inventory.</p></div>
+        <button className="secondary compact" type="button" onClick={() => { setLines(x => [...x, blankLine()]); setPreview(null); }}>+ Add ingredient</button>
+      </div>
+
+      <div className="data-table-shell">
+        <div className="table-wrap">
+          <table aria-label="Staff meal ingredients">
+            <thead><tr><th style={accessibleTableHeaderStyle}>Ingredient</th><th style={accessibleTableHeaderStyle}>Quantity</th><th style={accessibleTableHeaderStyle}>Available</th><th style={accessibleTableHeaderStyle}>Cost</th><th style={accessibleTableHeaderStyle} aria-label="Actions" /></tr></thead>
+            <tbody>
+              {lines.map((line, index) => {
+                const item = itemById[line.item_id];
+                const unit = item ? unitById[item.base_unit_id] : undefined;
+                const cost = previewByItem[line.item_id];
+                return <tr key={index}>
+                  <td>
+                    <label className="sr-only" htmlFor={`ingredient-${index}`}>Ingredient {index + 1}</label>
+                    <select id={`ingredient-${index}`} value={line.item_id} onChange={e => updateLine(index, "item_id", e.target.value)}>
+                      <option value="">Select ingredient</option>
+                      {items.map(x => <option value={x.id} key={x.id}>{x.sku} — {x.name}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <label className="sr-only" htmlFor={`quantity-${index}`}>Quantity for ingredient {index + 1}</label>
+                    <input id={`quantity-${index}`} type="number" min="0" step="any" value={line.quantity} onChange={e => updateLine(index, "quantity", e.target.value)} />
+                    <small className="muted"> {unit?.code || "base unit"}</small>
+                  </td>
+                  <td>{cost ? cost.available_quantity : "—"}</td>
+                  <td>{cost ? money(cost.line_cost) : "—"}</td>
+                  <td><button className="secondary compact" type="button" disabled={lines.length === 1} onClick={() => { setLines(x => x.filter((_, i) => i !== index)); setPreview(null); }}>Remove</button></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <label className="field section-gap">Notes
+        <textarea value={notes} onChange={e => { setNotes(e.target.value); setPreview(null); }} placeholder="Optional preparation or service notes" />
+      </label>
+
+      <div className="grid section-gap" aria-label="Staff meal cost summary">
+        <div className="card"><span className="page-kicker">Total food cost</span><strong>{preview ? money(preview.total_cost) : "—"}</strong><p>{preview ? "Based on current inventory costing." : "Preview to calculate."}</p></div>
+        <div className="card"><span className="page-kicker">Cost per serving</span><strong>{preview ? money(preview.cost_per_serving) : "—"}</strong><p>{preview ? `${preview.servings} serving${preview.servings === 1 ? "" : "s"}.` : "Calculated from servings."}</p></div>
+        <div className="card"><span className="page-kicker">Ingredients</span><strong>{preview ? preview.lines.length : lines.filter(x => x.item_id && Number(x.quantity) > 0).length}</strong><p>Actual stock lines in this meal.</p></div>
+      </div>
+
+      <div className="button-row">
+        <button className="secondary" type="button" onClick={estimate} disabled={saving}>Preview cost</button>
+        <button className="primary" type="button" disabled={saving} onClick={post}>{saving ? "Posting…" : "Post staff meal"}</button>
+      </div>
+      <p className="section-gap" style={accessibleHelperStyle}>Posted meals are immutable. If something is wrong, reverse the posting and enter the corrected meal.</p>
+    </section>
+
+    <section className="card section-gap">
+      <div className="topline">
+        <div><span className="page-kicker">Audit trail</span><h2>Recent staff meals</h2><p>Latest internal-consumption postings and reversals.</p></div>
+      </div>
+      <div className="data-table-shell">
+        <div className="table-wrap">
+          <table aria-label="Recent staff meals">
+            <thead><tr><th style={accessibleTableHeaderStyle}>Meal</th><th style={accessibleTableHeaderStyle}>Period</th><th style={accessibleTableHeaderStyle}>Servings</th><th style={accessibleTableHeaderStyle}>Location</th><th style={accessibleTableHeaderStyle}>Posted</th><th style={accessibleTableHeaderStyle}>Status</th><th style={accessibleTableHeaderStyle} aria-label="Actions" /></tr></thead>
+            <tbody>
+              {meals.map(meal => <tr key={meal.id}>
+                <td><strong style={{ fontSize: 13 }}>{meal.meal_number}</strong><br /><small>{meal.meal_name}</small></td>
+                <td>{meal.meal_period || "—"}</td>
+                <td>{meal.servings}</td>
+                <td>{locationById[meal.location_id]?.name || "Unknown location"}</td>
+                <td>{new Date(meal.created_at).toLocaleString()}</td>
+                <td><StatusBadge status={meal.status} /></td>
+                <td>{meal.status === "posted" ? <button className="secondary compact" type="button" onClick={() => void reverse(meal)}>Reverse</button> : null}</td>
+              </tr>)}
+              {meals.length === 0 ? <tr><td colSpan={7}><div className="empty-state"><strong>No staff meals yet</strong><span>Post the first staff meal above.</span></div></td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </AppShell>;
 }

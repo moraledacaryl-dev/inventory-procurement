@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
+const visualEnabled = process.env.VISUAL_CAPTURE === "1";
 const password = process.env.E2E_VISUAL_PASSWORD || "visual-acceptance-password";
 const users = {
   owner: "visual-owner@example.com",
@@ -57,6 +58,7 @@ async function signIn(page: import("@playwright/test").Page, email: string) {
 
 for (const [role, email] of Object.entries(users)) {
   test(`visual capture — ${role}`, async ({ page }, testInfo) => {
+    test.skip(!visualEnabled, "Set VISUAL_CAPTURE=1 for exhaustive screenshot capture");
     test.setTimeout(10 * 60_000);
     const project = testInfo.project.name;
     const root = path.resolve(process.cwd(), "visual-artifacts", project, role);
@@ -71,7 +73,6 @@ for (const [role, email] of Object.entries(users)) {
     const discovered = new Set(staticRoutes());
     discovered.add("/dashboard");
 
-    // First crawl visible navigation as this role to discover concrete dynamic/detail URLs.
     for (const route of [...discovered]) {
       await page.goto(route, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(250);
@@ -103,7 +104,6 @@ for (const [role, email] of Object.entries(users)) {
         pageErrors: pageErrors.slice(beforePage),
       });
 
-      // Owner gets a second capture under a synthetic API failure to expose error/empty guards.
       if (role === "owner" && route !== "/dashboard") {
         await page.route("**/api/v1/**", async r => {
           const url = r.request().url();

@@ -14,13 +14,14 @@ app.add_middleware(
     allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID", "X-Requested-With", "X-Integration-Token"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID", "X-Requested-With", "X-Integration-Token", "X-Integration-Api-Key"],
 )
 
 SERVICE_MUTATION_PATHS = {
     f"{settings.api_v1_prefix}/integrations/accounting/receipts",
     f"{settings.api_v1_prefix}/integrations/operations/requests",
     f"{settings.api_v1_prefix}/integrations/pos/events",
+    f"{settings.api_v1_prefix}/integrations/staff/employees",
 }
 
 

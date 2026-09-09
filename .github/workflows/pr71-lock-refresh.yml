@@ -1,0 +1,38 @@
+name: PR71 Lock Refresh
+
+on:
+  push:
+    branches:
+      - pass-24-staff-meals-ui
+    paths:
+      - frontend/package.json
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pass-24-staff-meals-ui
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Refresh audited frontend lockfile
+        working-directory: frontend
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          npm audit --audit-level=high
+      - name: Commit refreshed lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already current"
+            exit 0
+          fi
+          git commit -m "Refresh frontend dependency lockfile"
+          git push origin HEAD:pass-24-staff-meals-ui

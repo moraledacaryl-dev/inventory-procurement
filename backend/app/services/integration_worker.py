@@ -4,8 +4,9 @@ from decimal import Decimal, InvalidOperation
 import httpx
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
-from app.models.inventory import Item, Location, StockBalance
+from app.models.inventory import Item, Location, StockBalance, StockDocument
 from app.models.operations import IntegrationEvent
+from app.models.procurement import PurchaseOrder, PurchaseReturn, Supplier
 from app.services.controls import add_audit, add_notification, enqueue_event
 
 ACCOUNTING_ENDPOINT='/api/integration-review/service-intake'
@@ -50,13 +51,50 @@ def _validate_accounting_response(response:httpx.Response)->dict:
         raise RuntimeError(f'Accounting intake returned unexpected status: {status or "missing"}')
     return payload
 
-def accounting_envelope(event:IntegrationEvent)->dict:
-    payload=event.payload if isinstance(event.payload,dict) else {}
+def _accounting_payload(db:Session,event:IntegrationEvent)->dict:
+    payload=dict(event.payload) if isinstance(event.payload,dict) else {}
+    if event.event_type not in {'procurement.goods_received','procurement.purchase_return.posted'}:
+        return payload
+
+    po_id=payload.get('purchase_order_id')
+    po=None
+    if event.event_type=='procurement.purchase_return.posted':
+        purchase_return=db.get(PurchaseReturn,str(event.aggregate_id))
+        if purchase_return:
+            po_id=purchase_return.purchase_order_id
+            payload.setdefault('purchase_return_id',purchase_return.id)
+            payload.setdefault('return_number',purchase_return.return_number)
+            payload.setdefault('purchase_order_id',purchase_return.purchase_order_id)
+            payload.setdefault('stock_document_id',purchase_return.stock_document_id)
+            payload.setdefault('reason',purchase_return.reason)
+            po=db.get(PurchaseOrder,purchase_return.purchase_order_id)
+            document=db.get(StockDocument,purchase_return.stock_document_id)
+            if document:
+                po_line_by_item={line.item_id:line.id for line in (po.lines if po else [])}
+                return_lines=[]
+                total=Decimal('0')
+                for movement in sorted(document.movements,key=lambda row:row.line_number):
+                    quantity=abs(_money(movement.quantity));unit_cost=_money(movement.unit_cost);line_total=quantity*unit_cost;total+=line_total
+                    return_lines.append({'purchase_order_line_id':po_line_by_item.get(movement.item_id),'item_id':movement.item_id,'quantity':str(quantity),'unit_cost':str(unit_cost),'line_total':str(line_total)})
+                payload['lines']=return_lines
+                payload['total']=str(total)
+
+    if po is None and po_id:
+        po=db.get(PurchaseOrder,str(po_id))
+    if po:
+        supplier=db.get(Supplier,po.supplier_id)
+        payload.setdefault('supplier_id',po.supplier_id)
+        if supplier:payload.setdefault('supplier_name',supplier.name)
+    return payload
+
+def accounting_envelope(event:IntegrationEvent,payload_override:dict|None=None)->dict:
+    payload=payload_override if isinstance(payload_override,dict) else (event.payload if isinstance(event.payload,dict) else {})
     effect='reference_only';amount=Decimal('0');links={'target_type':event.aggregate_type,'target_id':str(event.aggregate_id)}
     if event.event_type=='procurement.goods_received':
-        amount=sum((_money(line.get('accepted_quantity'))*_money(line.get('unit_cost')) for line in payload.get('lines',[])),Decimal('0'));effect='payable';links={'supplier_id':payload.get('supplier_id'),'supplier_name':str(payload.get('supplier_id') or 'Supplier'),'purchase_order_id':payload.get('purchase_order_id'),'invoice_number':payload.get('goods_receipt_number'),'category':'Inventory purchases'}
+        amount=sum((_money(line.get('accepted_quantity'))*_money(line.get('unit_cost')) for line in payload.get('lines',[])),Decimal('0'));effect='payable';links={'supplier_id':payload.get('supplier_id'),'supplier_name':str(payload.get('supplier_name') or payload.get('supplier_id') or 'Supplier'),'purchase_order_id':payload.get('purchase_order_id'),'invoice_number':payload.get('goods_receipt_number'),'category':'Inventory purchases'}
     elif event.event_type=='procurement.purchase_order.approved':links={'target_type':'purchase_order','target_id':str(payload.get('purchase_order_id') or event.aggregate_id),'purchase_order_id':payload.get('purchase_order_id'),'supplier_id':payload.get('supplier_id'),'commitment_total':payload.get('total')}
-    elif event.event_type=='procurement.purchase_return.posted':links={'target_type':'purchase_return','target_id':str(payload.get('purchase_return_id') or event.aggregate_id),'purchase_return_id':payload.get('purchase_return_id'),'purchase_order_id':payload.get('purchase_order_id'),'return_number':payload.get('return_number')}
+    elif event.event_type=='procurement.purchase_return.posted':
+        amount=_money(payload.get('total'));effect='payable_adjustment';links={'target_type':'purchase_return','target_id':str(payload.get('purchase_return_id') or event.aggregate_id),'purchase_return_id':payload.get('purchase_return_id'),'purchase_order_id':payload.get('purchase_order_id'),'return_number':payload.get('return_number'),'supplier_id':payload.get('supplier_id'),'supplier_name':str(payload.get('supplier_name') or payload.get('supplier_id') or 'Supplier'),'category':'Inventory purchase returns'}
     elif event.event_type=='inventory.production.completed':links={'target_type':'production_batch','target_id':str(payload.get('batch_id') or event.aggregate_id),'batch_id':payload.get('batch_id'),'batch_number':payload.get('batch_number'),'stock_value':payload.get('total_cost'),'category':'Inventory production'}
     elif event.event_type in {'inventory.pos_sale_consumed','inventory.pos_sale_reversed'}:links={'target_type':'pos_sale','target_id':str(payload.get('sale_id') or event.aggregate_id),'sale_id':payload.get('sale_id'),'stock_document_id':payload.get('stock_document_id'),'category':'Cost of goods sold','reversal':event.event_type.endswith('reversed')}
     return {'source_app':'inventory','source_event_id':event.id,'source_entity_type':event.aggregate_type,'source_entity_id':event.aggregate_id,'source_revision':max(1,int(event.attempts or 0)+1),'financial_effect':effect,'amount':float(amount.quantize(Decimal('0.01'))),'currency':str(payload.get('currency') or 'PHP').upper(),'proposed_account_id':payload.get('accounting_account_id'),'proposed_journal':payload.get('proposed_journal'),'proposed_links':links,'payload':{'event_type':event.event_type,'aggregate_type':event.aggregate_type,'aggregate_id':event.aggregate_id,'data':payload},'idempotency_key':event.idempotency_key,'correlation_id':str(payload.get('correlation_id') or event.aggregate_id)}
@@ -108,7 +146,7 @@ def process_event(db:Session,event_id:str,worker_id:str,endpoints:dict[str,str]|
         if not base:raise RuntimeError(f'No endpoint configured for {event.destination_system}')
         body={'id':event.id,'event_type':event.event_type,'aggregate_type':event.aggregate_type,'aggregate_id':event.aggregate_id,'payload':event.payload};headers={'Idempotency-Key':event.idempotency_key};url=base
         if event.destination_system=='accounting':
-            url=_join_url(base,ACCOUNTING_ENDPOINT) if not base.rstrip('/').endswith(ACCOUNTING_ENDPOINT) else base;body=accounting_envelope(event);token=os.getenv('INTEGRATION_API_KEY','').strip()
+            url=_join_url(base,ACCOUNTING_ENDPOINT) if not base.rstrip('/').endswith(ACCOUNTING_ENDPOINT) else base;body=accounting_envelope(event,_accounting_payload(db,event));token=os.getenv('INTEGRATION_API_KEY','').strip()
             if token:headers['X-Integration-Api-Key']=token
         elif event.destination_system=='operations':
             url=_operations_url(base);body=operations_envelope(event);token=os.getenv('OPERATIONS_INTEGRATION_KEY','').strip()

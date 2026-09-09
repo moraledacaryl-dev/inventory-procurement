@@ -17,6 +17,8 @@ type Preview = { servings: number; total_cost: string; cost_per_serving: string;
 
 const blankLine = (): MealLine => ({ item_id: "", quantity: "" });
 const money = (value: string | number) => Number(value || 0).toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 });
+const accessibleTableHeaderStyle = { color: "#445364" } as const;
+const accessibleHelperStyle = { color: "#526173" } as const;
 
 export default function Page() {
   const [items, setItems] = useState<Item[]>([]);
@@ -186,7 +188,7 @@ export default function Page() {
       <div className="data-table-shell">
         <div className="table-wrap">
           <table aria-label="Staff meal ingredients">
-            <thead><tr><th>Ingredient</th><th>Quantity</th><th>Available</th><th>Cost</th><th aria-label="Actions" /></tr></thead>
+            <thead><tr><th style={accessibleTableHeaderStyle}>Ingredient</th><th style={accessibleTableHeaderStyle}>Quantity</th><th style={accessibleTableHeaderStyle}>Available</th><th style={accessibleTableHeaderStyle}>Cost</th><th style={accessibleTableHeaderStyle} aria-label="Actions" /></tr></thead>
             <tbody>
               {lines.map((line, index) => {
                 const item = itemById[line.item_id];
@@ -229,7 +231,7 @@ export default function Page() {
         <button className="secondary" type="button" onClick={estimate} disabled={saving}>Preview cost</button>
         <button className="primary" type="button" disabled={saving} onClick={post}>{saving ? "Posting…" : "Post staff meal"}</button>
       </div>
-      <p className="muted section-gap">Posted meals are immutable. If something is wrong, reverse the posting and enter the corrected meal.</p>
+      <p className="section-gap" style={accessibleHelperStyle}>Posted meals are immutable. If something is wrong, reverse the posting and enter the corrected meal.</p>
     </section>
 
     <section className="card section-gap">
@@ -239,7 +241,7 @@ export default function Page() {
       <div className="data-table-shell">
         <div className="table-wrap">
           <table aria-label="Recent staff meals">
-            <thead><tr><th>Meal</th><th>Period</th><th>Servings</th><th>Location</th><th>Posted</th><th>Status</th><th aria-label="Actions" /></tr></thead>
+            <thead><tr><th style={accessibleTableHeaderStyle}>Meal</th><th style={accessibleTableHeaderStyle}>Period</th><th style={accessibleTableHeaderStyle}>Servings</th><th style={accessibleTableHeaderStyle}>Location</th><th style={accessibleTableHeaderStyle}>Posted</th><th style={accessibleTableHeaderStyle}>Status</th><th style={accessibleTableHeaderStyle} aria-label="Actions" /></tr></thead>
             <tbody>
               {meals.map(meal => <tr key={meal.id}>
                 <td><strong style={{ fontSize: 13 }}>{meal.meal_number}</strong><br /><small>{meal.meal_name}</small></td>

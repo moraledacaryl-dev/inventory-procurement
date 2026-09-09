@@ -1,7 +1,10 @@
 from decimal import Decimal
 
+from sqlalchemy import select
+
 from app.core.config import settings
 from app.db.session import SessionLocal
+from app.models.operations import IntegrationEvent
 from app.models.production import Recipe
 
 
@@ -95,9 +98,23 @@ def test_pos_event_idempotency_and_reversal(client):
     after_sale = client.get(f"/api/v1/stock/balances?item_id={ingredient['id']}&location_id={location['id']}", headers=headers).json()[0]
     assert Decimal(after_sale["quantity"]) == Decimal("96")
 
+    with SessionLocal() as db:
+        sale_event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.event_type == "inventory.pos_sale_consumed"))
+        assert sale_event is not None
+        assert Decimal(sale_event.payload["total_cost"]) == Decimal("20")
+        assert len(sale_event.payload["lines"]) == 1
+        original_stock_document_id = sale_event.payload["stock_document_id"]
+
     reversal = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json={**event, "external_event_id": "evt-002", "event_type": "sale_refunded"})
     assert reversal.status_code == 201
     assert reversal.json()["reversal_of_event_id"] == first.json()["id"]
+
+    with SessionLocal() as db:
+        reversal_event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.event_type == "inventory.pos_sale_reversed"))
+        assert reversal_event is not None
+        assert Decimal(reversal_event.payload["total_cost"]) == Decimal("20")
+        assert reversal_event.payload["reverses_stock_document_id"] == original_stock_document_id
+        assert reversal_event.payload["event_type"] == "sale_refunded"
 
     second_reversal = client.post(
         "/api/v1/integrations/pos/events",

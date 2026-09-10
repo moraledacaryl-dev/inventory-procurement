@@ -18,11 +18,28 @@ test("mobile workflow pages do not create page-level horizontal overflow", async
     await page.goto(route);
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(400);
-    const dimensions = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      clientWidth: document.documentElement.clientWidth,
-    }));
-    expect(dimensions.scrollWidth, `${route} should fit the mobile viewport`).toBeLessThanOrEqual(dimensions.clientWidth + 2);
+    const dimensions = await page.evaluate(() => {
+      const clientWidth = document.documentElement.clientWidth;
+      const offenders = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            tag: element.tagName.toLowerCase(),
+            className: typeof element.className === "string" ? element.className : "",
+            text: (element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 80),
+            left: Math.round(rect.left),
+            right: Math.round(rect.right),
+            width: Math.round(rect.width),
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+          };
+        })
+        .filter((row) => row.right > clientWidth + 2 || row.left < -2 || row.scrollWidth > row.clientWidth + 2)
+        .sort((a, b) => Math.max(b.right - clientWidth, b.scrollWidth - b.clientWidth) - Math.max(a.right - clientWidth, a.scrollWidth - a.clientWidth))
+        .slice(0, 12);
+      return { scrollWidth: document.documentElement.scrollWidth, clientWidth, offenders };
+    });
+    expect(dimensions.scrollWidth, `${route} should fit the mobile viewport. Offenders: ${JSON.stringify(dimensions.offenders)}`).toBeLessThanOrEqual(dimensions.clientWidth + 2);
   }
 });
 

@@ -61,6 +61,7 @@ for (const [role, email] of Object.entries(users)) {
     test.skip(!visualEnabled, "Set VISUAL_CAPTURE=1 for exhaustive screenshot capture");
     test.setTimeout(10 * 60_000);
     const project = testInfo.project.name;
+    const isMobile = project.includes("mobile");
     const root = path.resolve(process.cwd(), "visual-artifacts", project, role);
     fs.mkdirSync(root, { recursive: true });
     const manifest: ManifestRow[] = [];
@@ -90,6 +91,27 @@ for (const [role, email] of Object.entries(users)) {
       const beforePage = pageErrors.length;
       await page.goto(route, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(450);
+      if (isMobile) {
+        const framing = await page.evaluate(() => ({
+          scrollX: window.scrollX,
+          innerWidth: window.innerWidth,
+          documentWidth: document.documentElement.scrollWidth,
+          visualOffsetLeft: window.visualViewport?.offsetLeft ?? 0,
+          visualWidth: window.visualViewport?.width ?? window.innerWidth,
+          main: (() => {
+            const rect = document.querySelector<HTMLElement>(".main-area")?.getBoundingClientRect();
+            return rect ? { left: rect.left, right: rect.right, width: rect.width } : null;
+          })(),
+        }));
+        expect(Math.abs(framing.scrollX), `${route} mobile capture must start at x=0`).toBeLessThanOrEqual(1);
+        expect(Math.abs(framing.visualOffsetLeft), `${route} mobile visual viewport must start at x=0`).toBeLessThanOrEqual(1);
+        expect(framing.documentWidth, `${route} mobile document must fit viewport`).toBeLessThanOrEqual(framing.innerWidth + 1);
+        if (framing.main) {
+          expect(framing.main.left, `${route} main content must begin at left edge`).toBeGreaterThanOrEqual(-1);
+          expect(framing.main.right, `${route} main content must fill viewport`).toBeGreaterThanOrEqual(framing.innerWidth - 1);
+        }
+        await page.screenshot({ path: path.join(root, `${slug(route)}--viewport.png`), fullPage: false });
+      }
       const file = path.join(root, `${slug(route)}--default.png`);
       await page.screenshot({ path: file, fullPage: true });
       manifest.push({
@@ -122,14 +144,12 @@ for (const [role, email] of Object.entries(users)) {
           screenshot: path.relative(path.resolve(process.cwd(), "visual-artifacts"), errorFile),
           finalUrl: page.url(),
           title: await page.title(),
-          consoleErrors: [],
-          pageErrors: [],
+          consoleErrors: consoleErrors.slice(beforeConsole),
+          pageErrors: pageErrors.slice(beforePage),
         });
         await page.unroute("**/api/v1/**");
       }
     }
-
     fs.writeFileSync(path.join(root, "manifest.json"), JSON.stringify(manifest, null, 2));
-    expect(manifest.length).toBeGreaterThan(0);
   });
 }

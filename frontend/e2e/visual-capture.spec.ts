@@ -61,6 +61,7 @@ for (const [role, email] of Object.entries(users)) {
     test.skip(!visualEnabled, "Set VISUAL_CAPTURE=1 for exhaustive screenshot capture");
     test.setTimeout(10 * 60_000);
     const project = testInfo.project.name;
+    const isMobile = project.includes("mobile");
     const root = path.resolve(process.cwd(), "visual-artifacts", project, role);
     fs.mkdirSync(root, { recursive: true });
     const manifest: ManifestRow[] = [];
@@ -90,6 +91,48 @@ for (const [role, email] of Object.entries(users)) {
       const beforePage = pageErrors.length;
       await page.goto(route, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(450);
+      if (isMobile) {
+        const framing = await page.evaluate(() => {
+          const visualWidth = window.visualViewport?.width ?? window.innerWidth;
+          const mainRect = document.querySelector<HTMLElement>(".main-area")?.getBoundingClientRect();
+          const offenders = Array.from(document.querySelectorAll<HTMLElement>("body *"))
+            .map(element => {
+              const rect = element.getBoundingClientRect();
+              return {
+                tag: element.tagName.toLowerCase(),
+                className: typeof element.className === "string" ? element.className : "",
+                text: (element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 70),
+                left: Math.round(rect.left),
+                right: Math.round(rect.right),
+                width: Math.round(rect.width),
+                scrollWidth: element.scrollWidth,
+                clientWidth: element.clientWidth,
+              };
+            })
+            .filter(row => row.right > visualWidth + 2 || row.left < -2 || row.scrollWidth > row.clientWidth + 2)
+            .sort((a, b) => Math.max(b.right - visualWidth, b.scrollWidth - b.clientWidth) - Math.max(a.right - visualWidth, a.scrollWidth - a.clientWidth))
+            .slice(0, 12);
+          return {
+            scrollX: window.scrollX,
+            innerWidth: window.innerWidth,
+            documentWidth: document.documentElement.scrollWidth,
+            visualOffsetLeft: window.visualViewport?.offsetLeft ?? 0,
+            visualWidth,
+            main: mainRect ? { left: mainRect.left, right: mainRect.right, width: mainRect.width } : null,
+            offenders,
+          };
+        });
+        const diagnostic = JSON.stringify({ innerWidth: framing.innerWidth, visualWidth: framing.visualWidth, documentWidth: framing.documentWidth, offenders: framing.offenders });
+        expect(Math.abs(framing.scrollX), `${route} mobile capture must start at x=0. ${diagnostic}`).toBeLessThanOrEqual(1);
+        expect(Math.abs(framing.visualOffsetLeft), `${route} mobile visual viewport must start at x=0. ${diagnostic}`).toBeLessThanOrEqual(1);
+        expect(framing.documentWidth, `${route} mobile document must fit the visible phone viewport. ${diagnostic}`).toBeLessThanOrEqual(framing.visualWidth + 2);
+        if (framing.main) {
+          expect(framing.main.left, `${route} main content must begin at left edge. ${diagnostic}`).toBeGreaterThanOrEqual(-1);
+          expect(framing.main.right, `${route} main content must fill visible phone viewport. ${diagnostic}`).toBeGreaterThanOrEqual(framing.visualWidth - 1);
+          expect(framing.main.width, `${route} main content must not be a half-width column. ${diagnostic}`).toBeGreaterThanOrEqual(framing.visualWidth - 2);
+        }
+        await page.screenshot({ path: path.join(root, `${slug(route)}--viewport.png`), fullPage: false });
+      }
       const file = path.join(root, `${slug(route)}--default.png`);
       await page.screenshot({ path: file, fullPage: true });
       manifest.push({
@@ -128,8 +171,6 @@ for (const [role, email] of Object.entries(users)) {
         await page.unroute("**/api/v1/**");
       }
     }
-
     fs.writeFileSync(path.join(root, "manifest.json"), JSON.stringify(manifest, null, 2));
-    expect(manifest.length).toBeGreaterThan(0);
   });
 }

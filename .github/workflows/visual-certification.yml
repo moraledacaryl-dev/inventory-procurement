@@ -1,0 +1,85 @@
+name: Visual Certification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: inventory_visual
+          POSTGRES_USER: inventory
+          POSTGRES_PASSWORD: inventory_visual
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U inventory -d inventory_visual"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql+psycopg://inventory:inventory_visual@127.0.0.1:5432/inventory_visual
+      JWT_SECRET: visual-certification-secret-value-for-ci-only
+      BOOTSTRAP_OWNER_EMAIL: owner@example.com
+      BOOTSTRAP_OWNER_PASSWORD: visual-bootstrap-owner-password
+      BOOTSTRAP_OWNER_NAME: Visual Bootstrap Owner
+      CORS_ORIGINS: '["http://127.0.0.1:3300"]'
+      TRUSTED_HOSTS: '["127.0.0.1","localhost","testserver"]'
+      INTERNAL_API_URL: http://127.0.0.1:8300
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3300
+      E2E_VISUAL_PASSWORD: visual-acceptance-password
+      VISUAL_CAPTURE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/setup-node@v4
+        with: {node-version: "20"}
+      - name: Prepare isolated visual database
+        working-directory: backend
+        run: |
+          pip install -q -r requirements.txt
+          alembic upgrade head
+          python scripts/seed_visual_acceptance.py
+      - name: Build frontend and install Chromium
+        working-directory: frontend
+        run: |
+          npm install --silent
+          npm install --no-save --silent @playwright/test@1.55.0 @axe-core/playwright@4.10.2
+          npm run build
+          if [ -d public ]; then cp -R public .next/standalone/public; fi
+          mkdir -p .next/standalone/.next
+          cp -R .next/static .next/standalone/.next/static
+          npx playwright install --with-deps chromium
+      - name: Start isolated application
+        run: |
+          (cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8300 > /tmp/inventory-visual-backend.log 2>&1 &)
+          (cd frontend && HOSTNAME=127.0.0.1 PORT=3300 node .next/standalone/server.js > /tmp/inventory-visual-frontend.log 2>&1 &)
+          for attempt in $(seq 1 45); do
+            curl -fsS http://127.0.0.1:8300/api/v1/ready >/dev/null && curl -fsS http://127.0.0.1:3300/login >/dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/inventory-visual-backend.log
+          cat /tmp/inventory-visual-frontend.log
+          exit 1
+      - name: Capture all roles, routes and viewports
+        working-directory: frontend
+        run: npx playwright test e2e/visual-capture.spec.ts
+      - name: Build screenshot archive
+        if: always()
+        run: |
+          tar -C frontend -czf inventory-visual-certification.tar.gz visual-artifacts playwright-report 2>/dev/null || tar -C frontend -czf inventory-visual-certification.tar.gz visual-artifacts
+      - name: Upload screenshot certification package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-visual-certification
+          path: |
+            inventory-visual-certification.tar.gz
+            frontend/visual-artifacts
+            frontend/playwright-report
+            /tmp/inventory-visual-backend.log
+            /tmp/inventory-visual-frontend.log
+          retention-days: 14

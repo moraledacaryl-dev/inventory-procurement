@@ -12,7 +12,7 @@ function walk(dir) {
 }
 
 const manifests = walk(root).filter(file => file.endsWith(`${path.sep}manifest.json`));
-const overall = { manifests: manifests.length, captures: 0, expectedAccessDenied: 0, unexpectedConsoleErrors: [], pageErrors: [] };
+const overall = { manifests: manifests.length, captures: 0, expectedAccessDenied: 0, unexpectedConsoleErrors: [], pageErrors: [], httpErrors: [] };
 
 for (const file of manifests) {
   const rows = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -30,10 +30,11 @@ for (const file of manifests) {
     overall.captures += 1;
     overall.unexpectedConsoleErrors.push(...unexpected.map(error => `${row.project}/${row.role} ${row.route}: ${error}`));
     overall.pageErrors.push(...(row.pageErrors || []).map(error => `${row.project}/${row.role} ${row.route}: ${error}`));
+    overall.httpErrors.push(...(row.httpErrors || []).map(error => `${row.project}/${row.role} ${row.route}: ${error}`));
   }
   fs.writeFileSync(file, JSON.stringify(rows, null, 2));
 }
 
 fs.writeFileSync(path.join(root, 'summary.json'), JSON.stringify(overall, null, 2));
 console.log(JSON.stringify(overall, null, 2));
-if (overall.pageErrors.length) process.exitCode = 1;
+if (overall.pageErrors.length || overall.unexpectedConsoleErrors.length || overall.httpErrors.length) process.exitCode = 1;

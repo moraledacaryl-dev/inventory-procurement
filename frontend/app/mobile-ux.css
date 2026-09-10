@@ -1,6 +1,8 @@
 @media(max-width:760px){
  html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
  body{font-size:15px;line-height:1.55}
+ .app-shell{display:grid;grid-template-columns:minmax(0,1fr)!important;width:100%;max-width:100vw}
+ .main-area{grid-column:1!important;width:100%;max-width:100vw;min-width:0;margin-left:0!important}
  .page-content{padding:16px 14px 34px}
  .page-heading-bar{padding:18px 14px 0}
  .page-heading{padding-bottom:14px}

@@ -5,14 +5,20 @@ on:
   pull_request:
     paths:
       - '.github/workflows/visual-certification.yml'
-      - 'frontend/e2e/visual-capture.spec.ts'
+      - 'frontend/app/**'
+      - 'frontend/components/**'
+      - 'frontend/e2e/**'
+      - 'frontend/lib/**'
       - 'frontend/scripts/summarize-visual-artifacts.mjs'
       - 'backend/scripts/seed_visual_acceptance.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/visual-certification.yml'
-      - 'frontend/e2e/visual-capture.spec.ts'
+      - 'frontend/app/**'
+      - 'frontend/components/**'
+      - 'frontend/e2e/**'
+      - 'frontend/lib/**'
       - 'frontend/scripts/summarize-visual-artifacts.mjs'
       - 'backend/scripts/seed_visual_acceptance.py'
 

@@ -25,8 +25,27 @@ test("mobile workflows remain readable at 100% zoom without focus auto-zoom trig
     await page.goto(path);
     await page.waitForLoadState("networkidle");
 
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow, `${path} should not require horizontal page scrolling`).toBeLessThanOrEqual(1);
+    const geometry = await page.evaluate(() => {
+      const main = document.querySelector<HTMLElement>(".main-area");
+      const rect = main?.getBoundingClientRect();
+      return {
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        scrollX: window.scrollX,
+        mainLeft: rect?.left ?? -1,
+        mainRight: rect?.right ?? -1,
+        mainWidth: rect?.width ?? 0,
+        viewportWidth: window.innerWidth,
+        visualOffsetLeft: window.visualViewport?.offsetLeft ?? 0,
+        visualWidth: window.visualViewport?.width ?? window.innerWidth,
+      };
+    });
+    expect(geometry.overflow, `${path} should not require horizontal page scrolling`).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.scrollX), `${path} should open at the left edge, not halfway across the page`).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.visualOffsetLeft), `${path} visual viewport should start at the left edge`).toBeLessThanOrEqual(1);
+    expect(geometry.mainLeft, `${path} main content should begin at the viewport left edge`).toBeGreaterThanOrEqual(-1);
+    expect(geometry.mainRight, `${path} main content should fill the phone viewport`).toBeGreaterThanOrEqual(geometry.viewportWidth - 1);
+    expect(geometry.mainWidth, `${path} main content should not render as a half-width desktop column`).toBeGreaterThanOrEqual(geometry.viewportWidth - 2);
+    expect(geometry.visualWidth, `${path} should remain at normal mobile scale`).toBeGreaterThanOrEqual(geometry.viewportWidth - 2);
 
     const tinyControls = await page.locator("input:visible, select:visible, textarea:visible").evaluateAll(elements =>
       elements.filter(element => Number.parseFloat(getComputedStyle(element).fontSize) < 16).map(element => ({

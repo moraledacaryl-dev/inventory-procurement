@@ -39,10 +39,12 @@
  .procurement-planning-workspace table tr{padding:14px;border-radius:14px}
  .procurement-planning-workspace table td{grid-template-columns:minmax(100px,.72fr) minmax(0,1fr);gap:12px;padding:9px 0;font-size:14px;line-height:1.45}
  .procurement-planning-workspace table td:before{font-size:11px;line-height:1.35;letter-spacing:.03em}
- .quote-requisition{padding:14px;border-radius:14px}
- .quote-requisition strong{font-size:15px}
- .quote-requisition span{font-size:13px;line-height:1.4}
- .quote-demand-lines span{font-size:13px;padding:7px 9px}
+ .quote-requisition{padding:14px;border-radius:14px;min-width:0}
+ .quote-requisition>header,.quote-requisition>header>div{min-width:0}
+ .quote-requisition strong{font-size:15px;overflow-wrap:anywhere}
+ .quote-requisition span{font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+ .quote-demand-lines{min-width:0}
+ .quote-demand-lines span{font-size:13px;padding:7px 9px;max-width:100%;overflow-wrap:anywhere}
  .quote-card{padding:14px;border-radius:12px;min-width:0}
  .quote-card strong{font-size:15px;overflow-wrap:anywhere}
  .quote-card span{font-size:13px}
@@ -54,8 +56,8 @@
  .sidebar-footer strong{font-size:14px}
  .sidebar-footer span{font-size:12px}
  .app-header{min-height:64px;padding:0 12px;gap:8px}
- .header-left{flex:0 0 auto;min-width:44px}
- .header-actions{display:flex;justify-content:flex-end;min-width:0;max-width:calc(100vw - 68px);gap:6px}
+ .header-left{flex:1 1 auto;min-width:0}
+ .header-actions{display:flex;justify-content:flex-end;min-width:0;flex:0 1 auto;gap:6px}
  .workspace-switcher{display:block;min-width:0;max-width:min(44vw,170px)}
  .workspace-switcher>span{display:none}
  .workspace-switcher select{display:block;width:100%;max-width:100%;min-width:0;font-size:16px!important;min-height:44px!important;padding:0 30px 0 10px;text-overflow:ellipsis}
@@ -78,6 +80,11 @@
  .po-line-editor{gap:12px}
  .po-line{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);min-width:0}
  .award-options{bottom:12px;left:12px;right:12px;padding:14px;max-height:calc(100vh - 24px);overflow:auto}
+}
+@media(max-width:620px){
+ .global-search-shell{display:none!important}
+ .header-left{flex:0 0 44px;width:44px}
+ .header-actions{flex:1 1 auto;max-width:calc(100vw - 68px)}
 }
 @media(max-width:440px){
  .data-table-shell tbody td,.procurement-planning-workspace table td{grid-template-columns:92px minmax(0,1fr)}

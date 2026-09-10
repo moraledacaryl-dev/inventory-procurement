@@ -2,11 +2,18 @@ name: Visual Certification
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/visual-certification.yml'
+      - 'frontend/e2e/visual-capture.spec.ts'
+      - 'frontend/scripts/summarize-visual-artifacts.mjs'
+      - 'backend/scripts/seed_visual_acceptance.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/visual-certification.yml'
       - 'frontend/e2e/visual-capture.spec.ts'
+      - 'frontend/scripts/summarize-visual-artifacts.mjs'
       - 'backend/scripts/seed_visual_acceptance.py'
 
 jobs:
@@ -73,6 +80,10 @@ jobs:
       - name: Capture all roles, routes and viewports
         working-directory: frontend
         run: npx playwright test e2e/visual-capture.spec.ts
+      - name: Classify permission states and summarize capture
+        if: always()
+        working-directory: frontend
+        run: node scripts/summarize-visual-artifacts.mjs
       - name: Build screenshot archive
         if: always()
         run: |

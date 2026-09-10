@@ -23,6 +23,7 @@ type ManifestRow = {
   title: string;
   consoleErrors: string[];
   pageErrors: string[];
+  httpErrors: string[];
 };
 
 function walk(dir: string): string[] {
@@ -67,14 +68,28 @@ for (const [role, email] of Object.entries(users)) {
     const manifest: ManifestRow[] = [];
     const consoleErrors: string[] = [];
     const pageErrors: string[] = [];
+    const requestCapture = new WeakMap<import("@playwright/test").Request, number>();
+    const httpErrorsByCapture = new Map<number, string[]>();
+    let activeCapture = 0;
+
     page.on("console", msg => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
     page.on("pageerror", err => pageErrors.push(err.message));
+    page.on("request", request => requestCapture.set(request, activeCapture));
+    page.on("response", response => {
+      if (response.status() < 500) return;
+      const capture = requestCapture.get(response.request()) ?? activeCapture;
+      if (capture <= 0) return;
+      const errors = httpErrorsByCapture.get(capture) || [];
+      errors.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+      httpErrorsByCapture.set(capture, errors);
+    });
 
     await signIn(page, email);
     const discovered = new Set(staticRoutes());
     discovered.add("/dashboard");
 
     for (const route of [...discovered]) {
+      activeCapture = 0;
       await page.goto(route, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(250);
       const hrefs = await page.locator('a[href^="/"]').evaluateAll(nodes =>
@@ -86,7 +101,11 @@ for (const [role, email] of Object.entries(users)) {
       }
     }
 
+    let captureSequence = 0;
     for (const route of [...discovered].sort()) {
+      const captureId = ++captureSequence;
+      activeCapture = captureId;
+      httpErrorsByCapture.set(captureId, []);
       const beforeConsole = consoleErrors.length;
       const beforePage = pageErrors.length;
       await page.goto(route, { waitUntil: "domcontentloaded" });
@@ -135,6 +154,9 @@ for (const [role, email] of Object.entries(users)) {
       }
       const file = path.join(root, `${slug(route)}--default.png`);
       await page.screenshot({ path: file, fullPage: true });
+      const routeConsoleErrors = consoleErrors
+        .slice(beforeConsole)
+        .filter(message => !/Failed to load resource: the server responded with a status of 5\d\d/i.test(message));
       manifest.push({
         project,
         role,
@@ -143,10 +165,12 @@ for (const [role, email] of Object.entries(users)) {
         screenshot: path.relative(path.resolve(process.cwd(), "visual-artifacts"), file),
         finalUrl: page.url(),
         title: await page.title(),
-        consoleErrors: consoleErrors.slice(beforeConsole),
+        consoleErrors: routeConsoleErrors,
         pageErrors: pageErrors.slice(beforePage),
+        httpErrors: httpErrorsByCapture.get(captureId) || [],
       });
 
+      activeCapture = 0;
       if (role === "owner" && route !== "/dashboard") {
         await page.route("**/api/v1/**", async r => {
           const url = r.request().url();
@@ -167,10 +191,12 @@ for (const [role, email] of Object.entries(users)) {
           title: await page.title(),
           consoleErrors: [],
           pageErrors: [],
+          httpErrors: [],
         });
         await page.unroute("**/api/v1/**");
       }
     }
+    activeCapture = 0;
     fs.writeFileSync(path.join(root, "manifest.json"), JSON.stringify(manifest, null, 2));
   });
 }

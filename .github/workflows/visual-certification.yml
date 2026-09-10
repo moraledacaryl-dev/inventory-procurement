@@ -2,6 +2,12 @@ name: Visual Certification
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/visual-certification.yml'
+      - 'frontend/e2e/visual-capture.spec.ts'
+      - 'backend/scripts/seed_visual_acceptance.py'
 
 jobs:
   capture:

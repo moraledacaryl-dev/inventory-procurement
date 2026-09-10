@@ -23,6 +23,7 @@ import "./recipe-costing.css";
 import "./operating-structure.css";
 import "./workspaces.css";
 import "./accessibility.css";
+import "./responsive-remediation.css";
 import { ScrollableRegionA11y } from "../components/ScrollableRegionA11y";
 import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
 

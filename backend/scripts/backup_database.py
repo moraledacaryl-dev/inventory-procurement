@@ -10,8 +10,10 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
+
+from sqlalchemy import delete
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -32,8 +34,32 @@ def _atomic_write(target: pathlib.Path, payload: bytes) -> None:
         raise
 
 
+def _prune_backups(
+    backup_dir: pathlib.Path,
+    *,
+    retention_days: int,
+    keep: pathlib.Path,
+    now: datetime | None = None,
+) -> list[str]:
+    if retention_days <= 0:
+        return []
+
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=retention_days)
+    removed: list[str] = []
+    for candidate in backup_dir.glob("inventory-*"):
+        if not candidate.is_file() or candidate == keep:
+            continue
+        modified_at = datetime.fromtimestamp(candidate.stat().st_mtime, tz=timezone.utc)
+        if modified_at >= cutoff:
+            continue
+        candidate.unlink()
+        removed.append(candidate.name)
+    return removed
+
+
 def main():
     backup_dir = pathlib.Path(os.getenv("BACKUP_DIR", "./backups"))
+    retention_days = int(os.getenv("BACKUP_RETENTION_DAYS", "14"))
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
@@ -75,6 +101,7 @@ def main():
         raise RuntimeError("backup artifact is empty")
 
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    removed = _prune_backups(backup_dir, retention_days=retention_days, keep=target)
     with SessionLocal() as db:
         db.add(
             BackupRecord(
@@ -83,8 +110,12 @@ def main():
                 checksum_sha256=digest,
             )
         )
+        if removed:
+            db.execute(delete(BackupRecord).where(BackupRecord.filename.in_(removed)))
         db.commit()
     print(target)
+    if removed:
+        print(f"Pruned {len(removed)} expired backup(s).")
 
 
 if __name__ == "__main__":

@@ -90,18 +90,66 @@ jobs:
         if: always()
         working-directory: frontend
         run: node scripts/summarize-visual-artifacts.mjs
-      - name: Build screenshot archive
-        if: always()
-        run: |
-          tar -C frontend -czf inventory-visual-certification.tar.gz visual-artifacts playwright-report 2>/dev/null || tar -C frontend -czf inventory-visual-certification.tar.gz visual-artifacts
-      - name: Upload screenshot certification package
+      - name: Upload owner screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: inventory-visual-certification
+          name: inventory-visual-owner
           path: |
-            inventory-visual-certification.tar.gz
-            frontend/visual-artifacts
+            frontend/visual-artifacts/desktop-chromium/owner
+            frontend/visual-artifacts/mobile-chromium/owner
+          retention-days: 14
+      - name: Upload inventory manager screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-visual-inventory-manager
+          path: |
+            frontend/visual-artifacts/desktop-chromium/inventory_manager
+            frontend/visual-artifacts/mobile-chromium/inventory_manager
+          retention-days: 14
+      - name: Upload procurement screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-visual-procurement
+          path: |
+            frontend/visual-artifacts/desktop-chromium/procurement_officer
+            frontend/visual-artifacts/mobile-chromium/procurement_officer
+          retention-days: 14
+      - name: Upload receiver screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-visual-receiver
+          path: |
+            frontend/visual-artifacts/desktop-chromium/receiver
+            frontend/visual-artifacts/mobile-chromium/receiver
+          retention-days: 14
+      - name: Upload counter screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-visual-counter
+          path: |
+            frontend/visual-artifacts/desktop-chromium/counter
+            frontend/visual-artifacts/mobile-chromium/counter
+          retention-days: 14
+      - name: Upload viewer screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-visual-viewer
+          path: |
+            frontend/visual-artifacts/desktop-chromium/viewer
+            frontend/visual-artifacts/mobile-chromium/viewer
+          retention-days: 14
+      - name: Upload visual diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-visual-diagnostics
+          path: |
             frontend/playwright-report
             /tmp/inventory-visual-backend.log
             /tmp/inventory-visual-frontend.log

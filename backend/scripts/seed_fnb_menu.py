@@ -104,7 +104,11 @@ CATALOG = [
     row("Matcha","Milk Tea","140.00","bar"),
     row("Lychee","Milk Tea","120.00","bar"),
     row("Oreo Cheesecake","Milk Tea","145.00","bar"),
-    row("Hazelnut Cheesecake","Milk Tea","145.00","bar"),\n    {**row("Hokkaido","Milk Tea","120.00","bar"), "is_active":False, "pos_visible":False},\n    {**row("Buko Pandan","Milk Tea","130.00","bar"), "is_active":False, "pos_visible":False},\n    {**row("Cheesy Mango","Milk Tea","140.00","bar"), "is_active":False, "pos_visible":False},\n    {**row("Avocado","Milk Tea","140.00","bar"), "is_active":False, "pos_visible":False},
+    row("Hazelnut Cheesecake","Milk Tea","145.00","bar"),
+    {**row("Hokkaido","Milk Tea","120.00","bar"), "is_active":False, "pos_visible":False},
+    {**row("Buko Pandan","Milk Tea","130.00","bar"), "is_active":False, "pos_visible":False},
+    {**row("Cheesy Mango","Milk Tea","140.00","bar"), "is_active":False, "pos_visible":False},
+    {**row("Avocado","Milk Tea","140.00","bar"), "is_active":False, "pos_visible":False},
 
     # Frappuccino / frappe / lemonade
     row("Caramel Macchiato","Frappuccino","170.00","bar"),

@@ -14,6 +14,7 @@ from app.models.pass5 import MaintenancePlan, WorkOrder, WorkOrderPart, Purchase
 from app.models.pass6 import OperationalAccessScope, SavedView
 from app.models.staff_identity import StaffIdentity
 from app.models.staff_meals import StaffMeal, StaffMealLine
+from app.models.menu import MenuItem, MenuVariant
 
 __all__ = [
     'User', 'AuditLog', 'Category', 'UnitOfMeasure', 'Location', 'Item',
@@ -31,5 +32,5 @@ __all__ = [
     'HotelParProfile', 'HotelParLine', 'FixedAsset', 'DepreciationRun',
     'DepreciationLine', 'AssetEvent', 'MaintenancePlan', 'WorkOrder',
     'WorkOrderPart', 'PurchaseLineTreatment', 'AccountingMapping',
-    'OperationalAccessScope', 'SavedView', 'StaffIdentity', 'StaffMeal', 'StaffMealLine',
+    'OperationalAccessScope', 'SavedView', 'StaffIdentity', 'StaffMeal', 'StaffMealLine', 'MenuItem', 'MenuVariant',
 ]

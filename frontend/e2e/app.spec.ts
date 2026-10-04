@@ -69,7 +69,7 @@ test("sidebar state remains visually stable during client navigation", async ({ 
   await expect(sidebar).toBeVisible();
   const beforeSidebar = await sidebar.boundingBox();
   const beforeHeader = await header.boundingBox();
-  await page.getByRole("link", { name: "Items", exact: true }).click();
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
   await expect(page).toHaveURL(/\/items$/);
   const afterSidebar = await sidebar.boundingBox();
   const afterHeader = await header.boundingBox();
@@ -85,8 +85,8 @@ test("sidebar scroll position survives route changes", async ({ page, isMobile }
   await sidebar.evaluate(element => { element.scrollTop = element.scrollHeight; });
   const before = await sidebar.evaluate(element => element.scrollTop);
   expect(before).toBeGreaterThan(0);
-  await page.getByRole("link", { name: "Rollout", exact: true }).click();
-  await expect(page).toHaveURL(/\/rollout$/);
+  await page.getByRole("link", { name: "System health", exact: true }).click();
+  await expect(page).toHaveURL(/\/readiness$/);
   const after = await sidebar.evaluate(element => element.scrollTop);
   expect(after).toBeGreaterThanOrEqual(before - 4);
 });
@@ -112,7 +112,7 @@ test("mobile navigation opens, routes, and closes", async ({ page, isMobile }) =
   const menu = page.getByRole("button", { name: "Open navigation" });
   await menu.click();
   await expect(page.locator("aside.sidebar")).toHaveClass(/is-open/);
-  await page.getByRole("link", { name: "Items", exact: true }).click();
+  await page.getByRole("link", { name: "Inventory", exact: true }).click();
   await expect(page).toHaveURL(/\/items$/);
   await expect(page.locator("aside.sidebar")).not.toHaveClass(/is-open/);
 });

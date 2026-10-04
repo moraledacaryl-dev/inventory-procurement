@@ -117,6 +117,35 @@ test("mobile navigation opens, routes, and closes", async ({ page, isMobile }) =
   await expect(page.locator("aside.sidebar")).not.toHaveClass(/is-open/);
 });
 
+
+test("shell popovers and dialogs fit the viewport", async ({ page, isMobile }) => {
+  await signIn(page);
+  const viewport = page.viewportSize();
+  expect(viewport).not.toBeNull();
+
+  const notifications = page.getByRole("button", { name: /Notifications/ });
+  if (await notifications.count()) {
+    await notifications.click();
+    const popover = page.getByRole("dialog", { name: "Notifications" });
+    await expect(popover).toBeVisible();
+    const box = await popover.boundingBox();
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(viewport!.width + 1);
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(viewport!.height + 1);
+    await page.keyboard.press("Escape");
+  }
+
+  if (!isMobile) {
+    const help = page.getByRole("button", { name: "Help" });
+    await help.click();
+    const helpDialog = page.getByRole("dialog", { name: /help/i });
+    await expect(helpDialog).toBeVisible();
+    const box = await helpDialog.boundingBox();
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(viewport!.width + 1);
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(viewport!.height + 1);
+  }
+});
+
 test("critical pages have no serious Axe violations", async ({ page }) => {
   await signIn(page);
   for (const path of ["/dashboard", "/items", "/purchasing", "/receiving", "/counts", "/fnb/staff-meals", "/assets"]) {

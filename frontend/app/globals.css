@@ -17,3 +17,7 @@ button{line-height:1.25}
  .primary,.secondary{min-height:44px;font-size:14px}
  .primary.compact,.secondary.compact{min-height:40px;font-size:13px}
 }
+
+@media(max-width:760px){
+ button.primary.compact,button.secondary.compact,.primary.compact,.secondary.compact{min-height:44px}
+}

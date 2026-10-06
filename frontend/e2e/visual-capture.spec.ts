@@ -171,6 +171,39 @@ for (const [role, email] of Object.entries(users)) {
       });
 
       activeCapture = 0;
+      if (role === "owner" && route === "/dashboard") {
+        for (const [label, buttonName, dialogName] of [["notifications", /Notifications/, "Notifications"], ["help", "Help", /help/i]] as const) {
+          const trigger = page.getByRole("button", { name: buttonName });
+          if (!(await trigger.count())) continue;
+          await trigger.click();
+          const dialog = page.getByRole("dialog", { name: dialogName });
+          await expect(dialog).toBeVisible();
+          const interactionFile = path.join(root, `${slug(route)}--${label}.png`);
+          await page.screenshot({ path: interactionFile, fullPage: false });
+          manifest.push({ project, role, route, state: label, screenshot: path.relative(path.resolve(process.cwd(), "visual-artifacts"), interactionFile), finalUrl: page.url(), title: await page.title(), consoleErrors: [], pageErrors: [], httpErrors: [] });
+          await page.keyboard.press("Escape");
+        }
+        const account = page.getByRole("button", { name: /Account menu for/ });
+        if (await account.count()) {
+          await account.click();
+          await expect(page.getByRole("menu")).toBeVisible();
+          const accountFile = path.join(root, `${slug(route)}--account-menu.png`);
+          await page.screenshot({ path: accountFile, fullPage: false });
+          manifest.push({ project, role, route, state: "account-menu", screenshot: path.relative(path.resolve(process.cwd(), "visual-artifacts"), accountFile), finalUrl: page.url(), title: await page.title(), consoleErrors: [], pageErrors: [], httpErrors: [] });
+          await page.keyboard.press("Escape");
+        }
+      }
+      if (role === "owner" && route === "/inventory-operations") {
+        const columns = page.getByRole("button", { name: "Columns" }).first();
+        if (await columns.count()) {
+          await columns.click();
+          await expect(page.locator(".data-table-columns__menu").first()).toBeVisible();
+          const columnsFile = path.join(root, `${slug(route)}--columns-menu.png`);
+          await page.screenshot({ path: columnsFile, fullPage: false });
+          manifest.push({ project, role, route, state: "columns-menu", screenshot: path.relative(path.resolve(process.cwd(), "visual-artifacts"), columnsFile), finalUrl: page.url(), title: await page.title(), consoleErrors: [], pageErrors: [], httpErrors: [] });
+          await page.keyboard.press("Escape");
+        }
+      }
       if (role === "owner" && route !== "/dashboard") {
         await page.route("**/api/v1/**", async r => {
           const url = r.request().url();

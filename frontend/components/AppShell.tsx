@@ -16,14 +16,40 @@ type NavItem={href:string;label:string;icon:IconName;module:string;scopes?:strin
 type NavGroup={label:string;items:NavItem[]};
 
 const groups:NavGroup[]=[
- {label:"Overview",items:[{href:"/dashboard",label:"All Operations",icon:"home",module:"dashboard",scopes:["all","shared"]},{href:"/fnb",label:"F&B Overview",icon:"factory",module:"dashboard",scopes:["fnb"]},{href:"/hotel",label:"Hotel Overview",icon:"hotel",module:"dashboard",scopes:["hotel"]},{href:"/assets",label:"Assets Overview",icon:"box",module:"items",scopes:["assets"]}]},
- {label:"Catalogue & Stock",items:[{href:"/items",label:"Items",icon:"box",module:"items"},{href:"/locations",label:"Locations",icon:"map",module:"locations"},{href:"/stock",label:"Stock Movements",icon:"layers",module:"stock",scopes:["all","shared","fnb","hotel"]},{href:"/inventory-operations",label:"Adjustments & Waste",icon:"clipboard",module:"inventory-operations",scopes:["all","shared","fnb","hotel"]},{href:"/counts",label:"Inventory Counts",icon:"clipboard",module:"counts",scopes:["all","shared","fnb","hotel"]}]},
- {label:"Hotel Operations",items:[{href:"/hotel/property",label:"Property & Linen",icon:"linen",module:"inventory-operations",scopes:["hotel","all"]}]},
- {label:"Assets & Property",items:[{href:"/assets",label:"Asset Register",icon:"box",module:"items",scopes:["all"]},{href:"/assets/maintenance",label:"Maintenance",icon:"settings",module:"items",scopes:["assets","all"]}]},
- {label:"Procurement",items:[{href:"/suppliers",label:"Suppliers",icon:"users",module:"suppliers"},{href:"/purchasing",label:"Purchasing",icon:"cart",module:"purchasing"},{href:"/receiving",label:"Receiving",icon:"truck",module:"receiving"}]},
- {label:"F&B Operations",items:[{href:"/fnb/menu",label:"Menu & Products",icon:"box",module:"items",scopes:["fnb","all"]},{href:"/production",label:"Recipes & Production",icon:"factory",module:"production",scopes:["fnb","all"]},{href:"/fnb/staff-meals",label:"Staff Meals",icon:"clipboard",module:"production",scopes:["fnb","all"]},{href:"/integrations/pos",label:"POS Consumption",icon:"plug",module:"integrations",scopes:["fnb","all"]}]},
- {label:"Reports",items:[{href:"/reports/operations",label:"Operating Summary",icon:"chart",module:"reports"},{href:"/reports",label:"Reports",icon:"chart",module:"reports"}]},
- {label:"System",items:[{href:"/settings/classification",label:"Operating Structure",icon:"settings",module:"items",scopes:["all","shared","assets"]},{href:"/settings/access-scopes",label:"Operational Access",icon:"users",module:"users",scopes:["all","shared","assets"]},{href:"/integrations",label:"Integrations",icon:"plug",module:"integrations",scopes:["all","shared","assets"]},{href:"/readiness",label:"Readiness",icon:"shield",module:"readiness",scopes:["all","shared","assets"]},{href:"/rollout",label:"Rollout",icon:"rocket",module:"rollout",scopes:["all","shared","assets"]}]},
+ {label:"Workspace",items:[
+  {href:"/dashboard",label:"Home",icon:"home",module:"dashboard",scopes:["all","shared"]},
+  {href:"/items",label:"Inventory",icon:"box",module:"items"},
+  {href:"/purchasing",label:"Purchasing",icon:"cart",module:"purchasing"},
+  {href:"/fnb",label:"F&B",icon:"factory",module:"dashboard",scopes:["fnb","all"]},
+  {href:"/hotel",label:"Property",icon:"hotel",module:"dashboard",scopes:["hotel","all"]},
+  {href:"/reports",label:"Reports",icon:"chart",module:"reports"}
+ ]},
+ {label:"Inventory tools",items:[
+  {href:"/stock",label:"Stock",icon:"layers",module:"stock",scopes:["all","shared","fnb","hotel"]},
+  {href:"/counts",label:"Counts",icon:"clipboard",module:"counts",scopes:["all","shared","fnb","hotel"]},
+  {href:"/inventory-operations",label:"Adjustments & Waste",icon:"clipboard",module:"inventory-operations",scopes:["all","shared","fnb","hotel"]},
+  {href:"/locations",label:"Locations",icon:"map",module:"locations"}
+ ]},
+ {label:"Purchasing tools",items:[
+  {href:"/receiving",label:"Receiving",icon:"truck",module:"receiving"},
+  {href:"/suppliers",label:"Suppliers",icon:"users",module:"suppliers"}
+ ]},
+ {label:"F&B tools",items:[
+  {href:"/fnb/menu",label:"Menu & Products",icon:"box",module:"items",scopes:["fnb","all"]},
+  {href:"/production",label:"Recipes & Production",icon:"factory",module:"production",scopes:["fnb","all"]},
+  {href:"/fnb/staff-meals",label:"Staff Meals",icon:"clipboard",module:"production",scopes:["fnb","all"]}
+ ]},
+ {label:"Property tools",items:[
+  {href:"/hotel/property",label:"Property & Linen",icon:"linen",module:"inventory-operations",scopes:["hotel","all"]},
+  {href:"/assets",label:"Assets",icon:"box",module:"items",scopes:["assets","all"]},
+  {href:"/assets/maintenance",label:"Maintenance",icon:"settings",module:"items",scopes:["assets","all"]}
+ ]},
+ {label:"Admin",items:[
+  {href:"/settings/classification",label:"Settings",icon:"settings",module:"items",scopes:["all","shared","assets"]},
+  {href:"/settings/access-scopes",label:"Access",icon:"users",module:"users",scopes:["all","shared","assets"]},
+  {href:"/integrations",label:"Integrations",icon:"plug",module:"integrations",scopes:["all","shared","assets"]},
+  {href:"/readiness",label:"System health",icon:"shield",module:"readiness",scopes:["all","shared","assets"]}
+ ]}
 ];
 
 function Icon({name}:{name:IconName}){

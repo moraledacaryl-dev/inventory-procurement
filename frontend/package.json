@@ -24,7 +24,6 @@
   },
   "overrides": {
     "browserslist": "4.28.7",
-    "js-yaml": "4.3.2",
-    "sharp": "0.35.5"
+    "js-yaml": "4.3.2"
   }
 }

@@ -68,16 +68,18 @@ for (const [role, email] of Object.entries(users)) {
     const manifest: ManifestRow[] = [];
     const consoleErrors: string[] = [];
     const pageErrors: string[] = [];
-    const requestCapture = new WeakMap<import("@playwright/test").Request, number>();
     const httpErrorsByCapture = new Map<number, string[]>();
     let activeCapture = 0;
 
     page.on("console", msg => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
     page.on("pageerror", err => pageErrors.push(err.message));
-    page.on("request", request => requestCapture.set(request, activeCapture));
     page.on("response", response => {
       if (response.status() < 500) return;
-      const capture = requestCapture.get(response.request()) ?? activeCapture;
+      // Attribute a failure to the capture that is active when the response
+      // arrives. Requests can outlive a previous navigation; tagging them at
+      // request start can otherwise make a late response poison an unrelated
+      // route in the exhaustive visual sweep.
+      const capture = activeCapture;
       if (capture <= 0) return;
       const errors = httpErrorsByCapture.get(capture) || [];
       errors.push(`${response.status()} ${response.request().method()} ${response.url()}`);

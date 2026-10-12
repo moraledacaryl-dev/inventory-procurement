@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_permission
+from app.api.integration_auth import require_integration_actor
 from app.db.session import get_db
+from app.models.menu import MenuItem
 from app.models.production import PosProductMapping, PosSaleEvent, Recipe
 from app.models.user import User
 from app.services.controls import add_audit
@@ -13,6 +15,39 @@ router = APIRouter(tags=["pos-sync"])
 
 def fail(status: int, message: str):
     raise HTTPException(status, message)
+
+
+@router.get("/integrations/pos/catalog")
+def pos_catalog_feed(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_integration_actor("hidden-oasis-pos")),
+):
+    """Machine-readable selling catalog owned by Inventory & Procurement."""
+    items = db.scalars(
+        select(MenuItem)
+        .options(selectinload(MenuItem.variants))
+        .order_by(MenuItem.category, MenuItem.sort_order, MenuItem.display_name)
+    ).unique().all()
+    rows = []
+    for item in items:
+        for variant in sorted(item.variants, key=lambda row: (row.sort_order, row.name)):
+            rows.append({
+                "menu_item_id": item.id,
+                "variant_id": variant.id,
+                "menu_item_name": item.name,
+                "display_name": item.display_name or item.name,
+                "variant_name": variant.name,
+                "category": item.category,
+                "prep_station": item.prep_station,
+                "sort_order": item.sort_order,
+                "sku": variant.sku,
+                "barcode": variant.barcode,
+                "price": str(variant.price),
+                "with_drink_price": str(variant.with_drink_price) if variant.with_drink_price is not None else None,
+                "is_active": bool(item.is_active and item.pos_visible and variant.is_active),
+                "pos_visible": bool(item.pos_visible),
+            })
+    return {"source": "inventory-procurement", "items": rows, "count": len(rows)}
 
 
 @router.get("/integrations/pos/workspace")

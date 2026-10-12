@@ -1,7 +1,7 @@
 """Idempotent seed of the current Hidden Oasis menu verified from photographed menu pages.
 
-Unavailable/covered items and items without a visible current price are deliberately
-excluded. Historical Kintoz codes are not reused.
+Unavailable/covered items with a readable current price are retained as disabled POS rows.
+Items without a visible current price are deliberately excluded. Historical Kintoz codes are not reused.
 """
 from __future__ import annotations
 import hashlib
@@ -29,6 +29,7 @@ CATALOG = [
     row("Four Cheese","Pizza",[('Thin Crust 9"',"375.00"),('Thin Crust 12"',"505.00")]),
 
     # Appetizers / quick bites
+    {**row("Calamares","Appetizers","350.00"), "is_active":False, "pos_visible":False},
     row("Lumpiang Shanghai","Appetizers","295.00"),
     row("Croquettes","Appetizers","245.00"),
     row("Nachos","Appetizers","295.00"),
@@ -42,6 +43,8 @@ CATALOG = [
     row("Salisbury Steak","Main Course","225.00"),
     row("Red Wine Braised Beef","Main Course","375.00"),
     row("Mushroom Pork Steak","Main Course","265.00"),
+    {**row("Garlic Butter Shrimp","Main Course","265.00"), "is_active":False, "pos_visible":False},
+    {**row("Bangus","Main Course","195.00"), "is_active":False, "pos_visible":False},
     row("Fish and Chips","Main Course","195.00"),
     row("Garlic Parmesan Wings","Chicken Wings",[("Solo","250.00"),("Platter","310.00")]),
     row("Buffalo Wings","Chicken Wings",[("Solo","250.00"),("Platter","310.00")]),
@@ -153,7 +156,12 @@ def main() -> None:
                 if v is None:
                     v=MenuVariant(menu_item_id=item.id); db.add(v); created_variants+=1
                 else: updated_variants+=1
-                v.name=variant_name; v.sku=sku; v.barcode=barcode; v.price=Decimal(price); v.with_drink_price=None; v.sort_order=variant_order; v.is_active=r.get("is_active",True)
+                v.name=variant_name
+                # SKU/barcode are durable identities. Never rotate an existing variant's
+                # nonblank identifiers just because seed metadata or identity logic changes.
+                if not v.sku: v.sku=sku
+                if not v.barcode: v.barcode=barcode
+                v.price=Decimal(price); v.with_drink_price=None; v.sort_order=variant_order; v.is_active=r.get("is_active",True)
             db.flush()
         db.commit()
         print(f"Hidden Oasis menu seed complete: items created={created_items}, items updated={updated_items}, variants created={created_variants}, variants updated={updated_variants}.")

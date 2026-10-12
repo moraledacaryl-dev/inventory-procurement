@@ -128,3 +128,31 @@ def test_pos_event_idempotency_and_reversal(client):
     workspace = client.get("/api/v1/integrations/pos/workspace", headers=headers)
     assert workspace.status_code == 200
     assert workspace.json()["summary"]["processed_event_count"] >= 2
+
+
+def test_pos_catalog_feed_requires_machine_credential_and_returns_menu_variants(client):
+    headers = auth_headers(client)
+    payload = {
+        "name": "Catalog Test Drink",
+        "category": "Test Drinks",
+        "prep_station": "bar",
+        "is_active": True,
+        "pos_visible": True,
+        "variants": [{"name": "Regular", "sku": "CAT-TEST-001", "barcode": "209999999999", "price": "125.00", "with_drink_price": None, "is_active": True}],
+    }
+    created = client.post("/api/v1/fnb/menu", headers=headers, json=payload)
+    assert created.status_code == 201
+
+    settings.pos_integration_token = POS_TOKEN
+    missing = client.get("/api/v1/integrations/pos/catalog")
+    assert missing.status_code == 401
+    response = client.get("/api/v1/integrations/pos/catalog", headers=pos_headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "inventory-procurement"
+    row = next(item for item in body["items"] if item["sku"] == "CAT-TEST-001")
+    assert row["menu_item_id"] == created.json()["id"]
+    assert row["variant_id"] == created.json()["variants"][0]["id"]
+    assert row["price"] == "125.00"
+    assert row["prep_station"] == "bar"
+    assert row["is_active"] is True

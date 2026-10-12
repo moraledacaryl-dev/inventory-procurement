@@ -21,3 +21,5 @@ button{line-height:1.25}
 @media(max-width:760px){
  button.primary.compact,button.secondary.compact,.primary.compact,.secondary.compact{min-height:44px}
 }
+
+.workspace-tabs{display:flex;gap:6px;align-items:center;margin-bottom:18px;padding:5px;background:var(--surface-soft);border:1px solid var(--line);border-radius:12px;width:max-content;max-width:100%;overflow-x:auto}.workspace-tabs button{border:0;background:transparent;color:var(--muted);min-height:38px;padding:8px 13px;border-radius:8px;font-weight:700;white-space:nowrap;cursor:pointer}.workspace-tabs button:hover{background:#fff;color:var(--ink)}.workspace-tabs button.active,.workspace-tabs button[aria-selected="true"]{background:#fff;color:var(--brand);box-shadow:var(--shadow-sm)}@media(max-width:640px){.workspace-tabs{width:100%}.workspace-tabs button{min-height:44px;flex:1}}

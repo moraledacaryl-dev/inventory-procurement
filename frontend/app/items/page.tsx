@@ -131,7 +131,7 @@ export default function Page() {
           <FormField label="Minimum stock" name="item-minimum" required error={fieldErrors.minimum}><input value={draft.minimum} onChange={event => update("minimum", event.target.value)} type="number" step="0.0001" min="0" /></FormField>
           <FormField label="Standard cost" name="item-cost" required error={fieldErrors.cost}><input value={draft.cost} onChange={event => update("cost", event.target.value)} type="number" step="0.0001" min="0" /></FormField>
         </FormSection>
-        <div className="form-actions"><button type="button" className="secondary" disabled={!isDirty || saving} onClick={() => setConfirmDiscard(true)}>Clear draft</button><button className="primary" disabled={saving}>{saving ? "Creating item…" : "Create item"}</button></div>
+        <div className="form-actions"><button type="button" className="secondary" disabled={saving} onClick={() => isDirty ? setConfirmDiscard(true) : setEditorOpen(false)}>Cancel</button><button className="primary" disabled={saving}>{saving ? "Creating item…" : "Create item"}</button></div>
       </form></section> : null}
     <ConfirmDialog open={confirmDiscard} title="Clear this item draft?" description="All unsaved catalogue details in this form will be removed." confirmLabel="Clear draft" tone="danger" onConfirm={discardDraft} onCancel={() => setConfirmDiscard(false)} />
   </AppShell>;

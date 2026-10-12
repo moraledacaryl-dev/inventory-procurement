@@ -36,10 +36,10 @@ export default function Page() {
   const [loadError, setLoadError] = useState("");
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false); const [editorOpen, setEditorOpen] = useState(false);
   const { draft, setDraft, clearDraft, restored } = useFormDraft<ItemDraft>("inventory:item-draft:v2", EMPTY_DRAFT);
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(EMPTY_DRAFT), [draft]);
-  useUnsavedChanges(isDirty && !saving);
+  useUnsavedChanges(isDirty && !saving); useEffect(() => { if (restored && isDirty) setEditorOpen(true); }, [restored, isDirty]);
 
   useEffect(() => {
     setScope(readWorkspaceScope());
@@ -102,14 +102,17 @@ export default function Page() {
         default_location_id: draft.defaultLocation || null,
         minimum_stock: Number(draft.minimum || 0), standard_cost: Number(draft.cost || 0),
       }) });
-      const createdName = draft.name.trim(); clearDraft(); setFieldErrors({}); setFeedback({ tone: "success", title: "Item created", message: `${createdName} is classified and ready for its workspace workflows.` }); await load();
+      const createdName = draft.name.trim(); clearDraft(); setFieldErrors({}); setEditorOpen(false); setFeedback({ tone: "success", title: "Item created", message: `${createdName} is classified and ready for its workspace workflows.` }); await load();
     } catch (error) { setFeedback({ tone: "error", title: "Item could not be saved", message: (error as Error).message }); }
     finally { setSaving(false); }
   }
-  function discardDraft() { clearDraft(); setFieldErrors({}); setFeedback({ tone: "info", title: "Draft cleared", message: "The unsaved item details were removed." }); setConfirmDiscard(false); }
+  function discardDraft() { clearDraft(); setFieldErrors({}); setFeedback({ tone: "info", title: "Draft cleared", message: "The unsaved item details were removed." }); setConfirmDiscard(false); setEditorOpen(false); }
 
   return <AppShell title="Items" description="Maintain a shared catalogue while keeping F&B, Hotel, reusable property, assets, and shared operations clearly classified.">
-    <section className="card"><div className="topline"><div><h2>Create item</h2><p>Choose the workspace and item type once. The system derives the record class and future workflow behavior automatically.</p></div>{restored && isDirty ? <span className="badge warning">Draft saved</span> : null}</div>
+    {feedback ? <FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message} /> : null}    <section className="card"><div className="topline"><div><h2>Item master</h2><p>{scope === ALL_OPERATIONS ? "Showing all operations." : `Scoped to ${names[scope] || "the selected workspace"}.`} Switch workspaces in the header without rebuilding filters.</p></div><div className="menu-list-actions"><button type="button" className="primary compact" onClick={() => setEditorOpen(true)}>+ Add item</button><label className="catalogue-toggle"><input type="checkbox" checked={showInactive} onChange={event => setShowInactive(event.target.checked)} /><span>Include inactive</span></label></div></div>
+      <DataTable columns={["SKU", "Name", "Workspace", "Item type", "Minimum", "Standard cost", "Status"]} rows={items.map(item => [<Link key={item.id} className="catalogue-link" href={`/items/${item.id}`}>{item.sku}</Link>, <Link key={`${item.id}-name`} className="catalogue-link" href={`/items/${item.id}`}>{item.name}</Link>, item.primary_workspace_id ? names[item.primary_workspace_id] || "Classified" : <span key={`${item.id}-workspace`} className="badge warning">Unclassified</span>, item.item_type_id ? names[item.item_type_id] || "—" : "—", formatQuantity(item.minimum_stock), formatMoney(item.standard_cost), <StatusBadge key={`${item.id}-status`} status={item.is_active ? "active" : "inactive"} />])} rowIds={items.map(item => item.id)} loading={loading} error={loadError} onRetry={() => void load()} searchPlaceholder="Search by SKU, name, workspace, type, cost, or status" exportFileName="hidden-oasis-items" caption="Hidden Oasis item master" emptyTitle="No items found" emptyMessage={showInactive ? "No catalogue records are available in this workspace." : "Create the first item, change workspace, or include inactive records."} />
+    </section>
+    {editorOpen ? <section className="card section-gap"><div className="topline"><div><h2>Create item</h2><p>Choose the workspace and item type once. The system derives the record class and future workflow behavior automatically.</p></div>{restored && isDirty ? <span className="badge warning">Draft saved</span> : null}</div>
       <form onSubmit={submit} noValidate>
         <FormSection title="Operational identity" description="The item type drives its behavior. There is no separate recipe-eligibility setting.">
           <FormField label="Workspace" name="item-workspace" required error={fieldErrors.workspace}><select value={draft.workspace} onChange={event => update("workspace", event.target.value)}><option value="">Select workspace</option>{workspaces.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></FormField>
@@ -128,11 +131,8 @@ export default function Page() {
           <FormField label="Minimum stock" name="item-minimum" required error={fieldErrors.minimum}><input value={draft.minimum} onChange={event => update("minimum", event.target.value)} type="number" step="0.0001" min="0" /></FormField>
           <FormField label="Standard cost" name="item-cost" required error={fieldErrors.cost}><input value={draft.cost} onChange={event => update("cost", event.target.value)} type="number" step="0.0001" min="0" /></FormField>
         </FormSection>
-        <div className="form-actions"><button type="button" className="secondary" disabled={!isDirty || saving} onClick={() => setConfirmDiscard(true)}>Clear draft</button><button className="primary" disabled={saving}>{saving ? "Creating item…" : "Create item"}</button></div>
-      </form>{feedback ? <FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message} /> : null}</section>
-    <section className="card section-gap"><div className="topline"><div><h2>Item master</h2><p>{scope === ALL_OPERATIONS ? "Showing all operations." : `Scoped to ${names[scope] || "the selected workspace"}.`} Switch workspaces in the header without rebuilding filters.</p></div><label className="catalogue-toggle"><input type="checkbox" checked={showInactive} onChange={event => setShowInactive(event.target.checked)} /><span>Include inactive</span></label></div>
-      <DataTable columns={["SKU", "Name", "Workspace", "Item type", "Minimum", "Standard cost", "Status"]} rows={items.map(item => [<Link key={item.id} className="catalogue-link" href={`/items/${item.id}`}>{item.sku}</Link>, <Link key={`${item.id}-name`} className="catalogue-link" href={`/items/${item.id}`}>{item.name}</Link>, item.primary_workspace_id ? names[item.primary_workspace_id] || "Classified" : <span key={`${item.id}-workspace`} className="badge warning">Unclassified</span>, item.item_type_id ? names[item.item_type_id] || "—" : "—", formatQuantity(item.minimum_stock), formatMoney(item.standard_cost), <StatusBadge key={`${item.id}-status`} status={item.is_active ? "active" : "inactive"} />])} rowIds={items.map(item => item.id)} loading={loading} error={loadError} onRetry={() => void load()} searchPlaceholder="Search by SKU, name, workspace, type, cost, or status" exportFileName="hidden-oasis-items" caption="Hidden Oasis item master" emptyTitle="No items found" emptyMessage={showInactive ? "No catalogue records are available in this workspace." : "Create the first item, change workspace, or include inactive records."} />
-    </section>
+        <div className="form-actions"><button type="button" className="secondary" disabled={saving} onClick={() => isDirty ? setConfirmDiscard(true) : setEditorOpen(false)}>Cancel</button><button className="primary" disabled={saving}>{saving ? "Creating item…" : "Create item"}</button></div>
+      </form></section> : null}
     <ConfirmDialog open={confirmDiscard} title="Clear this item draft?" description="All unsaved catalogue details in this form will be removed." confirmLabel="Clear draft" tone="danger" onConfirm={discardDraft} onCancel={() => setConfirmDiscard(false)} />
   </AppShell>;
 }

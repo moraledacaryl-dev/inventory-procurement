@@ -5,15 +5,41 @@ Items without a visible current price are deliberately excluded. Historical Kint
 """
 from __future__ import annotations
 import hashlib
+import json
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.db.session import SessionLocal
 from app.models.menu import MenuItem, MenuVariant
 
-def row(name, category, price, station="kitchen"):
+BREAKFAST_ADDONS = [{
+    "id": "breakfast-addons",
+    "name": "Add-ons",
+    "selection_mode": "multiple",
+    "options": [
+        {"id": "hotdog", "name": "Hotdog", "price_delta": "75.00"},
+        {"id": "chicken-longganisa", "name": "Chicken longganisa", "price_delta": "80.00"},
+        {"id": "pork-tocino", "name": "Pork tocino", "price_delta": "85.00"},
+        {"id": "ham", "name": "Ham", "price_delta": "85.00"},
+        {"id": "beef-tapa", "name": "Beef tapa", "price_delta": "75.00"},
+        {"id": "bacon", "name": "Bacon", "price_delta": "80.00"},
+        {"id": "corned-beef", "name": "Corned beef", "price_delta": "85.00"},
+        {"id": "extra-cheese", "name": "Extra cheese", "price_delta": "85.00"},
+    ],
+}]
+
+DRINK_CATEGORIES = {"Hot Coffee", "Iced Coffee", "Non Coffee", "Milk Tea", "Frappuccino", "Frappe", "Lemonade"}
+
+def row(name, category, price, station="kitchen", *, pricing_role=None, modifier_groups=None):
     variants = price if isinstance(price, list) else [("Regular", price)]
-    return {"name":name,"category":category,"prep_station":station,"variants":variants}
+    return {
+        "name": name,
+        "category": category,
+        "prep_station": station,
+        "variants": variants,
+        "pricing_role": pricing_role or ("drink" if category in DRINK_CATEGORIES else "standard"),
+        "modifier_groups": modifier_groups or [],
+    }
 
 CATALOG = [
     # Packaging (previously verified)
@@ -63,10 +89,10 @@ CATALOG = [
     row("Hotdog Sandwich","Burgers & Sandwiches","125.00"),
 
     # All-day breakfast — only names/prices that remain visible on the current page
-    row("French Toast","All-Day Breakfast","130.00"),
-    row("Sunshine Toast","All-Day Breakfast","125.00"),
-    row("Classic Pancakes","All-Day Breakfast","115.00"),
-    row("Cheesy Mushroom Omelette","All-Day Breakfast","130.00"),
+    row("French Toast","All-Day Breakfast","130.00", modifier_groups=BREAKFAST_ADDONS),
+    row("Sunshine Toast","All-Day Breakfast","125.00", modifier_groups=BREAKFAST_ADDONS),
+    row("Classic Pancakes","All-Day Breakfast","115.00", modifier_groups=BREAKFAST_ADDONS),
+    row("Cheesy Mushroom Omelette","All-Day Breakfast","130.00", modifier_groups=BREAKFAST_ADDONS),
 
     # Hot coffee
     row("Americano","Hot Coffee","90.00","bar"),
@@ -145,10 +171,10 @@ def main() -> None:
         for item_order,r in enumerate(CATALOG):
             item=db.scalar(select(MenuItem).where(MenuItem.name==r["name"],MenuItem.category==r["category"]).options(selectinload(MenuItem.variants)))
             if item is None:
-                item=MenuItem(name=r["name"],display_name=r["name"],category=r["category"],prep_station=r["prep_station"],sort_order=item_order,is_active=r.get("is_active",True),pos_visible=r.get("pos_visible",True))
+                item=MenuItem(name=r["name"],display_name=r["name"],category=r["category"],prep_station=r["prep_station"],pricing_role=r["pricing_role"],modifier_groups_json=json.dumps(r["modifier_groups"]),sort_order=item_order,is_active=r.get("is_active",True),pos_visible=r.get("pos_visible",True))
                 db.add(item); db.flush(); created_items+=1
             else:
-                item.display_name=r["name"]; item.prep_station=r["prep_station"]; item.sort_order=item_order; item.is_active=r.get("is_active",True); item.pos_visible=r.get("pos_visible",True); updated_items+=1
+                item.display_name=r["name"]; item.prep_station=r["prep_station"]; item.pricing_role=r["pricing_role"]; item.modifier_groups_json=json.dumps(r["modifier_groups"]); item.sort_order=item_order; item.is_active=r.get("is_active",True); item.pos_visible=r.get("pos_visible",True); updated_items+=1
             by_name={v.name:v for v in item.variants}
             for variant_order,(variant_name,price) in enumerate(r["variants"]):
                 sku,barcode=identity(r["name"],variant_name,r["category"])

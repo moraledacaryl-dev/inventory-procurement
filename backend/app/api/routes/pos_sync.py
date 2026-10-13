@@ -31,7 +31,7 @@ def pos_catalog_feed(
         .order_by(MenuItem.category, MenuItem.sort_order, MenuItem.display_name)
     ).unique().all()
     templates = {x.id: x for x in db.scalars(select(PosModifierTemplate).where(PosModifierTemplate.is_active.is_(True))).all()}
-    pricing_rules = db.scalars(select(PosPricingRule).where(PosPricingRule.is_active.is_(True)).order_by(PosPricingRule.name)).all()
+    pricing_rules = db.scalars(select(PosPricingRule).where(PosPricingRule.is_active.is_(True)).order_by(PosPricingRule.priority, PosPricingRule.name)).all()
     rows = []
     for item in items:
         inline_groups = json.loads(item.modifier_groups_json or "[]")
@@ -68,7 +68,7 @@ def pos_catalog_feed(
         "items": rows,
         "count": len(rows),
         "pricing_rules": [
-            {"id": x.id, "name": x.name, "qualifier_tag": x.qualifier_tag, "target_tag": x.target_tag}
+            {"id": x.id, "name": x.name, "qualifier_tag": x.qualifier_tag, "target_tag": x.target_tag, "priority": x.priority}
             for x in pricing_rules
         ],
     }

@@ -44,3 +44,19 @@ def test_accounting_workspace_flags_unmapped_event(client):
     headers=auth_headers(client);event=create_accounting_event(client,headers,'acct-unmapped','inventory.unknown.event')
     workspace=client.get('/api/v1/integrations/accounting/workspace',headers=headers);row=next(item for item in workspace.json()['events'] if item['id']==event['id'])
     assert row['mapped'] is False;assert row['debit_account']=='Unmapped'
+
+
+def test_executed_production_event_uses_production_accounting_links():
+    from types import SimpleNamespace
+    from app.services.integration_worker import accounting_envelope
+
+    event=SimpleNamespace(
+        id='evt-production-1',event_type='inventory.production.executed',aggregate_type='production_batch',
+        aggregate_id='batch-1',attempts=0,idempotency_key='production-executed:batch-1',
+        payload={'batch_id':'batch-1','batch_number':'BATCH-0001','total_actual_cost':'125.50','stock_document_id':'stock-doc-1'},
+    )
+    envelope=accounting_envelope(event)
+    assert envelope['proposed_links']['target_type']=='production_batch'
+    assert envelope['proposed_links']['batch_id']=='batch-1'
+    assert envelope['proposed_links']['batch_number']=='BATCH-0001'
+    assert envelope['proposed_links']['category']=='Inventory production'

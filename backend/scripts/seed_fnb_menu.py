@@ -14,17 +14,17 @@ from app.models.menu import MenuItem, MenuVariant
 
 BREAKFAST_ADDONS = [{
     "id": "breakfast-addons",
-    "name": "Add-ons",
-    "selection_mode": "multiple",
+    "label": "Add-ons",
+    "mode": "multi",
     "options": [
-        {"id": "hotdog", "name": "Hotdog", "price_delta": "75.00"},
-        {"id": "chicken-longganisa", "name": "Chicken longganisa", "price_delta": "80.00"},
-        {"id": "pork-tocino", "name": "Pork tocino", "price_delta": "85.00"},
-        {"id": "ham", "name": "Ham", "price_delta": "85.00"},
-        {"id": "beef-tapa", "name": "Beef tapa", "price_delta": "75.00"},
-        {"id": "bacon", "name": "Bacon", "price_delta": "80.00"},
-        {"id": "corned-beef", "name": "Corned beef", "price_delta": "85.00"},
-        {"id": "extra-cheese", "name": "Extra cheese", "price_delta": "85.00"},
+        {"label": "Hotdog", "price_delta": 75},
+        {"label": "Chicken longganisa", "price_delta": 80},
+        {"label": "Pork tocino", "price_delta": 85},
+        {"label": "Ham", "price_delta": 85},
+        {"label": "Beef tapa", "price_delta": 75},
+        {"label": "Bacon", "price_delta": 80},
+        {"label": "Corned beef", "price_delta": 85},
+        {"label": "Extra cheese", "price_delta": 85},
     ],
 }]
 

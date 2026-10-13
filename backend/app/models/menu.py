@@ -14,6 +14,8 @@ class MenuItem(Base):
     category:Mapped[str]=mapped_column(String(100),index=True)
     description:Mapped[str|None]=mapped_column(Text,nullable=True)
     prep_station:Mapped[str]=mapped_column(String(40),default="bar")
+    pricing_role:Mapped[str]=mapped_column(String(24),default="standard")
+    modifier_groups_json:Mapped[str|None]=mapped_column(Text,nullable=True)
     sort_order:Mapped[int]=mapped_column(Integer,default=0)
     is_active:Mapped[bool]=mapped_column(Boolean,default=True)
     pos_visible:Mapped[bool]=mapped_column(Boolean,default=True)

@@ -60,3 +60,4 @@ def test_executed_production_event_uses_production_accounting_links():
     assert envelope['proposed_links']['batch_id']=='batch-1'
     assert envelope['proposed_links']['batch_number']=='BATCH-0001'
     assert envelope['proposed_links']['category']=='Inventory production'
+    assert envelope['proposed_links']['stock_value']=='125.50'

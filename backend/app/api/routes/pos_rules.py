@@ -75,7 +75,7 @@ def list_rules(db:Session=Depends(get_db),_:User=Depends(require_permission("ite
 @router.post("/fnb/pos-rules/pricing",status_code=201)
 def create_rule(payload:PricingRuleIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
     row=PosPricingRule(name=payload.name.strip(),qualifier_tag=payload.qualifier_tag,target_tag=payload.target_tag,is_active=payload.is_active)
-    if hasattr(row,"priority"): row.priority=payload.priority
+    row.priority=payload.priority
     db.add(row);db.flush();add_audit(db,actor_user_id=user.id,action="pos.pricing_rule_created",entity_type="pos_pricing_rule",entity_id=row.id,details=rule_out(row));commit_or_conflict(db);return rule_out(row)
 
 @router.put("/fnb/pos-rules/pricing/{rule_id}")
@@ -83,7 +83,7 @@ def update_rule(rule_id:str,payload:PricingRuleIn,db:Session=Depends(get_db),use
     row=db.get(PosPricingRule,rule_id)
     if not row: raise HTTPException(404,"Pricing rule not found")
     row.name=payload.name.strip();row.qualifier_tag=payload.qualifier_tag;row.target_tag=payload.target_tag;row.is_active=payload.is_active
-    if hasattr(row,"priority"): row.priority=payload.priority
+    row.priority=payload.priority
     add_audit(db,actor_user_id=user.id,action="pos.pricing_rule_updated",entity_type="pos_pricing_rule",entity_id=row.id,details=rule_out(row));commit_or_conflict(db);return rule_out(row)
 
 @router.post("/fnb/pos-rules/modifiers",status_code=201)

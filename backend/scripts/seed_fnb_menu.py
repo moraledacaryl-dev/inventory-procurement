@@ -172,7 +172,16 @@ def main() -> None:
                 item=MenuItem(name=r["name"],display_name=r["name"],category=r["category"],prep_station=r["prep_station"],pricing_role=r.get("pricing_role","standard"),modifier_groups_json=json.dumps(r.get("modifier_groups",[])),sort_order=item_order,is_active=r.get("is_active",True),pos_visible=r.get("pos_visible",True))
                 db.add(item); db.flush(); created_items+=1
             else:
-                item.display_name=r["name"]; item.prep_station=r["prep_station"]; item.sort_order=item_order; item.is_active=r.get("is_active",True); item.pos_visible=r.get("pos_visible",True)\n                if "pricing_role" in r: item.pricing_role=r["pricing_role"]\n                if "modifier_groups" in r: item.modifier_groups_json=json.dumps(r["modifier_groups"])\n                updated_items+=1
+                item.display_name=r["name"]
+                item.prep_station=r["prep_station"]
+                item.sort_order=item_order
+                item.is_active=r.get("is_active",True)
+                item.pos_visible=r.get("pos_visible",True)
+                if "pricing_role" in r:
+                    item.pricing_role=r["pricing_role"]
+                if "modifier_groups" in r:
+                    item.modifier_groups_json=json.dumps(r["modifier_groups"])
+                updated_items+=1
             by_name={v.name:v for v in item.variants}
             for variant_order,(variant_name,price) in enumerate(r["variants"]):
                 sku,barcode=identity(r["name"],variant_name,r["category"])

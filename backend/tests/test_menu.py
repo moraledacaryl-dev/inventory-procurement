@@ -25,7 +25,7 @@ def test_generic_pos_rule_setup(client):
     body=r.json()
     assert body["pricing_tags"]==["combo-target"]
     assert body["modifier_template_ids"]==[modifier.json()["id"]]
-    assert body["variants"][0]["conditional_prices"][0]["price"]==45
+    assert body["variants"][0]["conditional_prices"][0]["price"]=="45"
 
 
 def test_generic_pos_rule_validation_and_references(client):

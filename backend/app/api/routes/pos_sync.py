@@ -8,6 +8,7 @@ from app.api.integration_auth import require_integration_actor
 from app.db.session import get_db
 from app.models.menu import MenuItem
 from app.models.production import PosProductMapping, PosSaleEvent, Recipe
+from app.models.pos_rules import PosModifierTemplate, PosPricingRule
 from app.models.user import User
 from app.services.controls import add_audit
 
@@ -29,8 +30,17 @@ def pos_catalog_feed(
         .options(selectinload(MenuItem.variants))
         .order_by(MenuItem.category, MenuItem.sort_order, MenuItem.display_name)
     ).unique().all()
+    templates = {x.id: x for x in db.scalars(select(PosModifierTemplate).where(PosModifierTemplate.is_active.is_(True))).all()}
+    pricing_rules = db.scalars(select(PosPricingRule).where(PosPricingRule.is_active.is_(True)).order_by(PosPricingRule.name)).all()
     rows = []
     for item in items:
+        inline_groups = json.loads(item.modifier_groups_json or "[]")
+        template_groups = []
+        for template_id in json.loads(item.modifier_template_ids_json or "[]"):
+            template = templates.get(template_id)
+            if template:
+                template_groups.append(json.loads(template.config_json))
+        resolved_groups = template_groups + inline_groups
         for variant in sorted(item.variants, key=lambda row: (row.sort_order, row.name)):
             rows.append({
                 "menu_item_id": item.id,
@@ -41,16 +51,27 @@ def pos_catalog_feed(
                 "category": item.category,
                 "prep_station": item.prep_station,
                 "pricing_role": item.pricing_role,
-                "modifier_groups": json.loads(item.modifier_groups_json or "[]"),
+                "pricing_tags": json.loads(item.pricing_tags_json or "[]"),
+                "modifier_groups": resolved_groups,
+                "modifier_template_ids": json.loads(item.modifier_template_ids_json or "[]"),
                 "sort_order": item.sort_order,
                 "sku": variant.sku,
                 "barcode": variant.barcode,
                 "price": str(variant.price),
                 "with_drink_price": str(variant.with_drink_price) if variant.with_drink_price is not None else None,
+                "conditional_prices": json.loads(variant.conditional_prices_json or "[]"),
                 "is_active": bool(item.is_active and item.pos_visible and variant.is_active),
                 "pos_visible": bool(item.pos_visible),
             })
-    return {"source": "inventory-procurement", "items": rows, "count": len(rows)}
+    return {
+        "source": "inventory-procurement",
+        "items": rows,
+        "count": len(rows),
+        "pricing_rules": [
+            {"id": x.id, "name": x.name, "qualifier_tag": x.qualifier_tag, "target_tag": x.target_tag}
+            for x in pricing_rules
+        ],
+    }
 
 
 @router.get("/integrations/pos/workspace")

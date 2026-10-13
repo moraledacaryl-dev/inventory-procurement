@@ -21,6 +21,7 @@ class VariantIn(BaseModel):
     barcode:str|None=Field(default=None,max_length=100)
     price:Decimal=Field(ge=0)
     with_drink_price:Decimal|None=Field(default=None,ge=0)
+    conditional_prices:list[dict]=Field(default_factory=list)
     recipe_id:str|None=None
     inventory_item_id:str|None=None
     is_active:bool=True
@@ -31,7 +32,9 @@ class MenuIn(BaseModel):
     description:str|None=None
     prep_station:str=Field(default="bar",max_length=40)
     pricing_role:str=Field(default="standard",pattern="^(standard|drink|pastry)$")
+    pricing_tags:list[str]=Field(default_factory=list)
     modifier_groups:list[dict]=Field(default_factory=list)
+    modifier_template_ids:list[str]=Field(default_factory=list)
     is_active:bool=True
     pos_visible:bool=True
     variants:list[VariantIn]=Field(min_length=1)
@@ -41,7 +44,7 @@ def validate(db,row):
     if row.inventory_item_id and not db.get(Item,row.inventory_item_id): raise HTTPException(422,"Inventory item not found")
     if row.with_drink_price is not None and row.with_drink_price>row.price: raise HTTPException(422,"With-drink price cannot exceed regular price")
 def serial(row):
-    return {"id":row.id,"name":row.name,"display_name":row.display_name,"category":row.category,"description":row.description,"prep_station":row.prep_station,"pricing_role":row.pricing_role,"modifier_groups":json.loads(row.modifier_groups_json or "[]"),"sort_order":row.sort_order,"is_active":row.is_active,"pos_visible":row.pos_visible,"variants":[{"id":v.id,"name":v.name,"sku":v.sku,"barcode":v.barcode,"price":str(v.price),"with_drink_price":str(v.with_drink_price) if v.with_drink_price is not None else None,"recipe_id":v.recipe_id,"inventory_item_id":v.inventory_item_id,"sort_order":v.sort_order,"is_active":v.is_active} for v in row.variants]}
+    return {"id":row.id,"name":row.name,"display_name":row.display_name,"category":row.category,"description":row.description,"prep_station":row.prep_station,"pricing_role":row.pricing_role,"pricing_tags":json.loads(row.pricing_tags_json or "[]"),"modifier_groups":json.loads(row.modifier_groups_json or "[]"),"modifier_template_ids":json.loads(row.modifier_template_ids_json or "[]"),"sort_order":row.sort_order,"is_active":row.is_active,"pos_visible":row.pos_visible,"variants":[{"id":v.id,"name":v.name,"sku":v.sku,"barcode":v.barcode,"price":str(v.price),"with_drink_price":str(v.with_drink_price) if v.with_drink_price is not None else None,"conditional_prices":json.loads(v.conditional_prices_json or "[]"),"recipe_id":v.recipe_id,"inventory_item_id":v.inventory_item_id,"sort_order":v.sort_order,"is_active":v.is_active} for v in row.variants]}
 @router.get("/fnb/menu")
 def list_menu(include_inactive:bool=False,db:Session=Depends(get_db),_:User=Depends(require_permission("items.read"))):
     stmt=select(MenuItem).options(selectinload(MenuItem.variants)).order_by(MenuItem.category,MenuItem.sort_order,MenuItem.display_name)
@@ -52,13 +55,13 @@ def variants(db,item,rows):
     for order,data in enumerate(rows):
         validate(db,data);v=old.get(data.id) if data.id else None
         if not v: v=MenuVariant(menu_item_id=item.id);db.add(v)
-        v.name=data.name.strip();v.sku=(data.sku or code("HO-")).upper().strip();v.barcode=(data.barcode or code("20")).strip();v.price=data.price;v.with_drink_price=data.with_drink_price;v.recipe_id=data.recipe_id;v.inventory_item_id=data.inventory_item_id;v.sort_order=order;v.is_active=data.is_active
+        v.name=data.name.strip();v.sku=(data.sku or code("HO-")).upper().strip();v.barcode=(data.barcode or code("20")).strip();v.price=data.price;v.with_drink_price=data.with_drink_price;v.conditional_prices_json=json.dumps(data.conditional_prices);v.recipe_id=data.recipe_id;v.inventory_item_id=data.inventory_item_id;v.sort_order=order;v.is_active=data.is_active
         db.flush();keep.add(v.id)
     for v in item.variants:
         if v.id not in keep:v.is_active=False
 @router.post("/fnb/menu",status_code=201)
 def create(payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
-    item=MenuItem(name=payload.name.strip(),display_name=(payload.display_name or payload.name).strip(),category=payload.category.strip(),description=payload.description,prep_station=payload.prep_station.strip(),pricing_role=payload.pricing_role,modifier_groups_json=json.dumps(payload.modifier_groups),is_active=payload.is_active,pos_visible=payload.pos_visible);db.add(item)
+    item=MenuItem(name=payload.name.strip(),display_name=(payload.display_name or payload.name).strip(),category=payload.category.strip(),description=payload.description,prep_station=payload.prep_station.strip(),pricing_role=payload.pricing_role,pricing_tags_json=json.dumps(payload.pricing_tags),modifier_groups_json=json.dumps(payload.modifier_groups),modifier_template_ids_json=json.dumps(payload.modifier_template_ids),is_active=payload.is_active,pos_visible=payload.pos_visible);db.add(item)
     try:
         db.flush();variants(db,item,payload.variants);add_audit(db,actor_user_id=user.id,action="menu.item_created",entity_type="menu_item",entity_id=item.id,details={"name":item.name,"category":item.category});db.commit()
         return serial(db.scalar(select(MenuItem).where(MenuItem.id==item.id).options(selectinload(MenuItem.variants))))
@@ -67,7 +70,7 @@ def create(payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_p
 def update(item_id:str,payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
     item=db.scalar(select(MenuItem).where(MenuItem.id==item_id).options(selectinload(MenuItem.variants)))
     if not item:raise HTTPException(404,"Menu item not found")
-    item.name=payload.name.strip();item.display_name=(payload.display_name or payload.name).strip();item.category=payload.category.strip();item.description=payload.description;item.prep_station=payload.prep_station.strip();item.pricing_role=payload.pricing_role;item.modifier_groups_json=json.dumps(payload.modifier_groups);item.is_active=payload.is_active;item.pos_visible=payload.pos_visible
+    item.name=payload.name.strip();item.display_name=(payload.display_name or payload.name).strip();item.category=payload.category.strip();item.description=payload.description;item.prep_station=payload.prep_station.strip();item.pricing_role=payload.pricing_role;item.pricing_tags_json=json.dumps(payload.pricing_tags);item.modifier_groups_json=json.dumps(payload.modifier_groups);item.modifier_template_ids_json=json.dumps(payload.modifier_template_ids);item.is_active=payload.is_active;item.pos_visible=payload.pos_visible
     try:
         variants(db,item,payload.variants);add_audit(db,actor_user_id=user.id,action="menu.item_updated",entity_type="menu_item",entity_id=item.id,details={"name":item.name});db.commit()
         return serial(db.scalar(select(MenuItem).where(MenuItem.id==item.id).options(selectinload(MenuItem.variants))))

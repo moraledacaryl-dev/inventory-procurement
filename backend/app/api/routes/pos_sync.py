@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+import json
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -39,6 +40,8 @@ def pos_catalog_feed(
                 "variant_name": variant.name,
                 "category": item.category,
                 "prep_station": item.prep_station,
+                "pricing_role": item.pricing_role,
+                "modifier_groups": json.loads(item.modifier_groups_json or "[]"),
                 "sort_order": item.sort_order,
                 "sku": variant.sku,
                 "barcode": variant.barcode,

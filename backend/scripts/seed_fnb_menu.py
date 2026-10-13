@@ -5,15 +5,39 @@ Items without a visible current price are deliberately excluded. Historical Kint
 """
 from __future__ import annotations
 import hashlib
+import json
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.db.session import SessionLocal
 from app.models.menu import MenuItem, MenuVariant
 
-def row(name, category, price, station="kitchen"):
+BREAKFAST_ADDONS = [{
+    "id": "breakfast-addons",
+    "label": "Add-ons",
+    "mode": "multi",
+    "options": [
+        {"label": "Hotdog", "price_delta": 75},
+        {"label": "Chicken longganisa", "price_delta": 80},
+        {"label": "Pork tocino", "price_delta": 85},
+        {"label": "Ham", "price_delta": 85},
+        {"label": "Beef tapa", "price_delta": 75},
+        {"label": "Bacon", "price_delta": 80},
+        {"label": "Corned beef", "price_delta": 85},
+        {"label": "Extra cheese", "price_delta": 85},
+    ],
+}]
+
+DRINK_CATEGORIES = {"Hot Coffee", "Iced Coffee", "Non Coffee", "Milk Tea", "Frappuccino", "Frappe", "Lemonade"}
+
+def row(name, category, price, station="kitchen", *, pricing_role=None, modifier_groups=None):
     variants = price if isinstance(price, list) else [("Regular", price)]
-    return {"name":name,"category":category,"prep_station":station,"variants":variants}
+    data = {"name": name, "category": category, "prep_station": station, "variants": variants}
+    if pricing_role is not None or category in DRINK_CATEGORIES:
+        data["pricing_role"] = pricing_role or "drink"
+    if modifier_groups is not None:
+        data["modifier_groups"] = modifier_groups
+    return data
 
 CATALOG = [
     # Packaging (previously verified)
@@ -63,10 +87,10 @@ CATALOG = [
     row("Hotdog Sandwich","Burgers & Sandwiches","125.00"),
 
     # All-day breakfast — only names/prices that remain visible on the current page
-    row("French Toast","All-Day Breakfast","130.00"),
-    row("Sunshine Toast","All-Day Breakfast","125.00"),
-    row("Classic Pancakes","All-Day Breakfast","115.00"),
-    row("Cheesy Mushroom Omelette","All-Day Breakfast","130.00"),
+    row("French Toast","All-Day Breakfast","130.00", modifier_groups=BREAKFAST_ADDONS),
+    row("Sunshine Toast","All-Day Breakfast","125.00", modifier_groups=BREAKFAST_ADDONS),
+    row("Classic Pancakes","All-Day Breakfast","115.00", modifier_groups=BREAKFAST_ADDONS),
+    row("Cheesy Mushroom Omelette","All-Day Breakfast","130.00", modifier_groups=BREAKFAST_ADDONS),
 
     # Hot coffee
     row("Americano","Hot Coffee","90.00","bar"),
@@ -145,10 +169,19 @@ def main() -> None:
         for item_order,r in enumerate(CATALOG):
             item=db.scalar(select(MenuItem).where(MenuItem.name==r["name"],MenuItem.category==r["category"]).options(selectinload(MenuItem.variants)))
             if item is None:
-                item=MenuItem(name=r["name"],display_name=r["name"],category=r["category"],prep_station=r["prep_station"],sort_order=item_order,is_active=r.get("is_active",True),pos_visible=r.get("pos_visible",True))
+                item=MenuItem(name=r["name"],display_name=r["name"],category=r["category"],prep_station=r["prep_station"],pricing_role=r.get("pricing_role","standard"),modifier_groups_json=json.dumps(r.get("modifier_groups",[])),sort_order=item_order,is_active=r.get("is_active",True),pos_visible=r.get("pos_visible",True))
                 db.add(item); db.flush(); created_items+=1
             else:
-                item.display_name=r["name"]; item.prep_station=r["prep_station"]; item.sort_order=item_order; item.is_active=r.get("is_active",True); item.pos_visible=r.get("pos_visible",True); updated_items+=1
+                item.display_name=r["name"]
+                item.prep_station=r["prep_station"]
+                item.sort_order=item_order
+                item.is_active=r.get("is_active",True)
+                item.pos_visible=r.get("pos_visible",True)
+                if "pricing_role" in r:
+                    item.pricing_role=r["pricing_role"]
+                if "modifier_groups" in r:
+                    item.modifier_groups_json=json.dumps(r["modifier_groups"])
+                updated_items+=1
             by_name={v.name:v for v in item.variants}
             for variant_order,(variant_name,price) in enumerate(r["variants"]):
                 sku,barcode=identity(r["name"],variant_name,r["category"])
@@ -161,7 +194,7 @@ def main() -> None:
                 # nonblank identifiers just because seed metadata or identity logic changes.
                 if not v.sku: v.sku=sku
                 if not v.barcode: v.barcode=barcode
-                v.price=Decimal(price); v.with_drink_price=None; v.sort_order=variant_order; v.is_active=r.get("is_active",True)
+                v.price=Decimal(price); v.sort_order=variant_order; v.is_active=r.get("is_active",True)
             db.flush()
         db.commit()
         print(f"Hidden Oasis menu seed complete: items created={created_items}, items updated={updated_items}, variants created={created_variants}, variants updated={updated_variants}.")

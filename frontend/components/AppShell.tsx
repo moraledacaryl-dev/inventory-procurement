@@ -36,6 +36,7 @@ const groups:NavGroup[]=[
  ]},
  {label:"F&B tools",items:[
   {href:"/fnb/menu",label:"Menu & Products",icon:"box",module:"items",scopes:["fnb","all"]},
+  {href:"/fnb/selling-rules",label:"Selling Rules",icon:"settings",module:"items",scopes:["fnb","all"]},
   {href:"/production",label:"Recipes & Production",icon:"factory",module:"production",scopes:["fnb","all"]},
   {href:"/fnb/staff-meals",label:"Staff Meals",icon:"clipboard",module:"production",scopes:["fnb","all"]}
  ]},

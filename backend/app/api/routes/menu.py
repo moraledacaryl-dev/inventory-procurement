@@ -2,7 +2,7 @@ from decimal import Decimal
 import json
 import secrets
 from fastapi import APIRouter,Depends,HTTPException
-from pydantic import BaseModel,Field
+from pydantic import BaseModel,Field,field_validator,model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session,selectinload
@@ -12,8 +12,13 @@ from app.models.menu import MenuItem,MenuVariant
 from app.models.production import Recipe
 from app.models.inventory import Item
 from app.models.user import User
+from app.models.pos_rules import PosModifierTemplate,PosPricingRule
 from app.services.controls import add_audit
 router=APIRouter(tags=["fnb-menu"])
+TAG_PATTERN=r"^[a-z0-9][a-z0-9_-]*$"
+class ConditionalPriceIn(BaseModel):
+    rule_id:str=Field(min_length=1,max_length=36)
+    price:Decimal=Field(ge=0)
 class VariantIn(BaseModel):
     id:str|None=None
     name:str=Field(default="Regular",min_length=1,max_length=120)
@@ -21,7 +26,12 @@ class VariantIn(BaseModel):
     barcode:str|None=Field(default=None,max_length=100)
     price:Decimal=Field(ge=0)
     with_drink_price:Decimal|None=Field(default=None,ge=0)
-    conditional_prices:list[dict]=Field(default_factory=list)
+    conditional_prices:list[ConditionalPriceIn]=Field(default_factory=list)
+    @model_validator(mode="after")
+    def unique_conditional_rules(self):
+        ids=[x.rule_id for x in self.conditional_prices]
+        if len(ids)!=len(set(ids)): raise ValueError("Conditional pricing rule IDs must be unique per variant")
+        return self
     recipe_id:str|None=None
     inventory_item_id:str|None=None
     is_active:bool=True
@@ -33,12 +43,26 @@ class MenuIn(BaseModel):
     prep_station:str=Field(default="bar",max_length=40)
     pricing_role:str=Field(default="standard",pattern="^(standard|drink|pastry)$")
     pricing_tags:list[str]=Field(default_factory=list)
+    @field_validator("pricing_tags")
+    @classmethod
+    def normalize_tags(cls,value):
+        import re
+        tags=[x.strip().lower() for x in value if x and x.strip()]
+        if any(not re.fullmatch(TAG_PATTERN,x) for x in tags): raise ValueError("Pricing tags must use lowercase letters, numbers, hyphens, or underscores")
+        if len(tags)!=len(set(tags)): raise ValueError("Pricing tags must be unique")
+        return tags
     modifier_groups:list[dict]=Field(default_factory=list)
     modifier_template_ids:list[str]=Field(default_factory=list)
     is_active:bool=True
     pos_visible:bool=True
     variants:list[VariantIn]=Field(min_length=1)
 def code(prefix): return prefix+f"{secrets.randbelow(10**10):010d}"
+def validate_menu_refs(db,payload):
+    for template_id in payload.modifier_template_ids:
+        if not db.get(PosModifierTemplate,template_id): raise HTTPException(422,f"Modifier template not found: {template_id}")
+    for variant in payload.variants:
+        for conditional in variant.conditional_prices:
+            if not db.get(PosPricingRule,conditional.rule_id): raise HTTPException(422,f"Pricing rule not found: {conditional.rule_id}")
 def validate(db,row):
     if row.recipe_id and not db.get(Recipe,row.recipe_id): raise HTTPException(422,"Recipe not found")
     if row.inventory_item_id and not db.get(Item,row.inventory_item_id): raise HTTPException(422,"Inventory item not found")
@@ -55,12 +79,13 @@ def variants(db,item,rows):
     for order,data in enumerate(rows):
         validate(db,data);v=old.get(data.id) if data.id else None
         if not v: v=MenuVariant(menu_item_id=item.id);db.add(v)
-        v.name=data.name.strip();v.sku=(data.sku or code("HO-")).upper().strip();v.barcode=(data.barcode or code("20")).strip();v.price=data.price;v.with_drink_price=data.with_drink_price;v.conditional_prices_json=json.dumps(data.conditional_prices);v.recipe_id=data.recipe_id;v.inventory_item_id=data.inventory_item_id;v.sort_order=order;v.is_active=data.is_active
+        v.name=data.name.strip();v.sku=(data.sku or code("HO-")).upper().strip();v.barcode=(data.barcode or code("20")).strip();v.price=data.price;v.with_drink_price=data.with_drink_price;v.conditional_prices_json=json.dumps([x.model_dump(mode="json") for x in data.conditional_prices]);v.recipe_id=data.recipe_id;v.inventory_item_id=data.inventory_item_id;v.sort_order=order;v.is_active=data.is_active
         db.flush();keep.add(v.id)
     for v in item.variants:
         if v.id not in keep:v.is_active=False
 @router.post("/fnb/menu",status_code=201)
 def create(payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    validate_menu_refs(db,payload)
     item=MenuItem(name=payload.name.strip(),display_name=(payload.display_name or payload.name).strip(),category=payload.category.strip(),description=payload.description,prep_station=payload.prep_station.strip(),pricing_role=payload.pricing_role,pricing_tags_json=json.dumps(payload.pricing_tags),modifier_groups_json=json.dumps(payload.modifier_groups),modifier_template_ids_json=json.dumps(payload.modifier_template_ids),is_active=payload.is_active,pos_visible=payload.pos_visible);db.add(item)
     try:
         db.flush();variants(db,item,payload.variants);add_audit(db,actor_user_id=user.id,action="menu.item_created",entity_type="menu_item",entity_id=item.id,details={"name":item.name,"category":item.category});db.commit()
@@ -70,6 +95,7 @@ def create(payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_p
 def update(item_id:str,payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
     item=db.scalar(select(MenuItem).where(MenuItem.id==item_id).options(selectinload(MenuItem.variants)))
     if not item:raise HTTPException(404,"Menu item not found")
+    validate_menu_refs(db,payload)
     item.name=payload.name.strip();item.display_name=(payload.display_name or payload.name).strip();item.category=payload.category.strip();item.description=payload.description;item.prep_station=payload.prep_station.strip();item.pricing_role=payload.pricing_role;item.pricing_tags_json=json.dumps(payload.pricing_tags);item.modifier_groups_json=json.dumps(payload.modifier_groups);item.modifier_template_ids_json=json.dumps(payload.modifier_template_ids);item.is_active=payload.is_active;item.pos_visible=payload.pos_visible
     try:
         variants(db,item,payload.variants);add_audit(db,actor_user_id=user.id,action="menu.item_updated",entity_type="menu_item",entity_id=item.id,details={"name":item.name});db.commit()

@@ -200,9 +200,20 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
                 fail(422,f'POS product {line.external_product_id} is not mapped')
             recipe=load_recipe(db,mapping.recipe_id)
             # Reverse only the quantity physically returned, not the entire sale.
-            consumption,cost=recipe_entries(db,recipe,mapping.location_id,line.quantity,consume_only=True)
-            for entry in consumption:
-                entries.append({**entry,'quantity':-Decimal(str(entry['quantity'])),'reason':'pos_physical_return'})
+            # Never recalculate current recipe quantities or current average costs
+            # for a historical sale. The original stock document is authoritative.
+            original_doc=db.scalar(select(StockDocument).where(StockDocument.id==original.stock_document_id).options(selectinload(StockDocument.movements)))
+            if not original_doc:
+                fail(409,'Original sale stock document is missing')
+            original_qty=sold[line.external_product_id]
+            consumption=[]
+            cost=Decimal('0')
+            for movement in original_doc.movements:
+                if movement.location_id!=mapping.location_id:
+                    continue
+                # A sale may include multiple recipes in one stock document;
+                # without line-level movement lineage this cannot be attributed safely.
+                fail(409,'Physical stock restoration requires original sale-line movement attribution; cannot safely reverse aggregate recipe consumption')
             accounting_lines.append({'external_product_id':line.external_product_id,'quantity':str(line.quantity),'cost':str(cost)})
         try:
             doc=None

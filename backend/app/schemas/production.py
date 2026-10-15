@@ -13,7 +13,7 @@ class ProductionComplete(BaseModel): actual_quantity:Decimal=Field(gt=0)
 class ProductionOut(ORMModel): id:str; batch_number:str; recipe_id:str; location_id:str; planned_quantity:Decimal; actual_quantity:Decimal|None; status:str; notes:str|None; stock_document_id:str|None; created_at:datetime; completed_at:datetime|None
 class PosMappingCreate(BaseModel): pos_system:str='hidden-oasis-pos'; external_product_id:str; recipe_id:str; location_id:str
 class PosMappingOut(ORMModel): id:str; pos_system:str; external_product_id:str; recipe_id:str; location_id:str; is_active:bool
-class PosSaleLine(BaseModel): external_product_id:str; quantity:Decimal=Field(gt=0)
-class PosSaleEventIn(BaseModel): external_event_id:str; external_sale_id:str; pos_system:str='hidden-oasis-pos'; event_type:str=Field(pattern='^(sale_completed|sale_voided|sale_refunded)$'); lines:list[PosSaleLine]=Field(min_length=1)
+class PosSaleLine(BaseModel): external_product_id:str; quantity:Decimal=Field(gt=0); inventory_disposition:str|None=None
+class PosSaleEventIn(BaseModel): external_event_id:str; external_sale_id:str; pos_system:str='hidden-oasis-pos'; event_type:str=Field(pattern='^(sale_completed|sale_voided|sale_refunded|sale_returned)$'); lines:list[PosSaleLine]=Field(min_length=1)
 class PosSaleEventOut(ORMModel): id:str; external_event_id:str; event_type:str; external_sale_id:str; pos_system:str; status:str; stock_document_id:str|None; reversal_of_event_id:str|None; error:str|None; processed_at:datetime
 class ReconciliationOut(BaseModel): pending_events:int; failed_events:int; dead_letter_events:int; unprocessed_pos_events:int; latest_pos_event_at:datetime|None

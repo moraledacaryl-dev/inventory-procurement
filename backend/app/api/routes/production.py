@@ -160,6 +160,74 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
         if not original or not original.stock_document_id: fail(409,'Original completed sale was not found')
         prior=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type.in_(['sale_voided','sale_refunded'])))
         if prior: fail(409,'Sale has already been reversed')
+    if p.event_type=='sale_returned':
+        # A financial refund is not a stock return. Only explicitly resellable
+        # returns restore stock; damaged/discarded goods remain consumed.
+        if any(line.inventory_disposition not in {'restore_stock','waste'} for line in p.lines):
+            fail(422,'Every physical return line requires restore_stock or waste disposition')
+        original_lines=original.payload.get('lines',[]) if isinstance(original.payload,dict) else []
+        sold={}
+        for line in original_lines:
+            key=line['external_product_id']
+            sold[key]=sold.get(key,Decimal('0'))+Decimal(str(line['quantity']))
+        previous=db.scalars(select(PosSaleEvent).where(
+            PosSaleEvent.pos_system==p.pos_system,
+            PosSaleEvent.external_sale_id==p.external_sale_id,
+            PosSaleEvent.event_type=='sale_returned',
+            PosSaleEvent.status=='processed',
+        )).all()
+        returned={}
+        for event in previous:
+            for line in (event.payload or {}).get('lines',[]):
+                key=line['external_product_id']
+                returned[key]=returned.get(key,Decimal('0'))+Decimal(str(line['quantity']))
+        for line in p.lines:
+            key=line.external_product_id
+            returned[key]=returned.get(key,Decimal('0'))+line.quantity
+            if key not in sold or returned[key]>sold[key]:
+                fail(409,f'Returned quantity exceeds sold quantity for {key}')
+        entries=[]
+        accounting_lines=[]
+        for line in p.lines:
+            if line.inventory_disposition!='restore_stock':
+                continue
+            mapping=db.scalar(select(PosProductMapping).where(
+                PosProductMapping.pos_system==p.pos_system,
+                PosProductMapping.external_product_id==line.external_product_id,
+                PosProductMapping.is_active==True,
+            ))
+            if not mapping:
+                fail(422,f'POS product {line.external_product_id} is not mapped')
+            recipe=load_recipe(db,mapping.recipe_id)
+            # Reverse only the quantity physically returned, not the entire sale.
+            consumption,cost=recipe_entries(db,recipe,mapping.location_id,line.quantity,consume_only=True)
+            for entry in consumption:
+                entries.append({**entry,'quantity':-Decimal(str(entry['quantity'])),'reason':'pos_physical_return'})
+            accounting_lines.append({'external_product_id':line.external_product_id,'quantity':str(line.quantity),'cost':str(cost)})
+        try:
+            doc=None
+            if entries:
+                doc=post_document(db,kind='pos_sale_reversal',actor_id=user.id,entries=entries,
+                    reference=p.external_sale_id,idempotency_key=f'pos:return:{p.pos_system}:{p.external_event_id}',commit=False)
+            row=PosSaleEvent(external_event_id=p.external_event_id,event_type=p.event_type,
+                external_sale_id=p.external_sale_id,pos_system=p.pos_system,
+                payload=p.model_dump(mode='json'),stock_document_id=doc.id if doc else None,
+                reversal_of_event_id=original.id)
+            db.add(row);db.flush()
+            if accounting_lines:
+                enqueue_event(db,destination_system='accounting',event_type='inventory.pos_sale_reversed',
+                    aggregate_type='pos_sale_event',aggregate_id=row.id,
+                    idempotency_key=f'accounting-pos:{p.external_event_id}',
+                    payload={'sale_id':p.external_sale_id,'event_type':p.event_type,
+                        'stock_document_id':doc.id,'reverses_stock_document_id':original.stock_document_id,
+                        'total_cost':str(sum((Decimal(x['cost']) for x in accounting_lines),Decimal('0'))),
+                        'lines':accounting_lines})
+            add_audit(db,actor_user_id=user.id,action='pos.sale_returned',
+                entity_type='pos_sale_event',entity_id=row.id,
+                details={'external_sale_id':p.external_sale_id})
+            db.commit();db.refresh(row);return row
+        except (InventoryError,IntegrityError) as exc:
+            db.rollback();fail(409,str(exc))
     try:
         if p.event_type=='sale_completed':
             entries=[]; accounting_lines=[]

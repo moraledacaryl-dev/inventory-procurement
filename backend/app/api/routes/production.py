@@ -186,35 +186,15 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
             returned[key]=returned.get(key,Decimal('0'))+line.quantity
             if key not in sold or returned[key]>sold[key]:
                 fail(409,f'Returned quantity exceeds sold quantity for {key}')
+        # This integration consumes recipe ingredients at sale time. Returning
+        # a prepared item cannot reconstruct those ingredients. Record physical
+        # waste disposition without a second stock movement or COGS reversal.
+        # Resellable finished-goods returns require a distinct SKU-level stock
+        # receipt workflow, not a recipe-consumption reversal.
+        if any(line.inventory_disposition=='restore_stock' for line in p.lines):
+            fail(409,'Recipe-consumed POS items cannot restore ingredients; use a controlled finished-goods stock receipt')
         entries=[]
         accounting_lines=[]
-        for line in p.lines:
-            if line.inventory_disposition!='restore_stock':
-                continue
-            mapping=db.scalar(select(PosProductMapping).where(
-                PosProductMapping.pos_system==p.pos_system,
-                PosProductMapping.external_product_id==line.external_product_id,
-                PosProductMapping.is_active==True,
-            ))
-            if not mapping:
-                fail(422,f'POS product {line.external_product_id} is not mapped')
-            recipe=load_recipe(db,mapping.recipe_id)
-            # Reverse only the quantity physically returned, not the entire sale.
-            # Never recalculate current recipe quantities or current average costs
-            # for a historical sale. The original stock document is authoritative.
-            original_doc=db.scalar(select(StockDocument).where(StockDocument.id==original.stock_document_id).options(selectinload(StockDocument.movements)))
-            if not original_doc:
-                fail(409,'Original sale stock document is missing')
-            original_qty=sold[line.external_product_id]
-            consumption=[]
-            cost=Decimal('0')
-            for movement in original_doc.movements:
-                if movement.location_id!=mapping.location_id:
-                    continue
-                # A sale may include multiple recipes in one stock document;
-                # without line-level movement lineage this cannot be attributed safely.
-                fail(409,'Physical stock restoration requires original sale-line movement attribution; cannot safely reverse aggregate recipe consumption')
-            accounting_lines.append({'external_product_id':line.external_product_id,'quantity':str(line.quantity),'cost':str(cost)})
         try:
             doc=None
             if entries:

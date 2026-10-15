@@ -156,7 +156,7 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
         prior_sale=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed'))
         if prior_sale: fail(409,'Sale has already been consumed')
     else:
-        original=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed',PosSaleEvent.status=='processed'))
+        original=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed',PosSaleEvent.status=='processed').with_for_update())
         if not original or not original.stock_document_id: fail(409,'Original completed sale was not found')
         prior=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type.in_(['sale_voided','sale_refunded'])))
         if prior: fail(409,'Sale has already been reversed')

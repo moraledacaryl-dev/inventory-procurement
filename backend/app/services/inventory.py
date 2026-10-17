@@ -16,6 +16,9 @@ def _get_location(db: Session, location_id: str) -> Location:
     if not location or not location.is_active: raise InventoryError("Invalid or inactive location")
     return location
 def _balance(db: Session, item_id: str, location_id: str) -> StockBalance:
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("select pg_advisory_xact_lock(hashtext(:key))"),
+                   {"key": f"stock-balance:{item_id}:{location_id}"})
     row = db.scalar(select(StockBalance).where(StockBalance.item_id == item_id, StockBalance.location_id == location_id).with_for_update())
     if row is None:
         row = StockBalance(item_id=item_id, location_id=location_id, quantity=Decimal("0"), average_cost=Decimal("0")); db.add(row); db.flush()

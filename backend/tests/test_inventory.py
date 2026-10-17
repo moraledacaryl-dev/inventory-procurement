@@ -17,3 +17,82 @@ def test_negative_stock_is_blocked(client):
     h=login(client); item,a,_=setup_master(client,h); r=client.post('/api/v1/stock/issues',headers=h,json={'location_id':a['id'],'lines':[{'item_id':item['id'],'quantity':'1'}]}); assert r.status_code==409
 def test_count_posts_variance(client):
     h=login(client); item,a,_=setup_master(client,h); client.post('/api/v1/stock/receipts',headers=h,json={'location_id':a['id'],'lines':[{'item_id':item['id'],'quantity':'5','unit_cost':'40'}]}); count=client.post('/api/v1/counts',headers=h,json={'location_id':a['id']}).json(); posted=client.post(f"/api/v1/counts/{count['id']}/post",headers=h,json={'lines':[{'item_id':item['id'],'counted_quantity':'4'}]}); assert posted.status_code==200 and posted.json()['status']=='posted'; bal=client.get(f"/api/v1/stock/balances?item_id={item['id']}&location_id={a['id']}",headers=h).json()[0]; assert bal['quantity']=='4.0000'
+
+
+def test_negative_movement_cost_is_rejected_by_stock_service(client):
+    from decimal import Decimal
+    from app.db.session import SessionLocal
+    from app.models.user import User
+    from app.services.inventory import InventoryError, post_document
+    from sqlalchemy import select
+    import pytest
+
+    h = login(client)
+    item, location, _ = setup_master(client, h)
+    with SessionLocal() as db:
+        owner = db.scalar(select(User).where(User.email == "owner@example.com"))
+        with pytest.raises(InventoryError, match="unit cost cannot be negative"):
+            post_document(db, kind="receipt", actor_id=owner.id, entries=[{
+                "item_id": item["id"], "location_id": location["id"],
+                "quantity": Decimal("2"), "unit_cost": Decimal("-10"),
+            }])
+        db.rollback()
+
+
+def test_negative_stock_replenishment_does_not_inflate_average_cost(client):
+    from decimal import Decimal
+    from app.db.session import SessionLocal
+    from app.models.user import User
+    from app.models.inventory import Item, StockBalance
+    from app.services.inventory import post_document
+    from sqlalchemy import select
+
+    h = login(client)
+    item, location, _ = setup_master(client, h)
+    with SessionLocal() as db:
+        owner = db.scalar(select(User).where(User.email == "owner@example.com"))
+        stock_item = db.get(Item, item["id"])
+        stock_item.allow_negative_stock = True
+        db.commit()
+        post_document(db, kind="issue", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"],
+            "quantity": Decimal("-5"),
+        }])
+        post_document(db, kind="receipt", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"],
+            "quantity": Decimal("10"), "unit_cost": Decimal("120"),
+        }])
+        balance = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item["id"],
+            StockBalance.location_id == location["id"],
+        ))
+        assert balance.quantity == Decimal("5")
+        assert balance.average_cost == Decimal("120")
+
+
+def test_transfer_preserves_source_average_cost(client):
+    from decimal import Decimal
+    h = login(client)
+    item, source, destination = setup_master(client, h)
+    first = client.post('/api/v1/stock/receipts', headers=h, json={
+        'location_id': source['id'],
+        'lines': [{'item_id': item['id'], 'quantity': '10', 'unit_cost': '40'}],
+    })
+    assert first.status_code == 201
+    second = client.post('/api/v1/stock/receipts', headers=h, json={
+        'location_id': source['id'],
+        'lines': [{'item_id': item['id'], 'quantity': '10', 'unit_cost': '60'}],
+    })
+    assert second.status_code == 201
+    transfer = client.post('/api/v1/stock/transfers', headers=h, json={
+        'source_location_id': source['id'], 'destination_location_id': destination['id'],
+        'lines': [{'item_id': item['id'], 'quantity': '4'}],
+    })
+    assert transfer.status_code == 201
+    assert [Decimal(m['unit_cost']) for m in transfer.json()['movements']] == [Decimal('50'), Decimal('50')]
+    balances = client.get('/api/v1/stock/balances', headers=h).json()
+    by_location = {row['location_id']: row for row in balances}
+    assert Decimal(by_location[source['id']]['quantity']) == Decimal('16')
+    assert Decimal(by_location[destination['id']]['quantity']) == Decimal('4')
+    assert Decimal(by_location[source['id']]['average_cost']) == Decimal('50')
+    assert Decimal(by_location[destination['id']]['average_cost']) == Decimal('50')

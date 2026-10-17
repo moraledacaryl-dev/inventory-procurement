@@ -22,7 +22,7 @@ def test_count_posts_variance(client):
 def test_negative_movement_cost_is_rejected_by_stock_service(client):
     from decimal import Decimal
     from app.db.session import SessionLocal
-    from app.models.auth import User
+    from app.models.user import User
     from app.services.inventory import InventoryError, post_document
     from sqlalchemy import select
     import pytest
@@ -42,7 +42,7 @@ def test_negative_movement_cost_is_rejected_by_stock_service(client):
 def test_negative_stock_replenishment_does_not_inflate_average_cost(client):
     from decimal import Decimal
     from app.db.session import SessionLocal
-    from app.models.auth import User
+    from app.models.user import User
     from app.models.inventory import Item, StockBalance
     from app.services.inventory import post_document
     from sqlalchemy import select

@@ -43,6 +43,10 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         bal = _balance(db, item.id, entry["location_id"])
         if qty < 0:
             cost = Decimal(bal.average_cost)
+        elif kind in {"adjustment", "count_adjustment"} and cost == 0:
+            # Found inventory is not free: keep its existing valuation, or use
+            # the item standard cost when this location has no valuation yet.
+            cost = Decimal(bal.average_cost) or Decimal(item.standard_cost)
         elif source_location_id:
             # Transfers carry the source's book value, never a supplied line price.
             source_balance = _balance(db, item.id, source_location_id)

@@ -61,3 +61,22 @@ def test_executed_production_event_uses_production_accounting_links():
     assert envelope['proposed_links']['batch_number']=='BATCH-0001'
     assert envelope['proposed_links']['category']=='Inventory production'
     assert envelope['proposed_links']['stock_value']=='125.50'
+
+
+def test_accounting_delivery_retries_preserve_source_revision_and_idempotency():
+    from types import SimpleNamespace
+    from app.services.integration_worker import accounting_envelope
+
+    event = SimpleNamespace(
+        id='evt-retry-1', event_type='inventory.stock_document.posted',
+        aggregate_type='stock_document', aggregate_id='doc-retry-1',
+        attempts=0, idempotency_key='stock-document:doc-retry-1',
+        payload={'lines': [{'item_id': 'item-1', 'quantity': '-2', 'unit_cost': '15'}]},
+    )
+    first = accounting_envelope(event)
+    event.attempts = 4
+    retry = accounting_envelope(event)
+    assert first['source_revision'] == retry['source_revision'] == 1
+    assert first['source_event_id'] == retry['source_event_id'] == event.id
+    assert first['idempotency_key'] == retry['idempotency_key'] == event.idempotency_key
+    assert first == retry

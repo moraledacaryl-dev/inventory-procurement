@@ -16,6 +16,9 @@ def _get_location(db: Session, location_id: str) -> Location:
     if not location or not location.is_active: raise InventoryError("Invalid or inactive location")
     return location
 def _balance(db: Session, item_id: str, location_id: str) -> StockBalance:
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("select pg_advisory_xact_lock(hashtext(:key))"),
+                   {"key": f"stock-balance:{item_id}:{location_id}"})
     row = db.scalar(select(StockBalance).where(StockBalance.item_id == item_id, StockBalance.location_id == location_id).with_for_update())
     if row is None:
         row = StockBalance(item_id=item_id, location_id=location_id, quantity=Decimal("0"), average_cost=Decimal("0")); db.add(row); db.flush()
@@ -35,17 +38,27 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         item = _get_item(db, entry["item_id"]); _get_location(db, entry["location_id"])
         qty = Decimal(entry["quantity"]); cost = Decimal(entry.get("unit_cost", 0))
         if qty == 0: raise InventoryError("Movement quantity cannot be zero")
+        if cost < 0: raise InventoryError("Movement unit cost cannot be negative")
         source_location_id = entry.get("cost_from_location_id")
         bal = _balance(db, item.id, entry["location_id"])
         if qty < 0:
             cost = Decimal(bal.average_cost)
-        elif cost == 0 and source_location_id:
-            source_balance = _balance(db, item.id, source_location_id); cost = Decimal(source_balance.average_cost)
+        elif kind in {"adjustment", "count_adjustment"} and cost == 0:
+            # Found inventory is not free: keep its existing valuation, or use
+            # the item standard cost when this location has no valuation yet.
+            cost = Decimal(bal.average_cost) or Decimal(item.standard_cost)
+        elif source_location_id:
+            # Transfers carry the source's book value, never a supplied line price.
+            source_balance = _balance(db, item.id, source_location_id)
+            cost = Decimal(source_balance.average_cost)
         new_qty = Decimal(bal.quantity) + qty
         if new_qty < 0 and not item.allow_negative_stock: raise InventoryError(f"Insufficient stock for {item.sku} at location")
         if qty > 0:
             current_value = Decimal(bal.quantity) * Decimal(bal.average_cost); incoming_value = qty * cost
-            bal.average_cost = (current_value + incoming_value) / new_qty if new_qty else Decimal("0")
+            if Decimal(bal.quantity) < 0:
+                bal.average_cost = cost if new_qty > 0 else Decimal(bal.average_cost)
+            else:
+                bal.average_cost = (current_value + incoming_value) / new_qty if new_qty else Decimal("0")
         bal.quantity = new_qty
         db.add(StockMovement(document_id=doc.id, line_number=idx, item_id=item.id, location_id=entry["location_id"], quantity=qty, unit_cost=cost, reason=entry.get("reason")))
         event_lines.append({'item_id':item.id,'location_id':entry['location_id'],'quantity':str(qty),'unit_cost':str(cost),'reason':entry.get('reason')})

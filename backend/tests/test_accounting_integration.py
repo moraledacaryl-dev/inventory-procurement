@@ -61,3 +61,50 @@ def test_executed_production_event_uses_production_accounting_links():
     assert envelope['proposed_links']['batch_number']=='BATCH-0001'
     assert envelope['proposed_links']['category']=='Inventory production'
     assert envelope['proposed_links']['stock_value']=='125.50'
+
+
+def test_accounting_delivery_retries_preserve_source_revision_and_idempotency():
+    from types import SimpleNamespace
+    from app.services.integration_worker import accounting_envelope
+
+    event = SimpleNamespace(
+        id='evt-retry-1', event_type='inventory.stock_document.posted',
+        aggregate_type='stock_document', aggregate_id='doc-retry-1',
+        attempts=0, idempotency_key='stock-document:doc-retry-1',
+        payload={'lines': [{'item_id': 'item-1', 'quantity': '-2', 'unit_cost': '15'}]},
+    )
+    first = accounting_envelope(event)
+    event.attempts = 4
+    retry = accounting_envelope(event)
+    assert first['source_revision'] == retry['source_revision'] == 1
+    assert first['source_event_id'] == retry['source_event_id'] == event.id
+    assert first['idempotency_key'] == retry['idempotency_key'] == event.idempotency_key
+    assert first == retry
+
+
+def test_stock_transfer_has_zero_net_accounting_value():
+    from types import SimpleNamespace
+    from decimal import Decimal
+    from app.api.routes.accounting_integration import event_amount, journal_lines
+    event = SimpleNamespace(event_type='inventory.stock_document.posted', payload={
+        'document_type': 'transfer', 'lines': [
+            {'item_id': 'item-1', 'location_id': 'source', 'quantity': '-4', 'unit_cost': '50'},
+            {'item_id': 'item-1', 'location_id': 'destination', 'quantity': '4', 'unit_cost': '50'},
+        ],
+    })
+    assert event_amount(event) == Decimal('0')
+    assert journal_lines(event) == []
+
+
+def test_stock_issue_reverses_asset_and_clearing_accounts():
+    from types import SimpleNamespace
+    from decimal import Decimal
+    from app.api.routes.accounting_integration import event_amount, journal_lines
+    event = SimpleNamespace(event_type='inventory.stock_document.posted', payload={
+        'document_type': 'issue', 'lines': [{'item_id': 'item-1', 'quantity': '-2', 'unit_cost': '15'}],
+    })
+    assert event_amount(event) == Decimal('-30')
+    assert journal_lines(event) == [
+        {'side': 'debit', 'account': 'Inventory Clearing', 'amount': Decimal('30')},
+        {'side': 'credit', 'account': 'Inventory Asset', 'amount': Decimal('30')},
+    ]

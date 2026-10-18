@@ -137,3 +137,61 @@ def test_positive_manual_adjustment_uses_standard_cost_without_balance(client):
     matching = next(x for x in balance if x['item_id'] == item['id'] and x['location_id'] == location['id'])
     assert Decimal(matching['quantity']) == Decimal('3')
     assert Decimal(matching['average_cost']) == Decimal('40')
+
+
+def test_concurrent_first_balance_creation_is_serialized_on_postgres(client):
+    from concurrent.futures import ThreadPoolExecutor
+    from decimal import Decimal
+    from threading import Event
+    from sqlalchemy import func, select
+    from app.db.session import SessionLocal, engine
+    from app.models.inventory import StockBalance
+    from app.services.inventory import _balance
+    import pytest
+
+    if engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL advisory locks are specific to PostgreSQL')
+    h = login(client)
+    item, location, _ = setup_master(client, h)
+    item_id, location_id = item['id'], location['id']
+    first_holds_lock = Event()
+    release_first = Event()
+    second_started = Event()
+    second_finished = Event()
+
+    def first_writer():
+        with SessionLocal() as db:
+            row = _balance(db, item_id, location_id)
+            row.quantity = Decimal(row.quantity) + Decimal('5')
+            db.flush()
+            first_holds_lock.set()
+            assert release_first.wait(timeout=10)
+            db.commit()
+
+    def second_writer():
+        assert first_holds_lock.wait(timeout=10)
+        second_started.set()
+        with SessionLocal() as db:
+            row = _balance(db, item_id, location_id)
+            row.quantity = Decimal(row.quantity) + Decimal('7')
+            db.commit()
+        second_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(first_writer)
+        assert first_holds_lock.wait(timeout=10)
+        second = pool.submit(second_writer)
+        try:
+            assert second_started.wait(timeout=10)
+            assert not second_finished.wait(timeout=0.25), 'second posting bypassed the balance lock'
+        finally:
+            release_first.set()
+        first.result(timeout=15)
+        second.result(timeout=15)
+
+    with SessionLocal() as db:
+        rows = db.scalars(select(StockBalance).where(
+            StockBalance.item_id == item_id, StockBalance.location_id == location_id,
+        )).all()
+        assert len(rows) == 1
+        assert Decimal(rows[0].quantity) == Decimal('12')

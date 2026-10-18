@@ -110,6 +110,16 @@ jobs:
         run: |
           set -o pipefail
           npm audit --omit=dev --audit-level=high 2>&1 | tee npm-audit.log
+      - name: Capture vulnerable dependency ancestry
+        if: always()
+        run: |
+          npm ls brace-expansion braces micromatch fast-glob --all > dependency-ancestry.log 2>&1 || true
+      - name: Upload dependency ancestry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dependency-ancestry
+          path: frontend/dependency-ancestry.log
       - name: Report full dependency audit (including development tools)
         continue-on-error: true
         run: |

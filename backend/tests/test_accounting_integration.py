@@ -80,3 +80,31 @@ def test_accounting_delivery_retries_preserve_source_revision_and_idempotency():
     assert first['source_event_id'] == retry['source_event_id'] == event.id
     assert first['idempotency_key'] == retry['idempotency_key'] == event.idempotency_key
     assert first == retry
+
+
+def test_stock_transfer_has_zero_net_accounting_value():
+    from types import SimpleNamespace
+    from decimal import Decimal
+    from app.api.routes.accounting_integration import event_amount, journal_lines
+    event = SimpleNamespace(event_type='inventory.stock_document.posted', payload={
+        'document_type': 'transfer', 'lines': [
+            {'item_id': 'item-1', 'location_id': 'source', 'quantity': '-4', 'unit_cost': '50'},
+            {'item_id': 'item-1', 'location_id': 'destination', 'quantity': '4', 'unit_cost': '50'},
+        ],
+    })
+    assert event_amount(event) == Decimal('0')
+    assert journal_lines(event) == []
+
+
+def test_stock_issue_reverses_asset_and_clearing_accounts():
+    from types import SimpleNamespace
+    from decimal import Decimal
+    from app.api.routes.accounting_integration import event_amount, journal_lines
+    event = SimpleNamespace(event_type='inventory.stock_document.posted', payload={
+        'document_type': 'issue', 'lines': [{'item_id': 'item-1', 'quantity': '-2', 'unit_cost': '15'}],
+    })
+    assert event_amount(event) == Decimal('-30')
+    assert journal_lines(event) == [
+        {'side': 'debit', 'account': 'Inventory Clearing', 'amount': Decimal('30')},
+        {'side': 'credit', 'account': 'Inventory Asset', 'amount': Decimal('30')},
+    ]

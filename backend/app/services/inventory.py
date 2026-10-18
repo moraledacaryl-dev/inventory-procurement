@@ -43,8 +43,10 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         bal = _balance(db, item.id, entry["location_id"])
         if qty < 0:
             cost = Decimal(bal.average_cost)
-        elif cost == 0 and source_location_id:
-            source_balance = _balance(db, item.id, source_location_id); cost = Decimal(source_balance.average_cost)
+        elif source_location_id:
+            # Transfers carry the source's book value, never a supplied line price.
+            source_balance = _balance(db, item.id, source_location_id)
+            cost = Decimal(source_balance.average_cost)
         new_qty = Decimal(bal.quantity) + qty
         if new_qty < 0 and not item.allow_negative_stock: raise InventoryError(f"Insufficient stock for {item.sku} at location")
         if qty > 0:

@@ -96,3 +96,44 @@ def test_transfer_preserves_source_average_cost(client):
     assert Decimal(by_location[destination['id']]['quantity']) == Decimal('4')
     assert Decimal(by_location[source['id']]['average_cost']) == Decimal('50')
     assert Decimal(by_location[destination['id']]['average_cost']) == Decimal('50')
+
+
+def test_positive_count_adjustment_preserves_existing_stock_value(client):
+    from decimal import Decimal
+    h = login(client)
+    item, location, _ = setup_master(client, h)
+    receipt = client.post('/api/v1/stock/receipts', headers=h, json={
+        'location_id': location['id'],
+        'lines': [{'item_id': item['id'], 'quantity': '10', 'unit_cost': '40'}],
+    })
+    assert receipt.status_code == 201
+    count = client.post('/api/v1/counts', headers=h, json={
+        'location_id': location['id'],
+    })
+    assert count.status_code == 201
+    posted = client.post(f"/api/v1/counts/{count.json()['id']}/post", headers=h, json={
+        'lines': [{'item_id': item['id'], 'counted_quantity': '12'}],
+    })
+    assert posted.status_code == 200
+    assert posted.json()['status'] == 'posted'
+    balance = client.get('/api/v1/stock/balances', headers=h).json()
+    matching = next(x for x in balance if x['item_id'] == item['id'] and x['location_id'] == location['id'])
+    assert Decimal(matching['quantity']) == Decimal('12')
+    assert Decimal(matching['average_cost']) == Decimal('40')
+
+
+def test_positive_manual_adjustment_uses_standard_cost_without_balance(client):
+    from decimal import Decimal
+    h = login(client)
+    item, location, _ = setup_master(client, h)
+    response = client.post('/api/v1/stock/adjustments', headers=h, json={
+        'location_id': location['id'],
+        'lines': [{'item_id': item['id'], 'quantity_delta': '3',
+                   'unit_cost': '0', 'reason': 'opening count correction'}],
+    })
+    assert response.status_code == 201
+    assert Decimal(response.json()['movements'][0]['unit_cost']) == Decimal('40')
+    balance = client.get('/api/v1/stock/balances', headers=h).json()
+    matching = next(x for x in balance if x['item_id'] == item['id'] and x['location_id'] == location['id'])
+    assert Decimal(matching['quantity']) == Decimal('3')
+    assert Decimal(matching['average_cost']) == Decimal('40')

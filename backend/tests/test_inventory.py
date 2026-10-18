@@ -86,7 +86,7 @@ def test_transfer_preserves_source_average_cost(client):
     assert second.status_code == 201
     transfer = client.post('/api/v1/stock/transfers', headers=h, json={
         'source_location_id': source['id'], 'destination_location_id': destination['id'],
-        'lines': [{'item_id': item['id'], 'quantity': '4'}],
+        'lines': [{'item_id': item['id'], 'quantity': '4', 'unit_cost': '999'}],
     })
     assert transfer.status_code == 201
     assert [Decimal(m['unit_cost']) for m in transfer.json()['movements']] == [Decimal('50'), Decimal('50')]

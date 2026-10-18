@@ -40,7 +40,13 @@ def event_amount(event: IntegrationEvent) -> Decimal:
         if key in payload:return money(payload[key])
     total=Decimal("0")
     for line in payload.get("lines",[]) if isinstance(payload.get("lines"),list) else []:
-        total+=money(line.get("cost")) if "cost" in line else abs(money(line.get("quantity")))*money(line.get("unit_cost"))
+        if not isinstance(line,dict):continue
+        if event.event_type=="inventory.stock_document.posted":
+            # The stock ledger stores signed quantities. A transfer has equal
+            # positive and negative movements and must not create GL value.
+            total+=money(line.get("quantity"))*money(line.get("unit_cost"))
+        else:
+            total+=money(line.get("cost")) if "cost" in line else abs(money(line.get("quantity")))*money(line.get("unit_cost"))
     return total
 
 
@@ -48,7 +54,9 @@ def journal_lines(event:IntegrationEvent)->list[dict]:
     rule=ACCOUNTING_RULES.get(event.event_type)
     amount=event_amount(event)
     if not rule or not rule["debit"] or not rule["credit"] or amount==0:return []
-    return [{"side":"debit","account":rule["debit"],"amount":amount},{"side":"credit","account":rule["credit"],"amount":amount}]
+    debit,credit=rule["debit"],rule["credit"]
+    if amount<0:debit,credit=credit,debit;amount=-amount
+    return [{"side":"debit","account":debit,"amount":amount},{"side":"credit","account":credit,"amount":amount}]
 
 
 def event_row(event:IntegrationEvent)->dict:

@@ -149,3 +149,9 @@ tbody tr:hover { background: #f5f8ff; }
 .dashboard-overview .metric-card:nth-child(5) { background: linear-gradient(135deg, #e7f3fb, #f2f9fc); }
 .dashboard-overview .metric-icon { border: 1px solid rgba(95,139,202,.15); }
 .dashboard-panel .panel-link { background: #f8faff; border-color: #dce5f1; }
+.login { background: #101e34; }
+.login-visual { background: radial-gradient(circle at 20% 20%, rgba(66,130,225,.22), transparent 45%), linear-gradient(145deg, #172c49, #101e34); }
+.login-panel { background: #f3f6fc; }
+.login-copy p, .login-point { color: #cbdaf0; }
+.hero-panel { background: linear-gradient(125deg, #1b365d, #2459a5); box-shadow: 0 12px 30px rgba(36,89,165,.12); }
+.hero-panel p { color: #dbe7fa; }

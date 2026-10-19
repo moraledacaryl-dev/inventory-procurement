@@ -115,6 +115,7 @@ tbody tr:hover { background: #f8faf5; }
 .workspace-launch:hover { background: #f3f6ee; border-color: #c6d5bb; box-shadow: none; }
 .planning-metrics > div, .quote-metrics > div, .operations-metrics > div, .po-detail-metrics > div { border-color: var(--line); border-radius: 13px; background: #f3f6ee; }
 .planning-metrics > div:nth-child(2n), .quote-metrics > div:nth-child(2n), .operations-metrics > div:nth-child(2n) { background: #f5f0e5; }
+.procurement-planning-workspace > * { min-width: 0; max-width: 100%; }
 
 @media (min-width: 901px) {
   .app-shell.sidebar-collapsed { grid-template-columns: 76px minmax(0,1fr); }

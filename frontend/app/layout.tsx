@@ -25,6 +25,7 @@ import "./workspaces.css";
 import "./accessibility.css";
 import "./responsive-remediation.css";
 import "./mobile-ux.css";
+import "./inventory-workspace.css";
 import { ScrollableRegionA11y } from "../components/ScrollableRegionA11y";
 import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
 

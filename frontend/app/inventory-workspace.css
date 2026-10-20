@@ -156,3 +156,52 @@ tbody tr:hover { background: #f5f8ff; }
 .login-copy p, .login-point { color: #cbdaf0; }
 .hero-panel { background: linear-gradient(125deg, #1b365d, #2459a5); box-shadow: 0 12px 30px rgba(36,89,165,.12); }
 .hero-panel p { color: #dbe7fa; }
+
+
+/* Unified field rhythm: align mixed controls and give forms an intentional visual hierarchy. */
+.app-shell .form-grid { align-items: start; gap: 20px 22px; }
+.app-shell .form-field { min-width: 0; align-content: start; gap: 8px; }
+.app-shell .form-field__label { min-height: 20px; align-items: baseline; color: #354b68; font-size: 13px; font-weight: 650; line-height: 1.45; }
+.app-shell .form-field input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .form-field select,
+.app-shell .form-field textarea,
+.app-shell .inline-form input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .inline-form select,
+.app-shell .field input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .field textarea {
+  width: 100%; min-width: 0; min-height: 44px; border: 1px solid #cbd8e9;
+  border-radius: 11px; background: #fff; color: var(--ink);
+  font-size: 14px; line-height: 1.45; box-shadow: 0 1px 2px rgba(27,55,93,.025);
+  transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+.app-shell .form-field textarea, .app-shell .field textarea { min-height: 104px; }
+.app-shell .form-field input:hover, .app-shell .form-field select:hover,
+.app-shell .form-field textarea:hover, .app-shell .inline-form input:hover,
+.app-shell .inline-form select:hover { border-color: #9db6d8; }
+.app-shell .form-field input:focus, .app-shell .form-field select:focus,
+.app-shell .form-field textarea:focus, .app-shell .inline-form input:focus,
+.app-shell .inline-form select:focus, .app-shell .field input:focus,
+.app-shell .field textarea:focus { border-color: #3977d5; box-shadow: 0 0 0 3px rgba(57,119,213,.14); outline: 0; }
+.app-shell .form-field--error input, .app-shell .form-field--error select,
+.app-shell .form-field--error textarea { border-color: #d97474; }
+.app-shell .form-field__hint, .app-shell .form-field__error { font-size: 12px; line-height: 1.5; }
+.app-shell .form-section + .form-section { margin-top: 28px; padding-top: 26px; }
+.app-shell .form-section legend { color: #20324b; font-size: 17px; font-weight: 700; letter-spacing: -.025em; }
+.app-shell .form-section__description { color: #536580; font-size: 13px !important; line-height: 1.55; }
+.app-shell .data-table-search { min-height: 42px; border-radius: 11px; }
+.app-shell .data-table-search:focus-within { border-color: #3977d5; box-shadow: 0 0 0 3px rgba(57,119,213,.14); }
+.app-shell .data-table-search input { font-size: 14px; }
+.app-shell .data-table-tool-button { min-height: 40px; font-size: 13px; }
+.app-shell .data-table-shell th { font-size: 12px; letter-spacing: .035em; }
+.app-shell .data-table-shell td { font-size: 13px; line-height: 1.5; }
+.app-shell .page-kicker { font-size: 11px; }
+.app-shell .sidebar .nav-label { font-size: 11px; }
+.app-shell .sidebar .nav { gap: 15px; padding: 16px 0; }
+.app-shell .sidebar .nav-link { min-height: 40px; padding-block: 9px; font-size: 14px; }
+@media (max-width: 760px) {
+  .app-shell .form-grid { gap: 16px; }
+  .app-shell .form-field__label { font-size: 13px; }
+  .app-shell .data-table-shell th { font-size: 12px; }
+  .app-shell .data-table-shell td { font-size: 14px; }
+  .app-shell .sidebar .nav-link { min-height: 44px; font-size: 15px; }
+}

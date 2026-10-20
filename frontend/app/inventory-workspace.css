@@ -328,3 +328,52 @@ tbody tr:hover { background: #f5f8ff; }
   .app-shell .planning-metrics strong, .app-shell .quote-metrics strong,
   .app-shell .receiving-metrics strong, .app-shell .receiving-po-summary strong { font-size: 18px; }
 }
+
+
+/* Catalogue, item details and stock controls: visual structure without additional card clutter. */
+.app-shell .config-card { gap: 16px; }
+.app-shell .config-card h3 { font-size: 17px; letter-spacing: -.025em; }
+.app-shell .config-card > p { margin: -8px 0 0; font-size: 13px; line-height: 1.5; }
+.app-shell .config-list { border-radius: 13px; border-color: #dce5f1; }
+.app-shell .config-row { min-height: 58px; gap: 14px; padding: 12px 14px; }
+.app-shell .config-row strong { font-size: 14px; font-weight: 650; }
+.app-shell .config-row span { font-size: 12px; line-height: 1.4; }
+.app-shell .config-empty { font-size: 13px; padding: 24px; }
+.app-shell .config-form { gap: 12px; align-items: center; }
+.app-shell .config-form input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .config-form select,
+.app-shell .transfer-line select,
+.app-shell .transfer-line input,
+.app-shell .transfer-receipt-editor input,
+.app-shell .receipt-notes textarea,
+.app-shell .stock-filters select {
+  min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd8e9;
+  border-radius: 11px; background: #fff; color: #20324b; font-size: 14px; line-height: 1.4;
+}
+.app-shell .inline-check { font-size: 13px; gap: 8px; }
+.app-shell .inline-check input { width: 17px; height: 17px; }
+.app-shell .item-detail-title h2 { font-size: 25px; letter-spacing: -.035em; }
+.app-shell .back-link { font-size: 13px; }
+.app-shell .item-detail-metrics > div,
+.app-shell .operations-metrics > div { padding: 16px; gap: 7px; border: 1px solid #dce5f1; border-radius: 13px; background: #fff; }
+.app-shell .item-detail-metrics span,
+.app-shell .operations-metrics span { font-size: 11px; line-height: 1.4; color: #536580; }
+.app-shell .item-detail-metrics strong,
+.app-shell .operations-metrics strong { font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
+.app-shell .operations-metrics small { font-size: 12px; line-height: 1.4; }
+.app-shell .section-copy { font-size: 13px; line-height: 1.55; }
+.app-shell .transfer-line-editor { padding: 18px; gap: 12px; border-color: #dce5f1; border-radius: 13px; background: #f7f9fd; }
+.app-shell .transfer-line-editor__header strong { font-size: 14px; }
+.app-shell .transfer-line { gap: 12px; }
+.app-shell .transfer-line > span, .app-shell .receipt-notes span { font-size: 12px; }
+.app-shell .receipt-notes { gap: 8px; }
+.app-shell .location-node { min-height: 52px; gap: 10px; border-radius: 11px; }
+.app-shell .location-node strong { font-size: 13px; }
+.app-shell .location-node span { font-size: 12px; }
+.app-shell .location-control-note strong { font-size: 13px; }
+.app-shell .location-control-note span { font-size: 12px; }
+@media (max-width: 720px) {
+  .app-shell .config-form, .app-shell .config-form-wide { grid-template-columns: 1fr; }
+  .app-shell .config-row { grid-template-columns: minmax(0,1fr) auto; }
+  .app-shell .transfer-line-editor { padding: 14px; }
+}

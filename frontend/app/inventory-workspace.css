@@ -205,3 +205,45 @@ tbody tr:hover { background: #f5f8ff; }
   .app-shell .data-table-shell td { font-size: 14px; }
   .app-shell .sidebar .nav-link { min-height: 44px; font-size: 15px; }
 }
+
+
+/* Dashboard: concise KPI overview with quieter surfaces and legible supporting data. */
+.app-shell .dashboard-overview { gap: 20px; }
+.app-shell .dashboard-overview .metric-grid { gap: 12px; }
+.app-shell .dashboard-overview .metric-card,
+.app-shell .dashboard-overview .metric-card:nth-child(n) {
+  min-width: 0; padding: 17px 18px; gap: 10px;
+  border: 1px solid #dce5f1; border-radius: 14px;
+  background: #fff; box-shadow: 0 3px 14px rgba(35,66,110,.035);
+}
+.app-shell .dashboard-overview .metric-card:first-child { border-top: 3px solid #2459c4; }
+.app-shell .dashboard-overview .metric-card:nth-child(2) { border-top: 3px solid #3883c9; }
+.app-shell .dashboard-overview .metric-card:nth-child(3) { border-top: 3px solid #6e7bc4; }
+.app-shell .dashboard-overview .metric-card:nth-child(4) { border-top: 3px solid #8d7cc2; }
+.app-shell .dashboard-overview .metric-card:nth-child(5) { border-top: 3px solid #4696a9; }
+.app-shell .dashboard-overview .metric-icon { width: 32px; height: 32px; border-radius: 9px; background: #edf3ff; }
+.app-shell .dashboard-overview .metric-icon svg { width: 17px; height: 17px; }
+.app-shell .dashboard-overview .metric-label { font-size: 12px; line-height: 1.35; }
+.app-shell .dashboard-overview .metric-value { margin: 5px 0; font-size: clamp(22px, 1.7vw, 29px); line-height: 1.15; }
+.app-shell .dashboard-overview .metric-note { font-size: 12px; line-height: 1.4; }
+.app-shell .dashboard-panel { padding: 20px 22px; }
+.app-shell .dashboard-panel .panel-header h3 { font-size: 16px; }
+.app-shell .dashboard-panel .panel-header p { font-size: 12px; }
+.app-shell .dashboard-panel .compact-table th { font-size: 11px; letter-spacing: .035em; }
+.app-shell .dashboard-panel .compact-table td { font-size: 12px; }
+.app-shell .dashboard-panel .list-copy strong { font-size: 13px; }
+.app-shell .dashboard-panel .list-copy span { font-size: 12px; }
+.app-shell .dashboard-panel .list-value { font-size: 12px; }
+.app-shell .dashboard-panel .legend-row,
+.app-shell .dashboard-panel .legend-row strong { font-size: 12px; }
+.app-shell .dashboard-panel .chart-axis,
+.app-shell .dashboard-panel .chart-labels { font-size: 11px; }
+.app-shell .dashboard-panel .empty-list strong { font-size: 13px; }
+.app-shell .dashboard-panel .empty-list span { font-size: 12px; }
+.app-shell .dashboard-filters label { font-size: 11px; }
+.app-shell .dashboard-filters select { min-height: 42px; font-size: 13px; }
+@media (max-width: 760px) {
+  .app-shell .dashboard-overview .metric-card,
+  .app-shell .dashboard-overview .metric-card:nth-child(n) { padding: 16px; }
+  .app-shell .dashboard-panel { padding: 18px; }
+}

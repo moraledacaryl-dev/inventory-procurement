@@ -157,6 +157,227 @@ tbody tr:hover { background: #f5f8ff; }
 .hero-panel { background: linear-gradient(125deg, #1b365d, #2459a5); box-shadow: 0 12px 30px rgba(36,89,165,.12); }
 .hero-panel p { color: #dbe7fa; }
 
+
+/* Unified field rhythm: align mixed controls and give forms an intentional visual hierarchy. */
+.app-shell .form-grid { align-items: start; gap: 20px 22px; }
+.app-shell .form-field { min-width: 0; align-content: start; gap: 8px; }
+.app-shell .form-field__label { min-height: 20px; align-items: baseline; color: #354b68; font-size: 13px; font-weight: 650; line-height: 1.45; }
+.app-shell .form-field input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .form-field select,
+.app-shell .form-field textarea,
+.app-shell .inline-form input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .inline-form select,
+.app-shell .field input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .field textarea {
+  width: 100%; min-width: 0; min-height: 44px; border: 1px solid #cbd8e9;
+  border-radius: 11px; background: #fff; color: var(--ink);
+  font-size: 14px; line-height: 1.45; box-shadow: 0 1px 2px rgba(27,55,93,.025);
+  transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+.app-shell .form-field textarea, .app-shell .field textarea { min-height: 104px; }
+.app-shell .form-field input:hover, .app-shell .form-field select:hover,
+.app-shell .form-field textarea:hover, .app-shell .inline-form input:hover,
+.app-shell .inline-form select:hover { border-color: #9db6d8; }
+.app-shell .form-field input:focus, .app-shell .form-field select:focus,
+.app-shell .form-field textarea:focus, .app-shell .inline-form input:focus,
+.app-shell .inline-form select:focus, .app-shell .field input:focus,
+.app-shell .field textarea:focus { border-color: #3977d5; box-shadow: 0 0 0 3px rgba(57,119,213,.14); outline: 0; }
+.app-shell .form-field--error input, .app-shell .form-field--error select,
+.app-shell .form-field--error textarea { border-color: #d97474; }
+.app-shell .form-field__hint, .app-shell .form-field__error { font-size: 12px; line-height: 1.5; }
+.app-shell .form-section + .form-section { margin-top: 28px; padding-top: 26px; }
+.app-shell .form-section legend { color: #20324b; font-size: 17px; font-weight: 700; letter-spacing: -.025em; }
+.app-shell .form-section__description { color: #536580; font-size: 13px !important; line-height: 1.55; }
+.app-shell .data-table-search { min-height: 42px; border-radius: 11px; }
+.app-shell .data-table-search:focus-within { border-color: #3977d5; box-shadow: 0 0 0 3px rgba(57,119,213,.14); }
+.app-shell .data-table-search input { font-size: 14px; }
+.app-shell .data-table-tool-button { min-height: 44px; font-size: 13px; }
+.app-shell .data-table-shell th { font-size: 12px; letter-spacing: .035em; }
+.app-shell .data-table-shell td { font-size: 13px; line-height: 1.5; }
+.app-shell .page-kicker { font-size: 11px; }
+.app-shell .sidebar .nav-label { font-size: 11px; }
+.app-shell .sidebar .nav { gap: 15px; padding: 16px 0; }
+.app-shell .sidebar .nav-link { min-height: 40px; padding-block: 9px; font-size: 14px; }
+@media (max-width: 760px) {
+  .app-shell .form-grid { gap: 16px; }
+  .app-shell .form-field__label { font-size: 13px; }
+  .app-shell .data-table-shell th { font-size: 12px; }
+  .app-shell .data-table-shell td { font-size: 14px; }
+  .app-shell .sidebar .nav-link { min-height: 44px; font-size: 15px; }
+}
+
+
+/* Dashboard: concise KPI overview with quieter surfaces and legible supporting data. */
+.app-shell .dashboard-overview { gap: 20px; }
+.app-shell .dashboard-overview .metric-grid { gap: 12px; }
+.app-shell .dashboard-overview .metric-card,
+.app-shell .dashboard-overview .metric-card:nth-child(n) {
+  min-width: 0; padding: 17px 18px; gap: 10px;
+  border: 1px solid #dce5f1; border-radius: 14px;
+  background: #fff; box-shadow: 0 3px 14px rgba(35,66,110,.035);
+}
+.app-shell .dashboard-overview .metric-card:first-child { border-top: 3px solid #2459c4; }
+.app-shell .dashboard-overview .metric-card:nth-child(2) { border-top: 3px solid #3883c9; }
+.app-shell .dashboard-overview .metric-card:nth-child(3) { border-top: 3px solid #6e7bc4; }
+.app-shell .dashboard-overview .metric-card:nth-child(4) { border-top: 3px solid #8d7cc2; }
+.app-shell .dashboard-overview .metric-card:nth-child(5) { border-top: 3px solid #4696a9; }
+.app-shell .dashboard-overview .metric-icon { width: 32px; height: 32px; border-radius: 9px; background: #edf3ff; }
+.app-shell .dashboard-overview .metric-icon svg { width: 17px; height: 17px; }
+.app-shell .dashboard-overview .metric-label { font-size: 12px; line-height: 1.35; }
+.app-shell .dashboard-overview .metric-value { margin: 5px 0; font-size: clamp(22px, 1.7vw, 29px); line-height: 1.15; }
+.app-shell .dashboard-overview .metric-note { font-size: 12px; line-height: 1.4; }
+.app-shell .dashboard-panel { padding: 20px 22px; }
+.app-shell .dashboard-panel .panel-header h3 { font-size: 16px; }
+.app-shell .dashboard-panel .panel-header p { font-size: 12px; }
+.app-shell .dashboard-panel .compact-table th { font-size: 11px; letter-spacing: .035em; }
+.app-shell .dashboard-panel .compact-table td { font-size: 12px; }
+.app-shell .dashboard-panel .list-copy strong { font-size: 13px; }
+.app-shell .dashboard-panel .list-copy span { font-size: 12px; }
+.app-shell .dashboard-panel .list-value { font-size: 12px; }
+.app-shell .dashboard-panel .legend-row,
+.app-shell .dashboard-panel .legend-row strong { font-size: 12px; }
+.app-shell .dashboard-panel .chart-axis,
+.app-shell .dashboard-panel .chart-labels { font-size: 11px; }
+.app-shell .dashboard-panel .empty-list strong { font-size: 13px; }
+.app-shell .dashboard-panel .empty-list span { font-size: 12px; }
+.app-shell .dashboard-filters label { font-size: 11px; }
+.app-shell .dashboard-filters select { min-height: 42px; font-size: 13px; }
+@media (max-width: 760px) {
+  .app-shell .dashboard-overview .metric-card,
+  .app-shell .dashboard-overview .metric-card:nth-child(n) { padding: 16px; }
+  .app-shell .dashboard-panel { padding: 18px; }
+}
+
+
+/* Procurement and receiving: consistent labeled fields, scannable summaries, and structured entry panels. */
+.app-shell .planning-request-form { grid-template-columns: minmax(150px, .9fr) minmax(150px, .9fr) minmax(240px, 1.6fr) auto; gap: 14px; padding: 20px; border-radius: 14px; background: #f7f9fd; align-items: end; }
+.app-shell .purchasing-header-form,
+.app-shell .quote-entry-grid,
+.app-shell .receiving-header-form { gap: 14px 16px; align-items: start; }
+.app-shell .planning-request-form label,
+.app-shell .quote-entry-grid label,
+.app-shell .quote-notes,
+.app-shell .po-amend-header label,
+.app-shell .receiving-header-form label { min-width: 0; gap: 7px; }
+.app-shell .planning-request-form label span,
+.app-shell .quote-entry-grid label span,
+.app-shell .quote-notes span,
+.app-shell .award-options label span,
+.app-shell .po-amend-header label span,
+.app-shell .receiving-header-form label span { color: #425a79; font-size: 12px; font-weight: 650; letter-spacing: 0; text-transform: none; line-height: 1.4; }
+.app-shell .planning-request-form input,
+.app-shell .planning-request-form textarea,
+.app-shell .purchasing-header-form input,
+.app-shell .purchasing-header-form select,
+.app-shell .po-line input,
+.app-shell .po-line select,
+.app-shell .quote-entry-grid input,
+.app-shell .quote-entry-grid select,
+.app-shell .quote-entry-panel table input,
+.app-shell .quote-notes textarea,
+.app-shell .award-options input,
+.app-shell .award-options select,
+.app-shell .po-amend-header input,
+.app-shell .po-amend-lines input,
+.app-shell .receiving-header-form input,
+.app-shell .receiving-header-form select {
+  min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd8e9;
+  border-radius: 11px; background: #fff; color: #20324b; font-size: 14px; line-height: 1.4;
+}
+.app-shell .planning-request-form textarea,
+.app-shell .quote-notes textarea { min-height: 88px; }
+.app-shell .planning-request-form input:focus,
+.app-shell .planning-request-form textarea:focus,
+.app-shell .purchasing-header-form input:focus,
+.app-shell .purchasing-header-form select:focus,
+.app-shell .quote-entry-grid input:focus,
+.app-shell .quote-entry-grid select:focus,
+.app-shell .receiving-header-form input:focus,
+.app-shell .receiving-header-form select:focus { border-color: #3977d5; outline: 0; box-shadow: 0 0 0 3px rgba(57,119,213,.14); }
+.app-shell .planning-metrics > div,
+.app-shell .quote-metrics > div,
+.app-shell .receiving-metrics > div,
+.app-shell .receiving-po-summary > div,
+.app-shell .po-detail-metrics > div { background: #fff; border: 1px solid #dce5f1; border-radius: 13px; padding: 15px 16px; gap: 7px; }
+.app-shell .planning-metrics span,
+.app-shell .quote-metrics span,
+.app-shell .receiving-metrics span,
+.app-shell .receiving-po-summary span,
+.app-shell .po-detail-metrics span { color: #536580; font-size: 11px; letter-spacing: .035em; line-height: 1.35; }
+.app-shell .planning-metrics strong,
+.app-shell .quote-metrics strong,
+.app-shell .receiving-metrics strong,
+.app-shell .receiving-po-summary strong,
+.app-shell .po-detail-metrics strong { font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
+.app-shell .quote-requisition { background: #f8faff; border-color: #dce5f1; padding: 18px; border-radius: 14px; }
+.app-shell .quote-card { padding: 16px; border-radius: 13px; gap: 12px; }
+.app-shell .quote-card strong { font-size: 14px; }
+.app-shell .quote-card span { font-size: 12px; }
+.app-shell .quote-card dt { font-size: 11px; }
+.app-shell .quote-card dd { font-size: 13px; }
+.app-shell .quote-card__price strong { font-size: 20px; }
+.app-shell .po-line, .app-shell .po-amend-lines > div { gap: 12px; }
+@media (max-width: 1100px) {
+  .app-shell .planning-request-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .app-shell .planning-request-form .planning-justification { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .app-shell .planning-request-form { grid-template-columns: 1fr; padding: 16px; }
+  .app-shell .planning-request-form .planning-justification { grid-column: auto; }
+  .app-shell .quote-entry-grid, .app-shell .receiving-header-form { grid-template-columns: 1fr; }
+  .app-shell .planning-metrics strong, .app-shell .quote-metrics strong,
+  .app-shell .receiving-metrics strong, .app-shell .receiving-po-summary strong { font-size: 18px; }
+}
+
+
+/* Catalogue, item details and stock controls: visual structure without additional card clutter. */
+.app-shell .config-card { gap: 16px; }
+.app-shell .config-card h3 { font-size: 17px; letter-spacing: -.025em; }
+.app-shell .config-card > p { margin: -8px 0 0; font-size: 13px; line-height: 1.5; }
+.app-shell .config-list { border-radius: 13px; border-color: #dce5f1; }
+.app-shell .config-row { min-height: 58px; gap: 14px; padding: 12px 14px; }
+.app-shell .config-row strong { font-size: 14px; font-weight: 650; }
+.app-shell .config-row span { font-size: 12px; line-height: 1.4; }
+.app-shell .config-empty { font-size: 13px; padding: 24px; }
+.app-shell .config-form { gap: 12px; align-items: center; }
+.app-shell .config-form input:not([type="checkbox"]):not([type="radio"]),
+.app-shell .config-form select,
+.app-shell .transfer-line select,
+.app-shell .transfer-line input,
+.app-shell .transfer-receipt-editor input,
+.app-shell .receipt-notes textarea,
+.app-shell .stock-filters select {
+  min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd8e9;
+  border-radius: 11px; background: #fff; color: #20324b; font-size: 14px; line-height: 1.4;
+}
+.app-shell .inline-check { font-size: 13px; gap: 8px; }
+.app-shell .inline-check input { width: 17px; height: 17px; }
+.app-shell .item-detail-title h2 { font-size: 25px; letter-spacing: -.035em; }
+.app-shell .back-link { font-size: 13px; }
+.app-shell .item-detail-metrics > div,
+.app-shell .operations-metrics > div { padding: 16px; gap: 7px; border: 1px solid #dce5f1; border-radius: 13px; background: #fff; }
+.app-shell .item-detail-metrics span,
+.app-shell .operations-metrics span { font-size: 11px; line-height: 1.4; color: #536580; }
+.app-shell .item-detail-metrics strong,
+.app-shell .operations-metrics strong { font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
+.app-shell .operations-metrics small { font-size: 12px; line-height: 1.4; }
+.app-shell .section-copy { font-size: 13px; line-height: 1.55; }
+.app-shell .transfer-line-editor { padding: 18px; gap: 12px; border-color: #dce5f1; border-radius: 13px; background: #f7f9fd; }
+.app-shell .transfer-line-editor__header strong { font-size: 14px; }
+.app-shell .transfer-line { gap: 12px; }
+.app-shell .transfer-line > span, .app-shell .receipt-notes span { font-size: 12px; }
+.app-shell .receipt-notes { gap: 8px; }
+.app-shell .location-node { min-height: 52px; gap: 10px; border-radius: 11px; }
+.app-shell .location-node strong { font-size: 13px; }
+.app-shell .location-node span { font-size: 12px; }
+.app-shell .location-control-note strong { font-size: 13px; }
+.app-shell .location-control-note span { font-size: 12px; }
+@media (max-width: 720px) {
+  .app-shell .config-form, .app-shell .config-form-wide { grid-template-columns: 1fr; }
+  .app-shell .config-row { grid-template-columns: minmax(0,1fr) auto; }
+  .app-shell .transfer-line-editor { padding: 14px; }
+}
+
 /* Page hierarchy and a compact, task-based navigation. */
 :root { --sidebar: 232px; --sidebar-width: 232px; --canvas: #f4f7fc; --shell-canvas: #f4f7fc; }
 .app-shell .sidebar { padding: 24px 12px 14px; background: radial-gradient(ellipse at 0 0, #233e65, transparent 55%), #111f36; }
@@ -206,17 +427,17 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { border-radius: 
 /* Numbers first, charts next; operational alerts remain easy to open. */
 .dashboard-welcome h2 { font-size: 20px; }
 .dashboard-welcome p { font-size: 12px; }
-.dashboard-overview { gap: 22px; }
-.dashboard-overview .metric-card { min-height: 154px; padding: 20px; gap: 10px; background: #fff; border-color: #dce5f1; }
-.dashboard-overview .metric-card:nth-child(n) { background: #fff; border-color: #dce5f1; }
-.dashboard-overview .metric-card:nth-child(2) { background: linear-gradient(125deg,#224c9b,#2d67cf); border-color: #285cb9; }
-.dashboard-overview .metric-card:nth-child(2) :is(.metric-label,.metric-value,.metric-note) { color: #fff; }
-.dashboard-overview .metric-card:nth-child(2) .metric-icon { color: #fff; background: #ffffff20; border-color: #ffffff20; }
-.dashboard-overview .metric-icon { position: absolute; top: 17px; right: 16px; width: 30px; height: 30px; background: #edf3ff; border: 0; border-radius: 9px; }
-.dashboard-overview .metric-icon svg { width: 17px; height: 17px; }
-.dashboard-overview .metric-label { padding-right: 28px; font-size: 12px; min-height: 28px; }
-.dashboard-overview .metric-value { font-size: clamp(23px,2vw,32px); margin: 14px 0 8px; letter-spacing: -.9px; }
-.dashboard-overview .metric-note { font-size: 11px; }
+.app-shell .dashboard-overview { gap: 22px; }
+.app-shell .dashboard-overview .metric-card { min-height: 154px; padding: 20px; gap: 10px; background: #fff; border-color: #dce5f1; }
+.app-shell .dashboard-overview .metric-card:nth-child(n) { background: #fff; border-color: #dce5f1; }
+.app-shell .dashboard-overview .metric-card:nth-child(2) { background: linear-gradient(125deg,#224c9b,#2d67cf); border-color: #285cb9; }
+.app-shell .dashboard-overview .metric-card:nth-child(2) :is(.metric-label,.metric-value,.metric-note) { color: #fff; }
+.app-shell .dashboard-overview .metric-card:nth-child(2) .metric-icon { color: #fff; background: #ffffff20; border-color: #ffffff20; }
+.app-shell .dashboard-overview .metric-icon { position: absolute; top: 17px; right: 16px; width: 30px; height: 30px; background: #edf3ff; border: 0; border-radius: 9px; }
+.app-shell .dashboard-overview .metric-icon svg { width: 17px; height: 17px; }
+.app-shell .dashboard-overview .metric-label { padding-right: 28px; font-size: 12px; min-height: 28px; }
+.app-shell .dashboard-overview .metric-value { font-size: clamp(23px,2vw,32px); margin: 14px 0 8px; letter-spacing: -.9px; }
+.app-shell .dashboard-overview .metric-note { font-size: 11px; }
 .dashboard-primary-grid { margin: 0; gap: 22px; grid-template-columns: minmax(0,1.65fr) minmax(0,1fr); }
 .chart-stage { margin-top: 15px; }
 .panel-header p { font-size: 12px; }
@@ -280,9 +501,9 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { border-radius: 
 }
 @media (max-width: 1100px) {
   .dashboard-primary-grid { grid-template-columns: minmax(0,1.4fr) minmax(0,1fr); }
-  .dashboard-overview .metric-card { padding: 16px; }
-  .dashboard-overview .metric-icon { display: none; }
-  .dashboard-overview .metric-label { padding-right: 0; }
+  .app-shell .dashboard-overview .metric-card { padding: 16px; }
+  .app-shell .dashboard-overview .metric-icon { display: none; }
+  .app-shell .dashboard-overview .metric-label { padding-right: 0; }
 }
 @media (max-width: 760px) {
   .page-heading-bar { padding-top: 24px; }
@@ -293,10 +514,10 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { border-radius: 
   .page-heading p { font-size: 13px; }
   .page-content { padding-top: 22px; }
   .dashboard-primary-grid,.dashboard-secondary-grid { grid-template-columns: minmax(0,1fr); }
-  .dashboard-overview .metric-card { min-height: 0; display: block; padding: 18px; }
-  .dashboard-overview .metric-label { min-height: 0; font-size: 12px; }
-  .dashboard-overview .metric-value { font-size: 28px; margin: 10px 0; }
-  .dashboard-overview .metric-note { font-size: 12px; }
+  .app-shell .dashboard-overview .metric-card { min-height: 0; display: block; padding: 18px; }
+  .app-shell .dashboard-overview .metric-label { min-height: 0; font-size: 12px; }
+  .app-shell .dashboard-overview .metric-value { font-size: 28px; margin: 10px 0; }
+  .app-shell .dashboard-overview .metric-note { font-size: 12px; }
   .catalogue-summary { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
   .catalogue-summary > div { padding: 16px; }
   .catalogue-summary strong { font-size: 26px; }
@@ -395,3 +616,4 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { border-radius: 
   margin: 0; flex: 0 0 18px; align-self: center; accent-color: #2459c4;
 }
 .page-content .inline-form label:has(input[type=checkbox]) { display: flex; align-items: center; gap: 9px; min-height: 42px; }
+

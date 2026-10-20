@@ -247,3 +247,84 @@ tbody tr:hover { background: #f5f8ff; }
   .app-shell .dashboard-overview .metric-card:nth-child(n) { padding: 16px; }
   .app-shell .dashboard-panel { padding: 18px; }
 }
+
+
+/* Procurement and receiving: consistent labeled fields, scannable summaries, and structured entry panels. */
+.app-shell .planning-request-form { grid-template-columns: minmax(150px, .9fr) minmax(150px, .9fr) minmax(240px, 1.6fr) auto; gap: 14px; padding: 20px; border-radius: 14px; background: #f7f9fd; align-items: end; }
+.app-shell .purchasing-header-form,
+.app-shell .quote-entry-grid,
+.app-shell .receiving-header-form { gap: 14px 16px; align-items: start; }
+.app-shell .planning-request-form label,
+.app-shell .quote-entry-grid label,
+.app-shell .quote-notes,
+.app-shell .po-amend-header label,
+.app-shell .receiving-header-form label { min-width: 0; gap: 7px; }
+.app-shell .planning-request-form label span,
+.app-shell .quote-entry-grid label span,
+.app-shell .quote-notes span,
+.app-shell .award-options label span,
+.app-shell .po-amend-header label span,
+.app-shell .receiving-header-form label span { color: #425a79; font-size: 12px; font-weight: 650; letter-spacing: 0; text-transform: none; line-height: 1.4; }
+.app-shell .planning-request-form input,
+.app-shell .planning-request-form textarea,
+.app-shell .purchasing-header-form input,
+.app-shell .purchasing-header-form select,
+.app-shell .po-line input,
+.app-shell .po-line select,
+.app-shell .quote-entry-grid input,
+.app-shell .quote-entry-grid select,
+.app-shell .quote-entry-panel table input,
+.app-shell .quote-notes textarea,
+.app-shell .award-options input,
+.app-shell .award-options select,
+.app-shell .po-amend-header input,
+.app-shell .po-amend-lines input,
+.app-shell .receiving-header-form input,
+.app-shell .receiving-header-form select {
+  min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd8e9;
+  border-radius: 11px; background: #fff; color: #20324b; font-size: 14px; line-height: 1.4;
+}
+.app-shell .planning-request-form textarea,
+.app-shell .quote-notes textarea { min-height: 88px; }
+.app-shell .planning-request-form input:focus,
+.app-shell .planning-request-form textarea:focus,
+.app-shell .purchasing-header-form input:focus,
+.app-shell .purchasing-header-form select:focus,
+.app-shell .quote-entry-grid input:focus,
+.app-shell .quote-entry-grid select:focus,
+.app-shell .receiving-header-form input:focus,
+.app-shell .receiving-header-form select:focus { border-color: #3977d5; outline: 0; box-shadow: 0 0 0 3px rgba(57,119,213,.14); }
+.app-shell .planning-metrics > div,
+.app-shell .quote-metrics > div,
+.app-shell .receiving-metrics > div,
+.app-shell .receiving-po-summary > div,
+.app-shell .po-detail-metrics > div { background: #fff; border: 1px solid #dce5f1; border-radius: 13px; padding: 15px 16px; gap: 7px; }
+.app-shell .planning-metrics span,
+.app-shell .quote-metrics span,
+.app-shell .receiving-metrics span,
+.app-shell .receiving-po-summary span,
+.app-shell .po-detail-metrics span { color: #536580; font-size: 11px; letter-spacing: .035em; line-height: 1.35; }
+.app-shell .planning-metrics strong,
+.app-shell .quote-metrics strong,
+.app-shell .receiving-metrics strong,
+.app-shell .receiving-po-summary strong,
+.app-shell .po-detail-metrics strong { font-size: 20px; line-height: 1.2; overflow-wrap: anywhere; }
+.app-shell .quote-requisition { background: #f8faff; border-color: #dce5f1; padding: 18px; border-radius: 14px; }
+.app-shell .quote-card { padding: 16px; border-radius: 13px; gap: 12px; }
+.app-shell .quote-card strong { font-size: 14px; }
+.app-shell .quote-card span { font-size: 12px; }
+.app-shell .quote-card dt { font-size: 11px; }
+.app-shell .quote-card dd { font-size: 13px; }
+.app-shell .quote-card__price strong { font-size: 20px; }
+.app-shell .po-line, .app-shell .po-amend-lines > div { gap: 12px; }
+@media (max-width: 1100px) {
+  .app-shell .planning-request-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .app-shell .planning-request-form .planning-justification { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .app-shell .planning-request-form { grid-template-columns: 1fr; padding: 16px; }
+  .app-shell .planning-request-form .planning-justification { grid-column: auto; }
+  .app-shell .quote-entry-grid, .app-shell .receiving-header-form { grid-template-columns: 1fr; }
+  .app-shell .planning-metrics strong, .app-shell .quote-metrics strong,
+  .app-shell .receiving-metrics strong, .app-shell .receiving-po-summary strong { font-size: 18px; }
+}

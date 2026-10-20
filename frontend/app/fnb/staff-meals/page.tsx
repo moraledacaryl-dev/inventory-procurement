@@ -146,7 +146,7 @@ export default function Page() {
 
   const previewByItem = useMemo(() => Object.fromEntries((preview?.lines || []).map(x => [x.item_id, x])), [preview]);
 
-  return <AppShell title="Staff Meals" description="Record what the kitchen actually used for staff meals. No recipe is required; every posting is costed and auditable.">
+  return <AppShell title="Staff Meals" description="Meal records, ingredients, and cost per serving.">
     {error ? <FeedbackBanner tone="error" title="Staff meal action failed" message={error} /> : null}
     {success ? <FeedbackBanner tone="success" title="Staff meal updated" message={success} /> : null}
 

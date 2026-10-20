@@ -17,7 +17,7 @@ export default function Page(){
  const load=useCallback(async()=>{try{setData(await api<Workspace>("/integrations/pos/workspace"))}catch(error){setFeedback({tone:"error",title:"POS workspace unavailable",message:(error as Error).message})}},[]);
  useEffect(()=>{void load()},[load]);
  async function toggle(row:Mapping){setBusy(true);try{await api(`/pos-mappings/${row.id}/${row.is_active?"deactivate":"activate"}`,{method:"POST"});setFeedback({tone:"success",title:`Mapping ${row.is_active?"deactivated":"activated"}`});await load()}catch(error){setFeedback({tone:"error",title:"Mapping update failed",message:(error as Error).message})}finally{setBusy(false)}}
- return <AppShell title="POS Synchronization" description="Govern product mappings, verify recipe readiness, inspect sale consumption events, and reconcile reversals.">
+ return <AppShell title="POS Synchronization" description="Product mappings, sales consumption, and reversals.">
   {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}
   <div className="topline"><Link href="/integrations">← Back to integrations</Link></div>
   <section className="grid section-gap"><div className="card"><h2>Active mappings</h2><strong>{data?.summary.active_mapping_count??0}</strong></div><div className="card"><h2>Stale mappings</h2><strong>{data?.summary.stale_mapping_count??0}</strong></div><div className="card"><h2>Processed events</h2><strong>{data?.summary.processed_event_count??0}</strong></div><div className="card"><h2>Failed events</h2><strong>{data?.summary.failed_event_count??0}</strong></div></section>

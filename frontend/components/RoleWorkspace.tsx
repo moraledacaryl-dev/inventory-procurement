@@ -34,6 +34,7 @@ type ExceptionResponse = {
 
 export function RoleWorkspace({ locationId }: { locationId?: string }) {
   const [data, setData] = useState<ExceptionResponse | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -60,12 +61,12 @@ export function RoleWorkspace({ locationId }: { locationId?: string }) {
     <section className="role-workspace" aria-labelledby="role-workspace-title">
       <div className="role-workspace__header">
         <div>
-          <div className="page-kicker">Role workspace</div>
-          <h2 id="role-workspace-title">{data.workspace.title}</h2>
-          <p>{data.workspace.summary}</p>
+
+          <h2 id="role-workspace-title">Needs attention</h2>
+
         </div>
         <div className="exception-summary" aria-label={`${data.summary.total} exception groups`}>
-          <span><strong>{data.summary.total}</strong> open groups</span>
+          <span><strong>{data.summary.total}</strong> open</span>
           <span className="critical"><strong>{data.summary.critical}</strong> critical</span>
           <span className="warning"><strong>{data.summary.warning}</strong> warning</span>
         </div>
@@ -78,7 +79,7 @@ export function RoleWorkspace({ locationId }: { locationId?: string }) {
       </div>
 
       <div className="exception-grid">
-        {data.exceptions.length ? data.exceptions.map(item => (
+        {data.exceptions.length ? (expanded ? data.exceptions : data.exceptions.slice(0, 3)).map(item => (
           <Link className={`exception-card exception-card--${item.severity}`} href={item.href} key={item.key}>
             <div className="exception-card__top">
               <span className="exception-card__category">{item.category}</span>
@@ -97,11 +98,12 @@ export function RoleWorkspace({ locationId }: { locationId?: string }) {
         )) : (
           <div className="exception-clear">
             <div aria-hidden="true">✓</div>
-            <strong>No role-relevant exceptions</strong>
-            <span>The current operational checks found no unresolved exception groups for this workspace.</span>
+            <strong>All caught up</strong>
+            <span>No outstanding alerts for your workspace.</span>
           </div>
         )}
       </div>
+      {data.exceptions.length > 3 ? <button type="button" className="text-button exception-toggle" aria-expanded={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded ? "Show fewer alerts" : `View all ${data.exceptions.length} alerts →`}</button> : null}
     </section>
   );
 }

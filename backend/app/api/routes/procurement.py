@@ -12,6 +12,7 @@ from app.models.procurement import Supplier, SupplierItem, PurchaseRequisition, 
 from app.schemas.procurement import *
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
 from app.services.inventory import InventoryError, post_document
+from app.services.operational_authorization import require_purchase_approval
 
 router=APIRouter(tags=['procurement'])
 def now(): return datetime.now(timezone.utc)
@@ -133,6 +134,8 @@ def approve_requisition(requisition_id:str,db:Session=Depends(get_db),user:User=
     if not row: fail(404,'Requisition not found')
     if row.status!='submitted': fail(409,'Only submitted requisitions can be approved')
     if row.requested_by_user_id==user.id: fail(409,'Requester cannot approve their own requisition')
+    total=sum((Decimal(line.quantity)*Decimal(line.estimated_unit_cost) for line in row.lines),Decimal('0'))
+    require_purchase_approval(db,user,total)
     row.status='approved'; row.approved_by_user_id=user.id; row.approved_at=now(); add_audit(db,actor_user_id=user.id,action='requisition.approved',entity_type='purchase_requisition',entity_id=row.id); enqueue_event(db,destination_system='command-center',event_type='procurement.requisition.approved',aggregate_type='purchase_requisition',aggregate_id=row.id,idempotency_key=f'requisition-approved:{row.id}',payload={'requisition_id':row.id,'requisition_number':row.requisition_number}); db.commit(); return load_pr(db,row.id)
 @router.post('/requisitions/{requisition_id}/reject',response_model=PROut)
 def reject_requisition(requisition_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
@@ -189,6 +192,8 @@ def approve_po(po_id:str,db:Session=Depends(get_db),user:User=Depends(require_pe
     if not po: fail(404,'Purchase order not found')
     if po.status!='draft': fail(409,'Only draft purchase orders can be approved')
     if po.created_by_user_id==user.id: fail(409,'Creator cannot approve their own purchase order')
+    total=sum((Decimal(x.ordered_quantity)*Decimal(x.unit_price) for x in po.lines),Decimal('0'))
+    require_purchase_approval(db,user,total,location_id=po.delivery_location_id)
     po.status='approved'; po.approved_by_user_id=user.id; po.approved_at=now(); total=sum((Decimal(x.ordered_quantity)*Decimal(x.unit_price) for x in po.lines),Decimal('0')); add_audit(db,actor_user_id=user.id,action='purchase_order.approved',entity_type='purchase_order',entity_id=po.id,details={'total':str(total)}); enqueue_event(db,destination_system='accounting',event_type='procurement.purchase_order.approved',aggregate_type='purchase_order',aggregate_id=po.id,idempotency_key=f'po-approved:{po.id}',payload={'purchase_order_id':po.id,'purchase_order_number':po.purchase_order_number,'supplier_id':po.supplier_id,'total':str(total)}); db.commit(); return load_po(db,po.id)
 
 @router.post('/purchase-orders/{po_id}/receipts',response_model=GoodsReceiptOut,status_code=201)

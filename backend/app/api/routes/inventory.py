@@ -13,7 +13,7 @@ from app.models.inventory import Category, CountLine, CountSession, Item, Locati
 from app.models.user import User
 from app.schemas.inventory import *
 from app.services.controls import add_audit, next_document_number
-from app.services.inventory import InventoryError, issue_entries, post_document, receipt_entries, transfer_entries
+from app.services.inventory import InventoryError, assert_count_snapshot_current, issue_entries, post_document, receipt_entries, transfer_entries
 
 router = APIRouter(tags=["inventory"])
 
@@ -269,6 +269,7 @@ def current_count_entries(db: Session, session: CountSession):
 
 
 def finalize_count(db: Session, session: CountSession, user: User):
+    assert_count_snapshot_current(db, session)
     entries = current_count_entries(db, session)
     if entries:
         doc = post_document(db, kind="count_adjustment", actor_id=user.id, entries=entries, reference=session.count_number, commit=False)
@@ -303,11 +304,19 @@ def post_count(count_id: str, p: CountSubmit, db: Session = Depends(get_db), use
     session = db.scalar(select(CountSession).where(CountSession.id == count_id).options(selectinload(CountSession.lines)).with_for_update())
     if not session: raise HTTPException(404, "Count not found")
     if session.status != "open": conflict("Count is not open")
-    submitted = {x.item_id: x for x in p.lines}; current = {b.item_id: Decimal(b.quantity) for b in db.scalars(select(StockBalance).where(StockBalance.location_id == session.location_id).with_for_update()).all()}; max_variance = Decimal("0")
+    submitted = {x.item_id: x for x in p.lines}
+    if len(submitted) != len(p.lines):
+        raise HTTPException(422, "Duplicate count lines are not allowed")
+    if set(submitted) != {line.item_id for line in session.lines}:
+        raise HTTPException(422, "Count submission must include every item exactly once")
+    max_variance = Decimal("0")
     for line in session.lines:
-        if line.item_id not in submitted: continue
-        entry = submitted[line.item_id]; line.counted_quantity = entry.counted_quantity; line.note = entry.note; max_variance = max(max_variance, abs(Decimal(entry.counted_quantity) - current.get(line.item_id, Decimal("0"))))
+        entry = submitted[line.item_id]
+        line.counted_quantity = entry.counted_quantity
+        line.note = entry.note
+        max_variance = max(max_variance, abs(Decimal(entry.counted_quantity) - Decimal(line.system_quantity)))
     try:
+        assert_count_snapshot_current(db, session)
         if Decimal(session.approval_threshold) > 0 and max_variance > Decimal(session.approval_threshold):
             session.status = "pending_approval"; add_audit(db, actor_user_id=user.id, action="count.approval_requested", entity_type="count_session", entity_id=session.id, details={"max_variance": str(max_variance)})
         else: finalize_count(db, session, user)

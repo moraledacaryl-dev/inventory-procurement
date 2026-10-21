@@ -235,13 +235,20 @@ def valuation_history(
 
     movement_stmt = select(
         func.date(StockMovement.created_at).label("movement_date"),
-        func.coalesce(func.sum(StockMovement.quantity * StockMovement.unit_cost), 0).label("value_change"),
+        func.coalesce(func.sum(
+            func.coalesce(StockMovement.book_value_delta, StockMovement.quantity * StockMovement.unit_cost)
+        ), 0).label("value_change"),
+        func.sum(case((StockMovement.book_value_delta.is_(None), 1), else_=0)).label("legacy_count"),
     ).where(StockMovement.created_at >= datetime.combine(start_date, time.min, tzinfo=timezone.utc))
     if location_id:
         movement_stmt = movement_stmt.where(StockMovement.location_id == location_id)
     movement_rows = db.execute(movement_stmt.group_by(func.date(StockMovement.created_at))).all()
-    # SQLite returns date strings; PostgreSQL returns date objects.
+    # Legacy rows have no book-value delta. Their signed movement cost is only
+    # an estimate where short stock was replenished at a different cost.
+    # Do not backfill or silently present historical estimates as exact.
     change_by_date = {str(row.movement_date): Decimal(row.value_change or 0) for row in movement_rows}
+    legacy_by_date = {str(row.movement_date): int(row.legacy_count or 0) for row in movement_rows}
+    remaining_legacy = sum(legacy_by_date.values())
 
     balance_stmt = select(func.coalesce(func.sum(StockBalance.quantity * StockBalance.average_cost), 0))
     if location_id:
@@ -253,8 +260,12 @@ def valuation_history(
     points = []
     for offset in range(days):
         point_date = start_date + timedelta(days=offset)
-        running_value += change_by_date.get(point_date.isoformat(), Decimal("0"))
-        points.append({"date": point_date.isoformat(), "value": str(running_value)})
+        day = point_date.isoformat()
+        running_value += change_by_date.get(day, Decimal("0"))
+        # Anchored to today's actual balance: only legacy movements *after*
+        # a day's close make that day's historical value uncertain.
+        remaining_legacy -= legacy_by_date.get(day, 0)
+        points.append({"date": day, "value": str(running_value), "estimated": remaining_legacy > 0})
 
     return {
         "as_of": now.isoformat(),
@@ -262,4 +273,6 @@ def valuation_history(
         "days": days,
         "points": points,
         "current_value": str(current_value),
+        "legacy_movement_count": sum(legacy_by_date.values()),
+        "historical_values_estimated": any(point["estimated"] for point in points),
     }

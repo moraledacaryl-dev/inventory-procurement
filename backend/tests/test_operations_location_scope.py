@@ -142,15 +142,18 @@ def test_reservation_and_transfer_lifecycle_requires_both_authorized_locations(c
     assert client.post(f"/api/v1/reservations/{valid['id']}/release",
                        headers=scoped).status_code == 200
 
+    outside_lot = assert_created(client.post("/api/v1/lots", headers=owner, json={
+        "item_id": item, "lot_number": "B-LOCKED",
+    }))["id"]
     for url, payload in (
         ("/api/v1/item-location-settings", {"item_id": item, "location_id": b}),
         ("/api/v1/cycle-count-schedules", {"item_id": item, "location_id": b,
                                           "next_count_date": "2020-01-01"}),
-        ("/api/v1/lot-transactions", {"lot_id": "no-such-lot", "location_id": b,
+        ("/api/v1/lot-transactions", {"lot_id": outside_lot, "location_id": b,
                                      "quantity": "1", "transaction_type": "receipt"}),
     ):
         response = client.post(url, json=payload, headers=scoped)
-        assert response.status_code in (403, 409), (url, response.text)
+        assert response.status_code == 403, (url, response.text)
 
     transfer = assert_created(client.post("/api/v1/transfer-orders", headers=owner, json={
         "source_location_id": a, "destination_location_id": b,

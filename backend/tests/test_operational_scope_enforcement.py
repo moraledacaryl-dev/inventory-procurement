@@ -57,6 +57,13 @@ def create_scope(client, owner, user_id, **values):
     response = client.post("/api/v1/access-scopes", headers=owner, json={
         "user_id": user_id, **values,
     })
+    if response.status_code == 500:
+        # Expose the server exception in CI; HTTP middleware intentionally masks
+        # details from clients.
+        from app.api.routes.pass6_controls import ScopeIn, set_access_scope
+        with SessionLocal() as db:
+            actor = db.query(User).filter(User.email == "owner@example.com").first()
+            set_access_scope(ScopeIn(user_id=user_id, **values), db, actor)
     assert response.status_code == 201, response.text
     return response.json()
 

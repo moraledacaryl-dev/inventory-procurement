@@ -184,3 +184,83 @@ def test_revoked_receiving_scope_blocks_lists_posts_and_idempotent_replay(client
         headers=receiver, json={"reason": "revoked",
                                "lines": [{"purchase_order_line_id": line_a, "quantity": "1"}]},
     ).status_code == 403
+
+
+def test_legacy_replay_cannot_cross_purchase_orders_or_change_request(client):
+    owner, receiver, _buyer, (a, b), _item, _supplier, (po_a, po_b), _scopes = seed(client)
+    line_a = po_a["lines"][0]["id"]
+    line_b = po_b["lines"][0]["id"]
+    receipt_a_url = f"/api/v1/purchase-orders/{po_a['id']}/receipts"
+    receipt_b_url = f"/api/v1/purchase-orders/{po_b['id']}/receipts"
+    return_a_url = f"/api/v1/purchase-orders/{po_a['id']}/returns"
+    return_b_url = f"/api/v1/purchase-orders/{po_b['id']}/returns"
+
+    # A guessed/reused key must never disclose an out-of-scope B document when
+    # the scoped receiver names their authorized A purchase order.
+    b_payload = {
+        "delivery_reference": "LEGACY-B", "idempotency_key": "legacy-key-b",
+        "lines": [{"purchase_order_line_id": line_b, "received_quantity": "2",
+                   "accepted_quantity": "2", "rejected_quantity": "0"}],
+    }
+    b_posted = client.post(receipt_b_url, headers=owner, json=b_payload)
+    assert b_posted.status_code == 201, b_posted.text
+    b_replay_from_a = client.post(receipt_a_url, headers=receiver, json={
+        **b_payload,
+        "delivery_reference": "LEGACY-A-FOREIGN",
+        "lines": [{"purchase_order_line_id": line_a, "received_quantity": "2",
+                   "accepted_quantity": "2", "rejected_quantity": "0"}],
+    })
+    assert b_replay_from_a.status_code == 409, b_replay_from_a.text
+    assert b_posted.json()["id"] not in b_replay_from_a.text
+
+    a_payload = {
+        "delivery_reference": "LEGACY-A", "idempotency_key": "legacy-key-a",
+        "lines": [{"purchase_order_line_id": line_a, "received_quantity": "3",
+                   "accepted_quantity": "3", "rejected_quantity": "0"}],
+    }
+    a_posted = client.post(receipt_a_url, headers=receiver, json=a_payload)
+    assert a_posted.status_code == 201, a_posted.text
+    equivalent = client.post(receipt_a_url, headers=receiver, json={
+        **a_payload,
+        "lines": [{**a_payload["lines"][0], "received_quantity": "3.000",
+                   "accepted_quantity": "3.0"}],
+    })
+    assert equivalent.status_code == 201, equivalent.text
+    assert equivalent.json()["id"] == a_posted.json()["id"]
+    altered = client.post(receipt_a_url, headers=receiver, json={
+        **a_payload,
+        "lines": [{**a_payload["lines"][0], "received_quantity": "2",
+                   "accepted_quantity": "2"}],
+    })
+    assert altered.status_code == 409, altered.text
+
+    b_return = {
+        "reason": "returned to supplier", "idempotency_key": "legacy-return-b",
+        "lines": [{"purchase_order_line_id": line_b, "quantity": "1"}],
+    }
+    b_return_posted = client.post(return_b_url, headers=owner, json=b_return)
+    assert b_return_posted.status_code == 201, b_return_posted.text
+    cross_return = client.post(return_a_url, headers=receiver, json={
+        **b_return, "lines": [{"purchase_order_line_id": line_a, "quantity": "1"}],
+    })
+    assert cross_return.status_code == 409, cross_return.text
+
+    a_return = {
+        "reason": "supplier return", "idempotency_key": "legacy-return-a",
+        "lines": [{"purchase_order_line_id": line_a, "quantity": "1"}],
+    }
+    posted = client.post(return_a_url, headers=receiver, json=a_return)
+    assert posted.status_code == 201, posted.text
+    repeat = client.post(return_a_url, headers=receiver, json={
+        **a_return, "lines": [{"purchase_order_line_id": line_a, "quantity": "1.000"}],
+    })
+    assert repeat.status_code == 201 and repeat.json()["id"] == posted.json()["id"]
+    changed = client.post(return_a_url, headers=receiver, json={
+        **a_return, "reason": "tampered",
+    })
+    assert changed.status_code == 409, changed.text
+
+    # A remains the only inventory location visible to the receiver.
+    balances = client.get("/api/v1/stock/balances", headers=receiver)
+    assert balances.status_code == 200
+    assert {row["location_id"] for row in balances.json()} == {a}

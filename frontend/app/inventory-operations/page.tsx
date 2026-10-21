@@ -22,7 +22,7 @@ type Valuation={item_id:string;location_id:string;quantity:string;average_cost:s
 type Feedback={tone:"success"|"error"|"warning"|"info";title:string;message?:string}|null;
 
 export default function Page(){
-  return <><InventoryOperationsContent/></AppShell>;
+  return <AppShell title="Inventory Operations" description="Transfers, adjustments, waste, and expiry."><InventoryOperationsContent/></AppShell>;
 }
 
 function InventoryOperationsContent(){

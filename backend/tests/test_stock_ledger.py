@@ -9,7 +9,7 @@ def test_stock_ledger_payload(client):
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {"filters", "summary", "rows"}
-    assert set(payload["summary"]) == {"movement_count", "net_quantity", "net_value", "document_count"}
+    assert set(payload["summary"]) == {"movement_count", "net_quantity", "net_value", "document_count", "book_value_change", "legacy_unverified_value_lines"}
     assert isinstance(payload["rows"], list)
     if payload["rows"]:
         row = payload["rows"][0]
@@ -29,7 +29,7 @@ def test_stock_document_detail(client):
     payload = response.json()
     assert payload["document"]["id"] == document_id
     assert isinstance(payload["lines"], list)
-    assert set(payload["summary"]) == {"line_count", "net_quantity", "net_value"}
+    assert set(payload["summary"]) == {"line_count", "net_quantity", "net_value", "book_value_change", "legacy_unverified_value_lines"}
 
 
 def test_missing_stock_document(client):

@@ -32,12 +32,12 @@ def validate_dimension(db:Session,value:str|None,kind:str):
     if not row or row.dimension_type!=kind: fail(422,f'{kind.replace("_"," ").title()} not found')
 
 @router.get('/access-scope-users')
-def access_scope_users(db:Session=Depends(get_db),_:User=Depends(require_permission('users.read'))):
+def access_scope_users(db:Session=Depends(get_db),_:User=Depends(require_permission('users.*'))):
     rows=db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name,User.email)).all()
     return [{'id':x.id,'email':x.email,'full_name':x.full_name,'role':x.role} for x in rows]
 
 @router.get('/access-scopes')
-def access_scopes(user_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('users.read'))):
+def access_scopes(user_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('users.*'))):
     q=select(OperationalAccessScope).order_by(OperationalAccessScope.user_id,OperationalAccessScope.created_at)
     if user_id:q=q.where(OperationalAccessScope.user_id==user_id)
     return db.scalars(q).all()
@@ -74,7 +74,7 @@ def operating_summary(workspace_id:str|None=None,db:Session=Depends(get_db),_:Us
     for row in stock_rows:
         item=items.get(row.item_id)
         if not item or (workspace_id and item.primary_workspace_id!=workspace_id): continue
-        stock_units+=dec(row.quantity); stock_value+=dec(row.quantity)*dec(item.standard_cost)
+        stock_units+=dec(row.quantity); stock_value+=dec(row.quantity)*dec(row.average_cost)
     reusable_units=Decimal('0')
     for row in db.scalars(select(PropertyBalance)).all():
         item=items.get(row.item_id)

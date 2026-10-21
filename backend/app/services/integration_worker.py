@@ -155,7 +155,18 @@ def process_event(db:Session,event_id:str,worker_id:str,endpoints:dict[str,str]|
         owns_client=client is None;client=client or httpx.Client(timeout=15)
         try:
             response=client.post(url,json=body,headers=headers);response.raise_for_status()
-            if event.destination_system=='accounting':_validate_accounting_response(response)
+            if event.destination_system=='accounting':
+                intake=_validate_accounting_response(response)
+                # Outbox completion confirms delivery to the Accounting review
+                # intake, NOT approval or creation of a General Ledger journal.
+                event.payload={
+                    **(event.payload if isinstance(event.payload,dict) else {}),
+                    'accounting_intake': {
+                        'status': str(intake['status']).strip().lower(),
+                        'review_id': str(intake['id']) if intake.get('id') is not None else None,
+                        'received_at': utcnow().isoformat(),
+                    },
+                }
         finally:
             if owns_client:client.close()
         event.status='completed';event.processed_at=utcnow();event.last_error=None;event.locked_at=None;event.locked_by=None;add_audit(db,actor_user_id=None,action='integration.delivered',entity_type='integration_event',entity_id=event.id,details={'destination':event.destination_system,'attempts':event.attempts})

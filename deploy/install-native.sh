@@ -32,6 +32,27 @@ wait_for_url() {
 [[ -f "$FRONTEND_ENV" ]] || { echo "Missing $FRONTEND_ENV"; exit 1; }
 [[ -f "$CERT_DIR/fullchain.pem" && -f "$CERT_DIR/privkey.pem" ]] || { echo "Missing TLS certificate for inventory.hiddenoasis.app. Run certbot before deployment."; exit 1; }
 
+# Fail *before backup, build or migration* if bash sourcing silently corrupts
+# the JSON destinations. Workers cannot reach Accounting without this map.
+(
+  set -a
+  source "$BACKEND_ENV"
+  set +a
+  python3 - <<'PY'
+import json, os
+raw = os.environ.get("INTEGRATION_ENDPOINTS_JSON", "{}")
+try:
+    routes = json.loads(raw)
+except (ValueError, TypeError) as exc:
+    raise SystemExit("Inventory integration endpoints are not valid JSON after sourcing the environment file") from exc
+if not isinstance(routes, dict):
+    raise SystemExit("Inventory integration endpoints must be a JSON object")
+if os.environ.get("INTEGRATION_API_KEY") and not routes.get("accounting"):
+    raise SystemExit("Accounting integration key is configured, but the Accounting destination is missing")
+print("INVENTORY INTEGRATION ENVIRONMENT: PASS")
+PY
+)
+
 # Back up the existing production database before any dependency installation,
 # frontend build, migration, or service restart. Never silently deploy if the
 # backup cannot be read back and validated.

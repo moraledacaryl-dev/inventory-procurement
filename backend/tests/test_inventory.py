@@ -195,3 +195,108 @@ def test_concurrent_first_balance_creation_is_serialized_on_postgres(client):
         )).all()
         assert len(rows) == 1
         assert Decimal(rows[0].quantity) == Decimal('12')
+
+
+def test_stock_request_replay_is_bound_to_original_payload(client):
+    from decimal import Decimal
+    from sqlalchemy import select
+    from app.db.session import SessionLocal
+    from app.models.inventory import StockDocument, StockBalance
+
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    original = {
+        'location_id': location['id'],
+        'idempotency_key': 'replay-original-payload',
+        'reference': 'DELIVERY-001',
+        'lines': [{'item_id': item['id'], 'quantity': '5', 'unit_cost': '40'}],
+    }
+    first = client.post('/api/v1/stock/receipts', headers=headers, json=original)
+    assert first.status_code == 201
+    equivalent = {**original, 'lines': [{**original['lines'][0], 'quantity': '5.00', 'unit_cost': '40.000'}]}
+    replay = client.post('/api/v1/stock/receipts', headers=headers, json=equivalent)
+    assert replay.status_code == 201
+    assert replay.json()['id'] == first.json()['id']
+    for changed in (
+        {**original, 'reference': 'DELIVERY-002'},
+        {**original, 'lines': [{**original['lines'][0], 'quantity': '6'}]},
+        {**original, 'lines': [{**original['lines'][0], 'unit_cost': '41'}]},
+    ):
+        conflict = client.post('/api/v1/stock/receipts', headers=headers, json=changed)
+        assert conflict.status_code == 409
+        assert 'Idempotency key' in conflict.json()['detail']
+
+    cross_type = client.post('/api/v1/stock/issues', headers=headers, json={
+        'location_id': location['id'], 'idempotency_key': original['idempotency_key'],
+        'lines': [{'item_id': item['id'], 'quantity': '2'}],
+    })
+    assert cross_type.status_code == 409
+    with SessionLocal() as db:
+        documents = db.scalars(select(StockDocument).where(
+            StockDocument.idempotency_key == original['idempotency_key']
+        )).all()
+        assert len(documents) == 1
+        assert len(documents[0].request_fingerprint) == 64
+        balance = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item['id'], StockBalance.location_id == location['id']
+        ))
+        assert Decimal(balance.quantity) == Decimal('5')
+
+
+def test_historical_stock_document_replay_checks_original_movements(client):
+    from app.db.session import SessionLocal
+    from app.models.inventory import StockDocument
+
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    original = {
+        'location_id': location['id'],
+        'idempotency_key': 'pre-fingerprint-document',
+        'lines': [{'item_id': item['id'], 'quantity': '3', 'unit_cost': '40'}],
+    }
+    first = client.post('/api/v1/stock/receipts', headers=headers, json=original)
+    assert first.status_code == 201
+    with SessionLocal() as db:
+        document = db.get(StockDocument, first.json()['id'])
+        document.request_fingerprint = None
+        db.commit()
+    identical = client.post('/api/v1/stock/receipts', headers=headers, json=original)
+    assert identical.status_code == 201
+    assert identical.json()['id'] == first.json()['id']
+    altered = client.post('/api/v1/stock/receipts', headers=headers, json={
+        **original,
+        'lines': [{**original['lines'][0], 'quantity': '4'}],
+    })
+    assert altered.status_code == 409
+
+
+def test_legacy_count_rejects_stale_snapshot_and_incomplete_lines(client):
+    from decimal import Decimal
+    from app.db.session import SessionLocal
+    from app.models.inventory import StockBalance
+    from sqlalchemy import select
+
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    assert client.post('/api/v1/stock/receipts', headers=headers, json={
+        'location_id': location['id'], 'lines': [{'item_id': item['id'], 'quantity': 5, 'unit_cost': 40}]
+    }).status_code == 201
+    count = client.post('/api/v1/counts', headers=headers, json={'location_id': location['id']}).json()
+    endpoint = f"/api/v1/counts/{count['id']}/post"
+    assert client.post(endpoint, headers=headers, json={'lines': [
+        {'item_id': item['id'], 'counted_quantity': 4},
+        {'item_id': item['id'], 'counted_quantity': 4},
+    ]}).status_code == 422
+    assert client.post('/api/v1/stock/receipts', headers=headers, json={
+        'location_id': location['id'], 'lines': [{'item_id': item['id'], 'quantity': 1, 'unit_cost': 40}]
+    }).status_code == 201
+    stale = client.post(endpoint, headers=headers, json={
+        'lines': [{'item_id': item['id'], 'counted_quantity': 4}]
+    })
+    assert stale.status_code == 409
+    assert 'count' in stale.json()['detail'].lower()
+    with SessionLocal() as db:
+        row = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item['id'], StockBalance.location_id == location['id']
+        ))
+        assert Decimal(row.quantity) == Decimal('6')

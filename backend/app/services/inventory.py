@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import hashlib
 import json
 from sqlalchemy import select, text
@@ -152,8 +152,8 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         # Match the ledger's Numeric(18, 4) storage precision before
         # calculating value changes; avoid a misleading in-memory precision.
         precision = Decimal("0.0001")
-        qty = Decimal(entry["quantity"]).quantize(precision)
-        cost = Decimal(entry.get("unit_cost", 0)).quantize(precision)
+        qty = Decimal(entry["quantity"]).quantize(precision, rounding=ROUND_HALF_UP)
+        cost = Decimal(entry.get("unit_cost", 0)).quantize(precision, rounding=ROUND_HALF_UP)
         if qty == 0: raise InventoryError("Movement quantity cannot be zero at stock precision")
         if cost < 0: raise InventoryError("Movement unit cost cannot be negative")
         source_location_id = entry.get("cost_from_location_id")
@@ -171,7 +171,7 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
             # Transfers carry the source's book value, never a supplied line price.
             source_balance = _balance(db, item.id, source_location_id)
             cost = Decimal(source_balance.average_cost)
-        cost = cost.quantize(precision)
+        cost = cost.quantize(precision, rounding=ROUND_HALF_UP)
         new_qty = old_qty + qty
         if new_qty < 0 and not item.allow_negative_stock: raise InventoryError(f"Insufficient stock for {item.sku} at location")
         if qty > 0:
@@ -182,7 +182,7 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
                 next_cost = cost if new_qty > 0 else old_cost
             else:
                 next_cost = (old_book_value + incoming_value) / new_qty if new_qty else Decimal("0")
-            bal.average_cost = next_cost.quantize(precision)
+            bal.average_cost = next_cost.quantize(precision, rounding=ROUND_HALF_UP)
         bal.quantity = new_qty
         # A revaluation occurs when negative stock becomes positive at a new
         # replacement cost. quantity * unit_cost alone is not the change in

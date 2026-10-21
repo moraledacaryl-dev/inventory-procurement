@@ -8,7 +8,6 @@ TARGET_SHA="${1:-}"
 [[ "${EUID}" -eq 0 ]] || { echo "Native deployment must run as root." >&2; exit 1; }
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Expected a 40-character release SHA." >&2; exit 1; }
 [[ -d "$APP_DIR/.git" ]] || { echo "Missing live Inventory git checkout." >&2; exit 1; }
-[[ -f "$APP_DIR/deploy/install-native.sh" ]] || { echo "Missing installer." >&2; exit 1; }
 [[ -z "$(git -C "$APP_DIR" status --porcelain --untracked-files=no)" ]] || {
   echo "Tracked production checkout changes detected. Refusing destructive checkout." >&2
   exit 1
@@ -27,6 +26,7 @@ echo "Inventory deploying $TARGET_SHA (previous $previous_sha)"
 # The installer acquires the exclusive deployment lock and performs a verified
 # PostgreSQL backup *before* package changes, migration and service restarts.
 git -C "$APP_DIR" checkout --detach "$TARGET_SHA"
+[[ -f "$APP_DIR/deploy/install-native.sh" ]] || { echo "Target release installer missing." >&2; exit 1; }
 if ! bash "$APP_DIR/deploy/install-native.sh"; then
   echo "INVENTORY DEPLOYMENT GATE: FAIL | target $TARGET_SHA | previous $previous_sha" >&2
   echo "Do not attempt an automatic database downgrade. Retain predeploy backup and investigate." >&2

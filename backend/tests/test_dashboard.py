@@ -201,6 +201,13 @@ def test_valuation_history_uses_exact_book_delta_when_negative_stock_turns_posit
     assert history["legacy_movement_count"] == 0
     assert history["historical_values_estimated"] is False
     assert all(point["estimated"] is False for point in history["points"])
+    ledger = client.get(f"/api/v1/stock/ledger?item_id={item['id']}&location_id={location['id']}", headers=headers)
+    assert ledger.status_code == 200
+    summary = ledger.json()["summary"]
+    assert Decimal(summary["net_value"]) == Decimal("380")
+    assert Decimal(summary["book_value_change"]) == Decimal("200")
+    assert summary["legacy_unverified_value_lines"] == 0
+    assert Decimal(ledger.json()["rows"][-1]["valuation_difference"]) == Decimal("-180")
 
 
 def test_valuation_history_marks_legacy_deltas_as_estimates(client):
@@ -251,3 +258,7 @@ def test_valuation_history_marks_legacy_deltas_as_estimates(client):
     assert history["points"][-1]["estimated"] is False
     assert Decimal(history["current_value"]) == Decimal("200")
     assert Decimal(history["points"][-1]["value"]) == Decimal("200")
+    ledger = client.get(f"/api/v1/stock/ledger?item_id={item['id']}&location_id={location['id']}", headers=headers)
+    assert ledger.status_code == 200
+    assert ledger.json()["summary"]["book_value_change"] is None
+    assert ledger.json()["summary"]["legacy_unverified_value_lines"] == 1

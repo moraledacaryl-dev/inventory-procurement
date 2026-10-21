@@ -147,3 +147,107 @@ def test_dashboard_location_minimum_override_and_inactive_override(client):
     assert global_summary["stock_status"]["in_stock"] == 1
     assert global_summary["metrics"]["low_stock_items"] == 0
     assert Decimal(global_summary["metrics"]["inventory_value"]) == Decimal("200")
+
+
+def test_valuation_history_uses_exact_book_delta_when_negative_stock_turns_positive(client):
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+    from sqlalchemy import select
+    from app.db.session import SessionLocal
+    from app.models.inventory import Item, StockBalance, StockMovement
+    from app.models.user import User
+    from app.services.inventory import post_document
+    from tests.test_inventory import setup_master
+
+    headers = auth_headers(client)
+    item, location, _ = setup_master(client, headers)
+    with SessionLocal() as db:
+        db.get(Item, item["id"]).allow_negative_stock = True
+        owner = db.scalar(select(User).where(User.email == "owner@example.com"))
+        db.commit()
+        receipt = post_document(db, kind="receipt", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"], "quantity": "2", "unit_cost": "40"
+        }])
+        issued = post_document(db, kind="issue", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"], "quantity": "-5"
+        }])
+        yesterday = datetime.now(timezone.utc) - timedelta(days=2)
+        for document in (receipt, issued):
+            movement = db.scalar(select(StockMovement).where(StockMovement.document_id == document.id))
+            movement.created_at = yesterday
+        db.commit()
+        replacement = post_document(db, kind="receipt", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"], "quantity": "5", "unit_cost": "100"
+        }])
+        replacement_move = db.scalar(select(StockMovement).where(StockMovement.document_id == replacement.id))
+        balance = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item["id"], StockBalance.location_id == location["id"]
+        ))
+        assert balance.quantity == Decimal("2")
+        assert balance.average_cost == Decimal("100")
+        assert replacement_move.quantity * replacement_move.unit_cost == Decimal("500")
+        assert replacement_move.book_value_delta == Decimal("320")
+        assert balance.quantity * balance.average_cost == Decimal("200")
+
+    response = client.get(
+        f"/api/v1/dashboard/valuation-history?days=7&location_id={location['id']}",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    history = response.json()
+    assert Decimal(history["points"][-3]["value"]) == Decimal("-120")
+    assert Decimal(history["points"][-1]["value"]) == Decimal("200")
+    assert Decimal(history["current_value"]) == Decimal("200")
+    assert history["legacy_movement_count"] == 0
+    assert history["historical_values_estimated"] is False
+    assert all(point["estimated"] is False for point in history["points"])
+
+
+def test_valuation_history_marks_legacy_deltas_as_estimates(client):
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+    from sqlalchemy import select
+    from app.db.session import SessionLocal
+    from app.models.inventory import Item, StockMovement
+    from app.models.user import User
+    from app.services.inventory import post_document
+    from tests.test_inventory import setup_master
+
+    headers = auth_headers(client)
+    item, location, _ = setup_master(client, headers)
+    with SessionLocal() as db:
+        db.get(Item, item["id"]).allow_negative_stock = True
+        owner = db.scalar(select(User).where(User.email == "owner@example.com"))
+        db.commit()
+        first = post_document(db, kind="receipt", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"], "quantity": "2", "unit_cost": "40"
+        }])
+        spent = post_document(db, kind="issue", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"], "quantity": "-5"
+        }])
+        two_days_ago = datetime.now(timezone.utc) - timedelta(days=2)
+        for doc in (first, spent):
+            move = db.scalar(select(StockMovement).where(StockMovement.document_id == doc.id))
+            move.created_at = two_days_ago
+        db.commit()
+        replenished = post_document(db, kind="receipt", actor_id=owner.id, entries=[{
+            "item_id": item["id"], "location_id": location["id"], "quantity": "5", "unit_cost": "100"
+        }])
+        move = db.scalar(select(StockMovement).where(StockMovement.document_id == replenished.id))
+        # A pre-migration row has no persisted valuation delta. Its history
+        # must never be displayed as if the reverse calculation were exact.
+        move.book_value_delta = None
+        db.commit()
+
+    response = client.get(
+        f"/api/v1/dashboard/valuation-history?days=7&location_id={location['id']}",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    history = response.json()
+    assert history["legacy_movement_count"] == 1
+    assert history["historical_values_estimated"] is True
+    assert history["points"][-3]["estimated"] is True
+    assert history["points"][-1]["estimated"] is False
+    assert Decimal(history["current_value"]) == Decimal("200")
+    assert Decimal(history["points"][-1]["value"]) == Decimal("200")

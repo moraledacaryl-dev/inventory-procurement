@@ -17,6 +17,7 @@ from app.models.procurement import GoodsReceipt, GoodsReceiptLine, PurchaseOrder
 from app.models.user import User
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
 from app.services.inventory import InventoryError, post_document
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["receiving-workspace"])
 
@@ -132,6 +133,14 @@ def load_po(db: Session, po_id: str, lock: bool = False):
     return db.scalar(stmt)
 
 
+def require_receiving_location(db: Session, user: User, po_id: str) -> None:
+    """Authorize the PO before disclosing replay results or altering its stock."""
+    po = db.get(PurchaseOrder, po_id)
+    if not po:
+        fail(404, "Purchase order not found")
+    require_scoped_locations(db, user, {po.delivery_location_id})
+
+
 def accepted_received_quantity(db: Session, purchase_order_line_id: str) -> Decimal:
     values = db.scalars(select(GoodsReceiptLine.accepted_quantity).where(GoodsReceiptLine.purchase_order_line_id == purchase_order_line_id)).all()
     return sum((Decimal(value) for value in values), Decimal("0"))
@@ -206,15 +215,24 @@ def return_payload(db: Session, row: PurchaseReturn) -> dict:
 
 
 @router.get("/receiving/workspace")
-def receiving_workspace(db: Session = Depends(get_db), _: User = Depends(require_permission("receiving.read"))):
-    pos = db.scalars(
+def receiving_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("receiving.read"))):
+    allowed = visible_location_ids(db, user)
+    po_stmt = (
         select(PurchaseOrder)
         .where(PurchaseOrder.status.in_(["approved", "partially_received", "received"]))
         .options(selectinload(PurchaseOrder.lines))
         .order_by(PurchaseOrder.created_at.desc())
-    ).unique().all()
-    receipts = db.scalars(select(GoodsReceipt).options(selectinload(GoodsReceipt.lines)).order_by(GoodsReceipt.received_at.desc())).unique().all()
-    returns = db.scalars(select(PurchaseReturn).order_by(PurchaseReturn.created_at.desc())).all()
+    )
+    receipt_stmt = select(GoodsReceipt).options(selectinload(GoodsReceipt.lines))
+    return_stmt = select(PurchaseReturn)
+    if allowed is not None:
+        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
+        permitted_pos = select(PurchaseOrder.id).where(PurchaseOrder.delivery_location_id.in_(allowed))
+        receipt_stmt = receipt_stmt.where(GoodsReceipt.purchase_order_id.in_(permitted_pos))
+        return_stmt = return_stmt.where(PurchaseReturn.purchase_order_id.in_(permitted_pos))
+    pos = db.scalars(po_stmt).unique().all()
+    receipts = db.scalars(receipt_stmt.order_by(GoodsReceipt.received_at.desc())).unique().all()
+    returns = db.scalars(return_stmt.order_by(PurchaseReturn.created_at.desc())).all()
     items = {row.id: row for row in db.scalars(select(Item)).all()}
     suppliers = {row.id: row for row in db.scalars(select(Supplier)).all()}
     locations = {row.id: row for row in db.scalars(select(Location)).all()}
@@ -274,6 +292,7 @@ def receiving_workspace(db: Session = Depends(get_db), _: User = Depends(require
 
 @router.post("/receiving/purchase-orders/{po_id}", status_code=201)
 def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("receiving.*"))):
+    require_receiving_location(db, user, po_id)
     fingerprint = _workflow_fingerprint("receipt", po_id, user.id, payload)
     replay = _verified_workflow_replay(db, key=payload.idempotency_key, fingerprint=fingerprint,
                                        po_id=po_id, kind="receipt")
@@ -342,6 +361,7 @@ def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Se
 
 @router.post("/receiving/purchase-orders/{po_id}/returns", status_code=201)
 def post_controlled_return(po_id: str, payload: ControlledReturnCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("receiving.*"))):
+    require_receiving_location(db, user, po_id)
     fingerprint = _workflow_fingerprint("return", po_id, user.id, payload)
     replay = _verified_workflow_replay(db, key=payload.idempotency_key, fingerprint=fingerprint,
                                        po_id=po_id, kind="return")

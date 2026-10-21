@@ -6,7 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate installer shell syntax
-        run: bash -n deploy/install-native.sh
+        run: |
+          bash -n deploy/install-native.sh
+          bash -n deploy/release-native.sh
       - name: Validate generated frontend file handling
         run: |
           grep -q 'chown hiddenoasis:hiddenoasis.*frontend/next-env.d.ts' deploy/install-native.sh
@@ -26,3 +28,15 @@ jobs:
           grep -q '/etc/hiddenoasis/inventory-backend.env' deploy/systemd/hiddenoasis-inventory-backend.service
           grep -q '127.0.0.1:8300' deploy/nginx/inventory-hiddenoasis.conf
           grep -q '127.0.0.1:3300' deploy/nginx/inventory-hiddenoasis.conf
+      - name: Require safe native database migration and exact release process
+        run: |
+          grep -q 'pg_dump -Fc' deploy/install-native.sh
+          grep -q 'pg_restore --list' deploy/install-native.sh
+          grep -q 'sha256sum' deploy/install-native.sh
+          grep -q 'pg_is_in_recovery()' deploy/install-native.sh
+          grep -q 'production_preflight.py' deploy/install-native.sh
+          grep -q 'INVENTORY DEPLOYMENT GATE: PASS' deploy/install-native.sh
+          grep -q 'git -C "$APP_DIR" fetch --no-tags origin main' deploy/release-native.sh
+          grep -q 'git -C "$APP_DIR" checkout --detach "$TARGET_SHA"' deploy/release-native.sh
+          grep -q 'Require all five main-branch quality gates' .github/workflows/deploy-inventory-native.yml
+          grep -q 'appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262' .github/workflows/deploy-inventory-native.yml

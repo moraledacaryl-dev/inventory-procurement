@@ -1,0 +1,122 @@
+name: Deploy Inventory Native
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: "Exact 40-character Inventory main commit SHA"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: inventory-native-production
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.release.outputs.release_sha }}
+    steps:
+      - name: Validate release SHA against main
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.release_sha || github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          main_sha="$(gh api "repos/$GH_REPO/commits/main" --jq .sha)"
+          [[ "$RELEASE_SHA" == "$main_sha" ]] || {
+            echo "Refusing stale Inventory release: requested=$RELEASE_SHA main=$main_sha" >&2
+            exit 1
+          }
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Require all five main-branch quality gates for exact commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
+        run: |
+          set -euo pipefail
+          required=('CI' 'Browser Acceptance' 'Resilience Assurance' 'Deployment Validation' 'Native Deployment Validation')
+          for attempt in $(seq 1 30); do
+            # The push workflows can complete in any order. Check exact release SHA
+            # and push event so a green PR run does not certify a different commit.
+            runs="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$RELEASE_SHA&event=push&per_page=100" --jq '.workflow_runs | map({name, status, conclusion})')"
+            pending=()
+            for name in "${required[@]}"; do
+              success_count="$(jq -r --arg name "$name" '[.[] | select(.name == $name and .status == "completed" and .conclusion == "success")] | length' <<<"$runs")"
+              if (( success_count < 1 )); then pending+=("$name"); fi
+            done
+            if (( ${#pending[@]} == 0 )); then
+              echo "All five Inventory main quality gates passed for $RELEASE_SHA"
+              exit 0
+            fi
+            echo "Awaiting: ${pending[*]} (attempt $attempt/30)"
+            sleep 15
+          done
+          echo "Cannot deploy: required push-triggered checks did not all pass." >&2
+          exit 1
+
+  deploy:
+    needs: certify
+    runs-on: ubuntu-latest
+    environment: inventory-production
+    steps:
+      - name: Require configured production SSH credentials
+        shell: bash
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          for value in "$SERVER_HOST" "$SERVER_USER" "$SERVER_SSH_KEY"; do
+            [[ -n "$value" ]] || {
+              echo "Inventory server SSH credentials are not configured for this repository/environment." >&2
+              exit 1
+            }
+          done
+
+      - name: Deploy certified Inventory SHA with mandatory backup
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          command_timeout: 25m
+          envs: RELEASE_SHA
+          script: |
+            set -euo pipefail
+            APP_DIR=/opt/inventory-procurement-online
+            test -d "$APP_DIR/.git"
+            git -C "$APP_DIR" fetch --no-tags origin main
+            script="/tmp/inventory-deploy-$RELEASE_SHA-$$.sh"
+            trap 'rm -f "$script"' EXIT
+            git -C "$APP_DIR" show "$RELEASE_SHA:deploy/release-native.sh" > "$script"
+            chmod 0700 "$script"
+            if [ "$(id -u)" -eq 0 ]; then
+              bash "$script" "$RELEASE_SHA"
+            else
+              sudo -n bash "$script" "$RELEASE_SHA"
+            fi
+            curl -fsS http://127.0.0.1:8300/api/v1/ready
+            curl -fsS http://127.0.0.1:3300/login >/dev/null
+            curl -fsS https://inventory.hiddenoasis.app/login >/dev/null
+        env:
+          RELEASE_SHA: ${{ needs.certify.outputs.release_sha }}

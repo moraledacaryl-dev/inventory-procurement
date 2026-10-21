@@ -29,24 +29,33 @@ def _unqualified_scope(scope: OperationalAccessScope) -> bool:
     return not (scope.workspace_id or scope.department_id or scope.record_class_id)
 
 
-def require_scoped_locations(db: Session, user: User, location_ids: set[str]) -> None:
-    if user.role == "owner" or not location_ids:
-        return
+def visible_location_ids(db: Session, user: User) -> set[str] | None:
+    """Return visible locations; None means unrestricted, empty set denies all.
+
+    An Owner or an account with no assigned scope retains existing role-based
+    visibility. Once configured, only active, unqualified scopes confer
+    location visibility; an inactive scope never falls back to all locations.
+    """
+    if user.role == "owner":
+        return None
     scopes = _scope_rows(db, user.id)
     if not scopes:
-        # Preserve pre-scope installations; no location policy was assigned.
+        return None
+    active = [row for row in scopes if row.is_active and _unqualified_scope(row)]
+    if any(row.location_id is None for row in active):
+        return None
+    return {row.location_id for row in active if row.location_id is not None}
+
+
+def require_scoped_locations(db: Session, user: User, location_ids: set[str]) -> None:
+    if not location_ids:
         return
-    for location_id in location_ids:
-        if not any(
-            scope.is_active
-            and _unqualified_scope(scope)
-            and (scope.location_id is None or scope.location_id == location_id)
-            for scope in scopes
-        ):
-            raise HTTPException(
-                status_code=403,
-                detail="Operational access scope does not authorize this location",
-            )
+    allowed = visible_location_ids(db, user)
+    if allowed is not None and not location_ids.issubset(allowed):
+        raise HTTPException(
+            status_code=403,
+            detail="Operational access scope does not authorize this location",
+        )
 
 
 def require_purchase_approval(

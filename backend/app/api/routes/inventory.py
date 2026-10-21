@@ -14,6 +14,7 @@ from app.models.user import User
 from app.schemas.inventory import *
 from app.services.controls import add_audit, next_document_number
 from app.services.inventory import InventoryError, assert_count_snapshot_current, count_requires_approval, issue_entries, post_document, receipt_entries, transfer_entries
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["inventory"])
 
@@ -96,8 +97,12 @@ def create_unit(p: UnitCreate, db: Session = Depends(get_db), _: User = Depends(
 
 
 @router.get("/locations", response_model=list[LocationOut])
-def list_locations(db: Session = Depends(get_db), _: User = Depends(require_permission("locations.read"))):
-    return db.scalars(select(Location).order_by(Location.code)).all()
+def list_locations(db: Session = Depends(get_db), user: User = Depends(require_permission("locations.read"))):
+    allowed = visible_location_ids(db, user)
+    query = select(Location)
+    if allowed is not None:
+        query = query.where(Location.id.in_(allowed))
+    return db.scalars(query.order_by(Location.code)).all()
 
 
 @router.post("/locations", response_model=LocationOut, status_code=201)
@@ -214,8 +219,13 @@ def update_item(item_id: str, p: ItemUpdate, db: Session = Depends(get_db), user
 
 
 @router.get("/stock/balances", response_model=list[BalanceOut])
-def balances(item_id: str | None = None, location_id: str | None = None, low_stock: bool = False, db: Session = Depends(get_db), _: User = Depends(require_permission("inventory.read"))):
+def balances(item_id: str | None = None, location_id: str | None = None, low_stock: bool = False, db: Session = Depends(get_db), user: User = Depends(require_permission("inventory.read"))):
+    allowed = visible_location_ids(db, user)
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
     stmt = select(StockBalance)
+    if allowed is not None:
+        stmt = stmt.where(StockBalance.location_id.in_(allowed))
     if item_id: stmt = stmt.where(StockBalance.item_id == item_id)
     if location_id: stmt = stmt.where(StockBalance.location_id == location_id)
     rows = db.scalars(stmt.order_by(StockBalance.location_id, StockBalance.item_id)).all()
@@ -225,8 +235,13 @@ def balances(item_id: str | None = None, location_id: str | None = None, low_sto
 
 
 @router.get("/stock/movements", response_model=list[MovementOut])
-def movements(item_id: str | None = None, location_id: str | None = None, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), _: User = Depends(require_permission("inventory.read"))):
+def movements(item_id: str | None = None, location_id: str | None = None, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), user: User = Depends(require_permission("inventory.read"))):
+    allowed = visible_location_ids(db, user)
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
     stmt = select(StockMovement)
+    if allowed is not None:
+        stmt = stmt.where(StockMovement.location_id.in_(allowed))
     if item_id: stmt = stmt.where(StockMovement.item_id == item_id)
     if location_id: stmt = stmt.where(StockMovement.location_id == location_id)
     return db.scalars(stmt.order_by(StockMovement.created_at.desc()).limit(limit)).all()
@@ -281,6 +296,7 @@ def finalize_count(db: Session, session: CountSession, user: User):
 @router.post("/counts", response_model=CountOut, status_code=201)
 def create_count(p: CountCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
     if not db.get(Location, p.location_id): raise HTTPException(422, "Location not found")
+    require_scoped_locations(db, user, {p.location_id})
     session = CountSession(count_number=next_document_number(db, "COUNT"), location_id=p.location_id, notes=p.notes, blind_count=p.blind_count, approval_threshold=p.approval_threshold, created_by_user_id=user.id); db.add(session); db.flush()
     items = db.scalars(select(Item).where(Item.is_active == True, Item.track_stock == True)).all(); balances = {b.item_id: b for b in db.scalars(select(StockBalance).where(StockBalance.location_id == p.location_id)).all()}
     for item in items: session.lines.append(CountLine(item_id=item.id, system_quantity=balances.get(item.id).quantity if balances.get(item.id) else 0))
@@ -288,14 +304,19 @@ def create_count(p: CountCreate, db: Session = Depends(get_db), user: User = Dep
 
 
 @router.get("/counts", response_model=list[CountOut])
-def list_counts(db: Session = Depends(get_db), _: User = Depends(require_permission("counts.create"))):
-    return db.scalars(select(CountSession).options(selectinload(CountSession.lines)).order_by(CountSession.created_at.desc())).unique().all()
+def list_counts(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
+    allowed = visible_location_ids(db, user)
+    stmt = select(CountSession).options(selectinload(CountSession.lines))
+    if allowed is not None:
+        stmt = stmt.where(CountSession.location_id.in_(allowed))
+    return db.scalars(stmt.order_by(CountSession.created_at.desc())).unique().all()
 
 
 @router.get("/counts/{count_id}/worksheet", response_model=CountWorksheet)
-def count_worksheet(count_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("counts.create"))):
+def count_worksheet(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
     session = db.scalar(select(CountSession).where(CountSession.id == count_id).options(selectinload(CountSession.lines)))
     if not session: raise HTTPException(404, "Count not found")
+    require_scoped_locations(db, user, {session.location_id})
     return CountWorksheet(id=session.id, count_number=session.count_number, location_id=session.location_id, blind_count=session.blind_count, lines=[CountWorksheetLine(item_id=x.item_id, counted_quantity=x.counted_quantity, note=x.note) for x in session.lines])
 
 
@@ -303,6 +324,7 @@ def count_worksheet(count_id: str, db: Session = Depends(get_db), _: User = Depe
 def post_count(count_id: str, p: CountSubmit, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.submit"))):
     session = db.scalar(select(CountSession).where(CountSession.id == count_id).options(selectinload(CountSession.lines)).with_for_update())
     if not session: raise HTTPException(404, "Count not found")
+    require_scoped_locations(db, user, {session.location_id})
     if session.status != "open": conflict("Count is not open")
     submitted = {x.item_id: x for x in p.lines}
     if len(submitted) != len(p.lines):
@@ -329,6 +351,7 @@ def post_count(count_id: str, p: CountSubmit, db: Session = Depends(get_db), use
 def approve_count(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.approve"))):
     session = db.scalar(select(CountSession).where(CountSession.id == count_id).options(selectinload(CountSession.lines)).with_for_update())
     if not session: raise HTTPException(404, "Count not found")
+    require_scoped_locations(db, user, {session.location_id})
     if session.status != "pending_approval": conflict("Count is not pending approval")
     if session.created_by_user_id == user.id: conflict("Count creator cannot approve their own variance")
     try:

@@ -12,6 +12,7 @@ from app.models.inventory import Item, Location, StockBalance, StockMovement
 from app.models.inventory_operations import ItemLocationSetting, LotBalance, TransferOrder
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["location-controls"])
 
@@ -42,8 +43,9 @@ def descendants(db: Session, location_id: str) -> set[str]:
 def location_detail(
     location_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("locations.read")),
+    user: User = Depends(require_permission("locations.read")),
 ):
+    require_scoped_locations(db, user, {location_id})
     location = db.get(Location, location_id)
     if not location:
         fail(404, "Location not found")
@@ -168,6 +170,7 @@ def update_location(
     location = db.get(Location, location_id)
     if not location:
         fail(404, "Location not found")
+    require_scoped_locations(db, user, {location_id})
     data = payload.model_dump(exclude_unset=True)
 
     if "parent_id" in data and data["parent_id"]:

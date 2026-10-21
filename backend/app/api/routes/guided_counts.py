@@ -13,6 +13,7 @@ from app.models.inventory import CountLine, CountSession, Item, Location, StockB
 from app.models.user import User
 from app.services.controls import add_audit, add_notification
 from app.services.inventory import InventoryError, assert_count_snapshot_current, count_requires_approval, post_document
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(prefix="/counts", tags=["guided-counts"])
 
@@ -143,16 +144,21 @@ def finalize_count(db: Session, session: CountSession, user: User):
 
 
 @router.get("/workspace")
-def count_workspace(db: Session = Depends(get_db), _: User = Depends(require_permission("counts.create"))):
-    sessions = db.scalars(select(CountSession).options(selectinload(CountSession.lines)).order_by(CountSession.created_at.desc())).unique().all()
+def count_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
+    allowed = visible_location_ids(db, user)
+    stmt = select(CountSession).options(selectinload(CountSession.lines))
+    if allowed is not None:
+        stmt = stmt.where(CountSession.location_id.in_(allowed))
+    sessions = db.scalars(stmt.order_by(CountSession.created_at.desc())).unique().all()
     return [serialize_session(db, session) for session in sessions]
 
 
 @router.get("/{count_id}/detail")
-def count_detail(count_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("counts.create"))):
+def count_detail(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
     session = session_row(db, count_id)
     if not session:
         fail(404, "Count session not found")
+    require_scoped_locations(db, user, {session.location_id})
     return serialize_session(db, session)
 
 
@@ -161,6 +167,7 @@ def save_count_entries(count_id: str, payload: CountEntriesUpdate, db: Session =
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")
+    require_scoped_locations(db, user, {session.location_id})
     if session.status != "open":
         fail(409, "Only open count sessions can be edited")
     by_item = {line.item_id: line for line in session.lines}
@@ -181,6 +188,7 @@ def submit_count(count_id: str, db: Session = Depends(get_db), user: User = Depe
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")
+    require_scoped_locations(db, user, {session.location_id})
     if session.status != "open":
         fail(409, "Only open count sessions can be submitted")
     missing = [line.item_id for line in session.lines if line.counted_quantity is None]
@@ -207,6 +215,7 @@ def request_recount(count_id: str, payload: RecountRequest, db: Session = Depend
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")
+    require_scoped_locations(db, user, {session.location_id})
     if session.status != "pending_approval":
         fail(409, "Only counts pending approval can be returned for recount")
     by_item = {line.item_id: line for line in session.lines}
@@ -229,6 +238,7 @@ def approve_guided_count(count_id: str, db: Session = Depends(get_db), user: Use
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")
+    require_scoped_locations(db, user, {session.location_id})
     if session.status != "pending_approval":
         fail(409, "Count is not pending approval")
     if session.created_by_user_id == user.id:
@@ -250,6 +260,7 @@ def cancel_guided_count(count_id: str, db: Session = Depends(get_db), user: User
     session = session_row(db, count_id, lock=True)
     if not session:
         fail(404, "Count session not found")
+    require_scoped_locations(db, user, {session.location_id})
     if session.status not in {"open", "pending_approval"}:
         fail(409, "Only open or pending counts can be cancelled")
     session.status = "cancelled"

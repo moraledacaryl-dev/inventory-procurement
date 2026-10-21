@@ -45,3 +45,47 @@ def test_deployment_and_acceptance_checks(client):
 def test_security_headers(client):
     response=client.get('/api/v1/health'); assert response.status_code==200
     assert response.headers['x-content-type-options']=='nosniff' and response.headers['x-frame-options']=='DENY' and response.headers['content-security-policy']
+
+
+def test_read_only_roles_cannot_create_acceptance_runs(client):
+    from sqlalchemy import func, select
+    from app.models.readiness import AcceptanceRun
+
+    with SessionLocal() as db:
+        db.add_all([
+            User(email='readiness-viewer@example.com', full_name='Viewer',
+                 password_hash=hash_password('password123'), role='viewer'),
+            User(email='readiness-procurement@example.com', full_name='Procurement Officer',
+                 password_hash=hash_password('password123'), role='procurement_officer'),
+            User(email='readiness-manager@example.com', full_name='Inventory Manager',
+                 password_hash=hash_password('password123'), role='inventory_manager'),
+        ])
+        db.commit()
+
+    for email in ('readiness-viewer@example.com', 'readiness-procurement@example.com'):
+        headers = auth(client, email)
+        # Reporting remains available, but creating UAT records is a write.
+        assert client.get('/api/v1/acceptance-runs', headers=headers).status_code == 200
+        assert client.get('/api/v1/deployment/status', headers=headers).status_code == 200
+        denied = client.post('/api/v1/acceptance-runs', headers=headers,
+                             json={'environment': 'production-candidate'})
+        assert denied.status_code == 403
+
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(AcceptanceRun)) == 0
+    # Inventory managers have actual inventory write authority.
+    allowed = client.post('/api/v1/acceptance-runs',
+                          headers=auth(client, 'readiness-manager@example.com'),
+                          json={'environment': 'test'})
+    assert allowed.status_code == 201
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(AcceptanceRun)) == 1
+
+
+def test_deployment_status_does_not_claim_unversioned_database_is_at_head(client):
+    response = client.get('/api/v1/deployment/status', headers=auth(client))
+    assert response.status_code == 200
+    state = response.json()
+    # Unit-test SQLite schema is created directly, without applying Alembic.
+    assert state['migrations'] == 'unversioned'
+    assert state['status'] == 'attention'

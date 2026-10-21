@@ -65,3 +65,85 @@ def test_valuation_history_includes_dated_receipts_and_issues(client):
         assert Decimal(history["points"][-3]["value"]) == received
         assert Decimal(history["points"][-1]["value"]) == current
         assert Decimal(history["current_value"]) == current
+
+
+def test_dashboard_book_valuation_matches_ledger_even_when_standard_cost_differs(client):
+    from decimal import Decimal
+    from app.db.session import SessionLocal
+    from app.models.inventory import Item
+    from tests.test_inventory import setup_master
+
+    headers = auth_headers(client)
+    item, location, other = setup_master(client, headers)
+    receipt = client.post("/api/v1/stock/receipts", headers=headers, json={
+        "location_id": location["id"],
+        "lines": [{"item_id": item["id"], "quantity": "5", "unit_cost": "0"}],
+    })
+    assert receipt.status_code == 201
+    with SessionLocal() as db:
+        # Historical balances remain book assets even if the item is no longer
+        # active. This state can exist after imports or legacy corrections.
+        row = db.get(Item, item["id"])
+        row.is_active = False
+        db.commit()
+
+    for query in ("", f"?location_id={location['id']}"):
+        dashboard = client.get(f"/api/v1/dashboard/summary{query}", headers=headers)
+        valuation = client.get(f"/api/v1/reports/valuation{query}", headers=headers)
+        history = client.get(
+            f"/api/v1/dashboard/valuation-history?days=7{'&'+query[1:] if query else ''}",
+            headers=headers,
+        )
+        assert dashboard.status_code == valuation.status_code == history.status_code == 200
+        book_value = sum(
+            (Decimal(row["inventory_value"]) for row in valuation.json()),
+            Decimal("0"),
+        )
+        assert book_value == 0
+        assert Decimal(dashboard.json()["metrics"]["inventory_value"]) == book_value
+        assert Decimal(history.json()["current_value"]) == book_value
+
+    # Non-stock service SKUs must not inflate the out-of-stock stock count.
+    category = client.post("/api/v1/categories", headers=headers, json={"name": "Services"}).json()
+    unit = client.post("/api/v1/units", headers=headers, json={
+        "code": "SV", "name": "Service",
+    }).json()
+    service = client.post("/api/v1/items", headers=headers, json={
+        "sku": "NONSTOCK-001", "name": "Service", "category_id": category["id"],
+        "base_unit_id": unit["id"], "track_stock": False, "minimum_stock": 9,
+    })
+    assert service.status_code == 201
+    summary = client.get("/api/v1/dashboard/summary", headers=headers).json()
+    assert summary["metrics"]["out_of_stock_items"] == 0
+    assert summary["stock_status"]["out_of_stock"] == 0
+
+
+def test_dashboard_location_minimum_override_and_inactive_override(client):
+    from decimal import Decimal
+    from tests.test_inventory import setup_master
+
+    headers = auth_headers(client)
+    item, location, other = setup_master(client, headers)
+    receipt = client.post("/api/v1/stock/receipts", headers=headers, json={
+        "location_id": location["id"],
+        "lines": [{"item_id": item["id"], "quantity": "5", "unit_cost": "40"}],
+    })
+    assert receipt.status_code == 201
+    setting = client.post("/api/v1/item-location-settings", headers=headers, json={
+        "item_id": item["id"], "location_id": location["id"],
+        "minimum_stock": "8", "reorder_quantity": "10",
+    })
+    assert setting.status_code == 201
+    local = client.get(
+        f"/api/v1/dashboard/summary?location_id={location['id']}",
+        headers=headers,
+    ).json()
+    assert local["stock_status"]["low_stock"] == 1
+    assert Decimal(local["low_stock"][0]["minimum_stock"]) == Decimal("8")
+    assert Decimal(local["low_stock"][0]["shortfall"]) == Decimal("3")
+    assert Decimal(local["metrics"]["inventory_value"]) == Decimal("200")
+
+    global_summary = client.get("/api/v1/dashboard/summary", headers=headers).json()
+    assert global_summary["stock_status"]["in_stock"] == 1
+    assert global_summary["metrics"]["low_stock_items"] == 0
+    assert Decimal(global_summary["metrics"]["inventory_value"]) == Decimal("200")

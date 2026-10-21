@@ -13,6 +13,7 @@ from app.models.inventory_operations import ItemBarcode, UnitConversion, ItemLoc
 from app.schemas.inventory_operations import *
 from app.services.controls import add_audit, add_notification, next_document_number
 from app.services.inventory import InventoryError, post_document
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router=APIRouter(tags=['inventory-operations'])
 def fail(code:int,message:str): raise HTTPException(code,message)
@@ -73,20 +74,27 @@ def convert_quantity(item_id:str,from_unit_id:str,to_unit_id:str,quantity:Decima
     return {'quantity':str(quantity),'converted_quantity':str(result),'from_unit_id':from_unit_id,'to_unit_id':to_unit_id}
 
 @router.get('/item-location-settings',response_model=list[LocationSettingOut])
-def list_settings(item_id:str|None=None,location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
+def list_settings(item_id:str|None=None,location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.read'))):
+    allowed=visible_location_ids(db,user)
     stmt=select(ItemLocationSetting).where(ItemLocationSetting.is_active==True)
+    if allowed is not None: stmt=stmt.where(ItemLocationSetting.location_id.in_(allowed))
     if item_id: stmt=stmt.where(ItemLocationSetting.item_id==item_id)
+    if location_id: require_scoped_locations(db,user,{location_id})
     if location_id: stmt=stmt.where(ItemLocationSetting.location_id==location_id)
     return db.scalars(stmt).all()
 @router.post('/item-location-settings',response_model=LocationSettingOut,status_code=201)
 def create_setting(p:LocationSettingCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     if not db.get(Item,p.item_id) or not db.get(Location,p.location_id): fail(422,'Item or location not found')
+    require_scoped_locations(db,user,{p.location_id})
     if p.preferred_supplier_id and not db.get(Supplier,p.preferred_supplier_id): fail(422,'Supplier not found')
     row=ItemLocationSetting(**p.model_dump()); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='inventory.location_setting_created',entity_type='item_location_setting',entity_id=row.id); db.commit(); db.refresh(row); return row
 
 @router.get('/lots',response_model=list[LotOut])
-def list_lots(item_id:str|None=None,status:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
+def list_lots(item_id:str|None=None,status:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.read'))):
+    allowed=visible_location_ids(db,user)
     stmt=select(InventoryLot).order_by(InventoryLot.expiry_date,InventoryLot.lot_number)
+    if allowed is not None:
+        stmt=stmt.where(InventoryLot.id.in_(select(LotBalance.lot_id).where(LotBalance.location_id.in_(allowed))))
     if item_id: stmt=stmt.where(InventoryLot.item_id==item_id)
     if status: stmt=stmt.where(InventoryLot.status==status)
     return db.scalars(stmt).all()
@@ -97,9 +105,12 @@ def create_lot(p:LotCreate,db:Session=Depends(get_db),user:User=Depends(require_
     if p.manufactured_date and p.expiry_date and p.expiry_date<p.manufactured_date: fail(422,'Expiry date cannot precede manufacture date')
     row=InventoryLot(**p.model_dump()); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='inventory.lot_created',entity_type='inventory_lot',entity_id=row.id,details={'lot_number':row.lot_number}); db.commit(); db.refresh(row); return row
 @router.get('/lot-balances',response_model=list[LotBalanceOut])
-def lot_balances(item_id:str|None=None,location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
+def lot_balances(item_id:str|None=None,location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.read'))):
+    allowed=visible_location_ids(db,user)
     stmt=select(LotBalance,InventoryLot).join(InventoryLot,InventoryLot.id==LotBalance.lot_id).where(LotBalance.quantity!=0)
+    if allowed is not None: stmt=stmt.where(LotBalance.location_id.in_(allowed))
     if item_id: stmt=stmt.where(InventoryLot.item_id==item_id)
+    if location_id: require_scoped_locations(db,user,{location_id})
     if location_id: stmt=stmt.where(LotBalance.location_id==location_id)
     return [LotBalanceOut(lot_id=lot.id,item_id=lot.item_id,lot_number=lot.lot_number,location_id=balance.location_id,quantity=Decimal(balance.quantity),expiry_date=lot.expiry_date,status=lot.status) for balance,lot in db.execute(stmt).all()]
 @router.post('/lot-transactions',response_model=dict,status_code=201)
@@ -107,6 +118,7 @@ def lot_transaction(p:LotTransactionCreate,db:Session=Depends(get_db),user:User=
     lot=db.get(InventoryLot,p.lot_id)
     if not lot or lot.status not in {'active','quarantine'}: fail(409,'Lot is not available for transactions')
     if not db.get(Location,p.location_id): fail(422,'Location not found')
+    require_scoped_locations(db,user,{p.location_id})
     sign=Decimal('1') if p.transaction_type=='receipt' else Decimal('-1')
     balance=lot_balance(db,p.lot_id,p.location_id,lock=True)
     new_qty=Decimal(balance.quantity)+sign*p.quantity
@@ -122,9 +134,12 @@ def lot_transaction(p:LotTransactionCreate,db:Session=Depends(get_db),user:User=
         db.rollback(); fail(409,str(exc))
 
 @router.get('/availability',response_model=list[AvailabilityOut])
-def availability(item_id:str|None=None,location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
+def availability(item_id:str|None=None,location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.read'))):
+    allowed=visible_location_ids(db,user)
     stmt=select(StockBalance)
+    if allowed is not None: stmt=stmt.where(StockBalance.location_id.in_(allowed))
     if item_id: stmt=stmt.where(StockBalance.item_id==item_id)
+    if location_id: require_scoped_locations(db,user,{location_id})
     if location_id: stmt=stmt.where(StockBalance.location_id==location_id)
     rows=[]
     for balance in db.scalars(stmt).all():
@@ -134,6 +149,7 @@ def availability(item_id:str|None=None,location_id:str|None=None,db:Session=Depe
 @router.post('/reservations',response_model=ReservationOut,status_code=201)
 def create_reservation(p:ReservationCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     if not db.get(Item,p.item_id) or not db.get(Location,p.location_id): fail(422,'Item or location not found')
+    require_scoped_locations(db,user,{p.location_id})
     physical=get_balance(db,p.item_id,p.location_id,lock=True)
     available=physical-active_reserved(db,p.item_id,p.location_id)
     if p.quantity>available: fail(409,'Insufficient available stock')
@@ -142,18 +158,22 @@ def create_reservation(p:ReservationCreate,db:Session=Depends(get_db),user:User=
 def release_reservation(reservation_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     row=db.get(StockReservation,reservation_id)
     if not row: fail(404,'Reservation not found')
+    require_scoped_locations(db,user,{row.location_id})
     if row.status!='active': fail(409,'Reservation is not active')
     row.status='released'; add_audit(db,actor_user_id=user.id,action='inventory.reservation_released',entity_type='stock_reservation',entity_id=row.id); db.commit(); db.refresh(row); return row
 
 @router.get('/transfer-orders',response_model=list[TransferOrderOut])
-def list_transfer_orders(status:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
+def list_transfer_orders(status:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.read'))):
+    allowed=visible_location_ids(db,user)
     stmt=select(TransferOrder).options(selectinload(TransferOrder.lines)).order_by(TransferOrder.created_at.desc())
+    if allowed is not None: stmt=stmt.where(TransferOrder.source_location_id.in_(allowed),TransferOrder.destination_location_id.in_(allowed))
     if status: stmt=stmt.where(TransferOrder.status==status)
     return db.scalars(stmt).unique().all()
 @router.post('/transfer-orders',response_model=TransferOrderOut,status_code=201)
 def create_transfer_order(p:TransferOrderCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     if p.source_location_id==p.destination_location_id: fail(422,'Locations must differ')
     if not db.get(Location,p.source_location_id) or not db.get(Location,p.destination_location_id): fail(422,'Location not found')
+    require_scoped_locations(db,user,{p.source_location_id,p.destination_location_id})
     ids=[x.item_id for x in p.lines]
     if len(ids)!=len(set(ids)): fail(422,'Duplicate item lines are not allowed')
     for line in p.lines:
@@ -165,6 +185,7 @@ def create_transfer_order(p:TransferOrderCreate,db:Session=Depends(get_db),user:
 def dispatch_transfer(transfer_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     row=db.scalar(select(TransferOrder).where(TransferOrder.id==transfer_id).options(selectinload(TransferOrder.lines)).with_for_update())
     if not row: fail(404,'Transfer order not found')
+    require_scoped_locations(db,user,{row.source_location_id,row.destination_location_id})
     if row.status!='draft': fail(409,'Only draft transfers can be dispatched')
     for line in sorted(row.lines,key=lambda x:x.item_id):
         physical=get_balance(db,line.item_id,row.source_location_id,lock=True)
@@ -174,6 +195,7 @@ def dispatch_transfer(transfer_id:str,db:Session=Depends(get_db),user:User=Depen
 def receive_transfer(transfer_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     row=db.scalar(select(TransferOrder).where(TransferOrder.id==transfer_id).options(selectinload(TransferOrder.lines)).with_for_update())
     if not row: fail(404,'Transfer order not found')
+    require_scoped_locations(db,user,{row.source_location_id,row.destination_location_id})
     if row.status!='dispatched': fail(409,'Only dispatched transfers can be received')
     entries=[]
     for line in row.lines:
@@ -185,23 +207,33 @@ def receive_transfer(transfer_id:str,db:Session=Depends(get_db),user:User=Depend
         db.rollback(); fail(409,str(exc))
 
 @router.get('/cycle-count-schedules',response_model=list[CycleScheduleOut])
-def schedules(due_only:bool=False,db:Session=Depends(get_db),_:User=Depends(require_permission('counts.create'))):
+def schedules(due_only:bool=False,db:Session=Depends(get_db),user:User=Depends(require_permission('counts.create'))):
+    allowed=visible_location_ids(db,user)
     stmt=select(CycleCountSchedule).where(CycleCountSchedule.is_active==True).order_by(CycleCountSchedule.next_count_date)
+    if allowed is not None: stmt=stmt.where(CycleCountSchedule.location_id.in_(allowed))
     if due_only: stmt=stmt.where(CycleCountSchedule.next_count_date<=date.today())
     return db.scalars(stmt).all()
 @router.post('/cycle-count-schedules',response_model=CycleScheduleOut,status_code=201)
 def create_schedule(p:CycleScheduleCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('counts.create'))):
     if not db.get(Item,p.item_id) or not db.get(Location,p.location_id): fail(422,'Item or location not found')
+    require_scoped_locations(db,user,{p.location_id})
     row=CycleCountSchedule(**p.model_dump()); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='count.schedule_created',entity_type='cycle_count_schedule',entity_id=row.id); db.commit(); db.refresh(row); return row
 
 @router.get('/reports/valuation',response_model=list[ValuationRow])
-def valuation(location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def valuation(location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    allowed=visible_location_ids(db,user)
     stmt=select(StockBalance)
+    if allowed is not None: stmt=stmt.where(StockBalance.location_id.in_(allowed))
+    if location_id: require_scoped_locations(db,user,{location_id})
     if location_id: stmt=stmt.where(StockBalance.location_id==location_id)
     return [ValuationRow(item_id=x.item_id,location_id=x.location_id,quantity=Decimal(x.quantity),average_cost=Decimal(x.average_cost),inventory_value=Decimal(x.quantity)*Decimal(x.average_cost)) for x in db.scalars(stmt).all()]
 @router.get('/reports/aging',response_model=list[AgingRow])
-def aging(location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
-    balances=db.scalars(select(StockBalance).where(StockBalance.quantity!=0)).all(); result=[]; current=now()
+def aging(location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    allowed=visible_location_ids(db,user)
+    stmt=select(StockBalance).where(StockBalance.quantity!=0)
+    if allowed is not None: stmt=stmt.where(StockBalance.location_id.in_(allowed))
+    if location_id: require_scoped_locations(db,user,{location_id})
+    balances=db.scalars(stmt).all(); result=[]; current=now()
     for balance in balances:
         if location_id and balance.location_id!=location_id: continue
         last=db.scalar(select(func.max(StockMovement.created_at)).where(StockMovement.item_id==balance.item_id,StockMovement.location_id==balance.location_id))
@@ -210,9 +242,12 @@ def aging(location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(re
         result.append(AgingRow(item_id=balance.item_id,location_id=balance.location_id,last_movement_at=last,days_since_movement=days,quantity=Decimal(balance.quantity),classification=classification))
     return result
 @router.get('/reports/expiry',response_model=list[ExpiryRow])
-def expiry_report(days:int=Query(30,ge=0,le=3650),location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def expiry_report(days:int=Query(30,ge=0,le=3650),location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
     today=date.today(); cutoff=today+timedelta(days=days)
+    allowed=visible_location_ids(db,user)
     stmt=select(LotBalance,InventoryLot).join(InventoryLot,InventoryLot.id==LotBalance.lot_id).where(LotBalance.quantity>0,InventoryLot.expiry_date!=None,InventoryLot.expiry_date<=cutoff)
+    if allowed is not None: stmt=stmt.where(LotBalance.location_id.in_(allowed))
+    if location_id: require_scoped_locations(db,user,{location_id})
     if location_id: stmt=stmt.where(LotBalance.location_id==location_id)
     rows=[]
     for balance,lot in db.execute(stmt).all():
@@ -220,6 +255,9 @@ def expiry_report(days:int=Query(30,ge=0,le=3650),location_id:str|None=None,db:S
         rows.append(ExpiryRow(lot_id=lot.id,item_id=lot.item_id,lot_number=lot.lot_number,location_id=balance.location_id,quantity=Decimal(balance.quantity),expiry_date=lot.expiry_date,days_to_expiry=remaining,status=status))
     return rows
 @router.get('/reports/waste',response_model=list[WasteSummaryRow])
-def waste_report(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
-    rows=db.execute(select(StockMovement.item_id,func.sum(-StockMovement.quantity),func.sum(-StockMovement.quantity*StockMovement.unit_cost)).where(StockMovement.reason.in_(['waste','damage'])).group_by(StockMovement.item_id)).all()
+def waste_report(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    allowed=visible_location_ids(db,user)
+    stmt=select(StockMovement.item_id,func.sum(-StockMovement.quantity),func.sum(-StockMovement.quantity*StockMovement.unit_cost)).where(StockMovement.reason.in_(['waste','damage']))
+    if allowed is not None: stmt=stmt.where(StockMovement.location_id.in_(allowed))
+    rows=db.execute(stmt.group_by(StockMovement.item_id)).all()
     return [WasteSummaryRow(item_id=item_id,quantity=Decimal(qty or 0),value=Decimal(value or 0)) for item_id,qty,value in rows]

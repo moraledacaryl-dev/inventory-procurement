@@ -237,6 +237,8 @@ def aging(location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends
     for balance in balances:
         if location_id and balance.location_id!=location_id: continue
         last=db.scalar(select(func.max(StockMovement.created_at)).where(StockMovement.item_id==balance.item_id,StockMovement.location_id==balance.location_id))
+        # SQLite can deserialize timezone-aware database columns as naive UTC.
+        if last and last.tzinfo is None: last=last.replace(tzinfo=timezone.utc)
         days=(current-last).days if last else None
         classification='active' if days is not None and days<=30 else 'slow' if days is not None and days<=90 else 'non_moving'
         result.append(AgingRow(item_id=balance.item_id,location_id=balance.location_id,last_movement_at=last,days_since_movement=days,quantity=Decimal(balance.quantity),classification=classification))

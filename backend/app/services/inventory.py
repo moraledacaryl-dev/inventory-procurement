@@ -4,10 +4,26 @@ import json
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from app.core.roles import has_permission
 from app.models.inventory import CountSession, Item, Location, StockBalance, StockDocument, StockMovement
 from app.services.controls import add_audit, enqueue_event, next_document_number
 
 class InventoryError(ValueError): pass
+
+
+def count_requires_approval(*, role: str, max_variance: Decimal, approval_threshold: Decimal) -> bool:
+    """A count-only operator cannot post an adjustment by choosing a permissive threshold.
+
+    Variance-free counts do not mutate stock. Roles allowed to approve counts retain
+    the configured threshold behavior; any nonzero Counter variance requires review.
+    """
+    variance = Decimal(max_variance)
+    threshold = Decimal(approval_threshold)
+    return (
+        (variance > 0 and not has_permission(role, "counts.approve"))
+        or (threshold > 0 and variance > threshold)
+    )
+
 
 def _number(value) -> str:
     number = Decimal(str(value if value is not None else 0))

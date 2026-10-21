@@ -13,7 +13,7 @@ from app.models.inventory import Category, CountLine, CountSession, Item, Locati
 from app.models.user import User
 from app.schemas.inventory import *
 from app.services.controls import add_audit, next_document_number
-from app.services.inventory import InventoryError, assert_count_snapshot_current, issue_entries, post_document, receipt_entries, transfer_entries
+from app.services.inventory import InventoryError, assert_count_snapshot_current, count_requires_approval, issue_entries, post_document, receipt_entries, transfer_entries
 
 router = APIRouter(tags=["inventory"])
 
@@ -317,7 +317,7 @@ def post_count(count_id: str, p: CountSubmit, db: Session = Depends(get_db), use
         max_variance = max(max_variance, abs(Decimal(entry.counted_quantity) - Decimal(line.system_quantity)))
     try:
         assert_count_snapshot_current(db, session)
-        if Decimal(session.approval_threshold) > 0 and max_variance > Decimal(session.approval_threshold):
+        if count_requires_approval(role=user.role, max_variance=max_variance, approval_threshold=session.approval_threshold):
             session.status = "pending_approval"; add_audit(db, actor_user_id=user.id, action="count.approval_requested", entity_type="count_session", entity_id=session.id, details={"max_variance": str(max_variance)})
         else: finalize_count(db, session, user)
         db.commit(); db.refresh(session); return session
@@ -326,7 +326,7 @@ def post_count(count_id: str, p: CountSubmit, db: Session = Depends(get_db), use
 
 
 @router.post("/counts/{count_id}/approve", response_model=CountOut)
-def approve_count(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.submit"))):
+def approve_count(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.approve"))):
     session = db.scalar(select(CountSession).where(CountSession.id == count_id).options(selectinload(CountSession.lines)).with_for_update())
     if not session: raise HTTPException(404, "Count not found")
     if session.status != "pending_approval": conflict("Count is not pending approval")

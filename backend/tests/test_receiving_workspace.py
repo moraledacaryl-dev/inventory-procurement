@@ -153,3 +153,80 @@ def test_controlled_return_is_limited_to_accepted_quantity(client):
         json={"reason": "return accepted unit", "lines": [{"purchase_order_line_id": line_id, "quantity": 1}]},
     )
     assert valid.status_code == 201
+
+
+def test_receiving_idempotency_rejects_changed_quantities_and_lot_details(client):
+    headers = auth_headers(client)
+    location, item, _supplier, po = seed_receiving(client, headers)
+    endpoint = f"/api/v1/receiving/purchase-orders/{po['id']}"
+    line_id = po['lines'][0]['id']
+    original = {
+        "delivery_reference": "DR-REPLAY",
+        "idempotency_key": "receipt-payload-guard",
+        "notes": "first receipt",
+        "lines": [{
+            "purchase_order_line_id": line_id, "received_quantity": 5,
+            "accepted_quantity": 4, "rejected_quantity": 1,
+            "discrepancy_reason": "damaged",
+            "lot_number": "LOT-ORIGINAL", "expiry_date": "2027-10-01",
+        }],
+    }
+    first = client.post(endpoint, headers=headers, json=original)
+    assert first.status_code == 201
+    repeat = client.post(endpoint, headers=headers, json={
+        **original,
+        "lines": [{**original['lines'][0], "received_quantity": "5.000",
+                   "accepted_quantity": "4.0", "rejected_quantity": "1.000"}],
+    })
+    assert repeat.status_code == 201
+    assert repeat.json()['id'] == first.json()['id']
+    for altered in (
+        {**original, 'lines': [{**original['lines'][0], 'accepted_quantity': 3, 'rejected_quantity': 2}]},
+        {**original, 'lines': [{**original['lines'][0], 'lot_number': 'LOT-TAMPERED'}]},
+        {**original, 'delivery_reference': 'DR-REPLAY-ALTERED'},
+    ):
+        response = client.post(endpoint, headers=headers, json=altered)
+        assert response.status_code == 409
+        assert 'Idempotency key' in response.json()['detail']
+    workspace = client.get('/api/v1/receiving/workspace', headers=headers).json()
+    assert workspace['summary']['receipts'] == 1
+    balances = client.get(
+        f"/api/v1/stock/balances?item_id={item['id']}&location_id={location['id']}",
+        headers=headers
+    ).json()
+    assert Decimal(balances[0]['quantity']) == Decimal('4')
+
+
+def test_supplier_return_idempotency_rejects_changed_reason_or_quantity(client):
+    headers = auth_headers(client)
+    _location, _item, _supplier, po = seed_receiving(client, headers)
+    line_id = po['lines'][0]['id']
+    receipt = client.post(f"/api/v1/receiving/purchase-orders/{po['id']}", headers=headers, json={
+        "delivery_reference": "DR-RETURN-REPLAY",
+        "lines": [{"purchase_order_line_id": line_id, "received_quantity": 5,
+                   "accepted_quantity": 5, "rejected_quantity": 0}],
+    })
+    assert receipt.status_code == 201
+    endpoint = f"/api/v1/receiving/purchase-orders/{po['id']}/returns"
+    original = {
+        "reason": "expired product", "supplier_reference": "RMA-ORIGINAL",
+        "idempotency_key": "return-payload-guard",
+        "lines": [{"purchase_order_line_id": line_id, "quantity": 2}],
+    }
+    first = client.post(endpoint, headers=headers, json=original)
+    assert first.status_code == 201
+    same = client.post(endpoint, headers=headers, json={
+        **original, "lines": [{"purchase_order_line_id": line_id, "quantity": "2.000"}],
+    })
+    assert same.status_code == 201
+    assert same.json()['id'] == first.json()['id']
+    for altered in (
+        {**original, "reason": "damaged product"},
+        {**original, "lines": [{"purchase_order_line_id": line_id, "quantity": 3}]},
+    ):
+        response = client.post(endpoint, headers=headers, json=altered)
+        assert response.status_code == 409
+        assert 'Idempotency key' in response.json()['detail']
+    workspace = client.get('/api/v1/receiving/workspace', headers=headers).json()
+    assert workspace['summary']['returns'] == 1
+    assert Decimal(workspace['purchase_orders'][0]['lines'][0]['returned_quantity']) == Decimal('2')

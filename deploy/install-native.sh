@@ -55,7 +55,7 @@ if [[ "$(sudo -u postgres psql -d postgres -Atqc 'SELECT pg_is_in_recovery()')" 
   exit 1
 fi
 backup_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-backup_file="$BACKUP_ROOT/releases/inventory-predeploy-${backup_stamp}-$.dump"
+backup_file="$BACKUP_ROOT/releases/inventory-predeploy-${backup_stamp}-${BASHPID}.dump"
 umask 077
 sudo -u postgres pg_dump -Fc -d "$BACKUP_DB" > "$backup_file.tmp"
 test -s "$backup_file.tmp" || { echo "Inventory backup is empty." >&2; exit 1; }

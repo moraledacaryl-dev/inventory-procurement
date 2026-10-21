@@ -617,3 +617,5 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { border-radius: 
 }
 .page-content .inline-form label:has(input[type=checkbox]) { display: flex; align-items: center; gap: 9px; min-height: 42px; }
 
+
+.exception-card__footer > span[aria-hidden="true"] { color: #2459c4; }

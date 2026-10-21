@@ -31,7 +31,7 @@ test("staff meal draft idempotency survives identical retries and rotates after 
 test("login and core operational pages are reachable", async ({ page }) => {
   await signIn(page);
   for (const [path, heading] of [
-    ["/items", "Items"],
+    ["/items", "Inventory"],
     ["/suppliers", "Suppliers"],
     ["/purchasing", "Purchasing"],
     ["/receiving", "Receiving"],
@@ -51,6 +51,7 @@ test("staff meals is available from the F&B sidebar and uses the compact operati
   if (isMobile) {
     await page.getByRole("button", { name: "Open navigation" }).click();
   }
+  await page.locator(".nav-section > summary").filter({ hasText: /^F&B$/ }).click();
   const link = page.getByRole("link", { name: "Staff Meals", exact: true });
   await expect(link).toBeVisible();
   await link.click();
@@ -82,6 +83,7 @@ test("sidebar scroll position survives route changes", async ({ page, isMobile }
   test.skip(isMobile, "desktop sidebar owns the persistent scroll container");
   await signIn(page);
   const sidebar = page.locator("aside.sidebar");
+  await page.locator(".nav-section > summary").filter({ hasText: /^Admin$/ }).click();
   await sidebar.evaluate(element => { element.scrollTop = element.scrollHeight; });
   const before = await sidebar.evaluate(element => element.scrollTop);
   expect(before).toBeGreaterThan(0);

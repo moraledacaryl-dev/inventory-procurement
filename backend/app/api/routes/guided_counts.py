@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.models.inventory import CountLine, CountSession, Item, Location, StockBalance
 from app.models.user import User
 from app.services.controls import add_audit, add_notification
-from app.services.inventory import InventoryError, assert_count_snapshot_current, post_document
+from app.services.inventory import InventoryError, assert_count_snapshot_current, count_requires_approval, post_document
 
 router = APIRouter(prefix="/counts", tags=["guided-counts"])
 
@@ -189,7 +189,7 @@ def submit_count(count_id: str, db: Session = Depends(get_db), user: User = Depe
     max_variance = max((abs(Decimal(line.counted_quantity) - Decimal(line.system_quantity)) for line in session.lines), default=Decimal("0"))
     try:
         assert_count_snapshot_current(db, session)
-        if Decimal(session.approval_threshold) > 0 and max_variance > Decimal(session.approval_threshold):
+        if count_requires_approval(role=user.role, max_variance=max_variance, approval_threshold=session.approval_threshold):
             session.status = "pending_approval"
             add_audit(db, actor_user_id=user.id, action="count.approval_requested", entity_type="count_session", entity_id=session.id, details={"max_variance": str(max_variance)})
             add_notification(db, title="Count variance requires approval", message=f"{session.count_number} has a maximum quantity variance of {max_variance}.", severity="warning")

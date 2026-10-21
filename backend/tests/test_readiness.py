@@ -82,10 +82,35 @@ def test_read_only_roles_cannot_create_acceptance_runs(client):
         assert db.scalar(select(func.count()).select_from(AcceptanceRun)) == 1
 
 
-def test_deployment_status_does_not_claim_unversioned_database_is_at_head(client):
+def test_deployment_status_reports_database_migration_state(client):
+    from sqlalchemy import inspect
     response = client.get('/api/v1/deployment/status', headers=auth(client))
     assert response.status_code == 200
     state = response.json()
-    # Unit-test SQLite schema is created directly, without applying Alembic.
-    assert state['migrations'] == 'unversioned'
-    assert state['status'] == 'attention'
+    with SessionLocal() as db:
+        installed_version_table = inspect(db.get_bind()).has_table('alembic_version')
+    # SQLite creates schema directly; PostgreSQL CI migrates it to head.
+    if installed_version_table:
+        assert state['migrations'] == 'head'
+    else:
+        assert state['migrations'] == 'unversioned'
+        assert state['status'] == 'attention'
+
+
+def test_migration_probe_fails_closed_for_divergent_revision(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    import app.api.routes.readiness as readiness
+
+    db = MagicMock()
+    monkeypatch.setattr(readiness, 'inspect',
+                        lambda bind: SimpleNamespace(has_table=lambda name: True))
+    monkeypatch.setattr(readiness.ScriptDirectory, 'from_config',
+                        lambda config: SimpleNamespace(get_heads=lambda: ['0023_stock_book_value_delta']))
+    db.scalars.return_value.all.return_value = ['0022_stock_request_fingerprint']
+    assert readiness.migration_state(db) == 'out_of_sync'
+    db.scalars.return_value.all.return_value = ['0023_stock_book_value_delta']
+    assert readiness.migration_state(db) == 'head'
+    monkeypatch.setattr(readiness, 'inspect',
+                        lambda bind: SimpleNamespace(has_table=lambda name: False))
+    assert readiness.migration_state(db) == 'unversioned'

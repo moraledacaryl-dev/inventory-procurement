@@ -6,6 +6,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.core.roles import has_permission
 from app.models.inventory import CountSession, Item, Location, StockBalance, StockDocument, StockMovement
+from app.models.user import User
+from app.services.operational_authorization import require_scoped_locations
 from app.services.controls import add_audit, enqueue_event, next_document_number
 
 class InventoryError(ValueError): pass
@@ -148,6 +150,14 @@ def assert_count_snapshot_current(db: Session, session: CountSession) -> None:
 
 def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict], reference: str | None = None, notes: str | None = None, idempotency_key: str | None = None, commit: bool = True, allow_empty: bool = False) -> StockDocument:
     if not entries and not allow_empty: raise InventoryError("At least one stock line is required")
+    actor = db.get(User, actor_id)
+    if actor:
+        require_scoped_locations(db, actor, {
+            str(location_id)
+            for entry in entries
+            for location_id in (entry.get("location_id"), entry.get("cost_from_location_id"))
+            if location_id
+        })
     fingerprint = _request_fingerprint(
         kind=kind, actor_id=actor_id, entries=entries,
         reference=reference, notes=notes, allow_empty=allow_empty,

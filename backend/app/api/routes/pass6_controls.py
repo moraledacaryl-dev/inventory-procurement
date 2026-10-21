@@ -21,7 +21,7 @@ def fail(code:int,message:str): raise HTTPException(code,message)
 def dec(value): return Decimal(str(value or 0))
 
 class ScopeIn(BaseModel):
-    user_id:str; workspace_id:str|None=None; department_id:str|None=None; location_id:str|None=None; record_class_id:str|None=None; approval_limit:Decimal=Field(default=0,ge=0); is_active:bool=True
+    user_id:str; workspace_id:str|None=None; department_id:str|None=None; location_id:str|None=None; record_class_id:str|None=None; approval_limit:Decimal=Field(default=Decimal('0'),ge=0); is_active:bool=True
 class SavedViewIn(BaseModel):
     module_key:str=Field(min_length=1,max_length=80); name:str=Field(min_length=1,max_length=120); filters:dict={}; columns:list=[]; is_default:bool=False
 

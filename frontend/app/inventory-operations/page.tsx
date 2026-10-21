@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AppShell } from "../../components/AppShell";
-import { Can } from "../../components/SessionContext";
+import { Can, useSession } from "../../components/SessionContext";
 import { DataTable } from "../../components/DataTable";
 import { ErrorState, LoadingState } from "../../components/AsyncState";
 import { FeedbackBanner } from "../../components/FeedbackBanner";
@@ -22,6 +22,11 @@ type Valuation={item_id:string;location_id:string;quantity:string;average_cost:s
 type Feedback={tone:"success"|"error"|"warning"|"info";title:string;message?:string}|null;
 
 export default function Page(){
+  return <AppShell title="Inventory Operations" description="Transfers, adjustments, waste, and expiry."><InventoryOperationsContent/></AppShell>;
+}
+
+function InventoryOperationsContent(){
+  const {can,loading:sessionLoading}=useSession();
   const[items,setItems]=useState<Item[]>([]);
   const[locations,setLocations]=useState<Location[]>([]);
   const[suppliers,setSuppliers]=useState<Supplier[]>([]);
@@ -33,17 +38,38 @@ export default function Page(){
   const[error,setError]=useState("");
   const[busy,setBusy]=useState(false);
   const[feedback,setFeedback]=useState<Feedback>(null);
+  const[optionalFailures,setOptionalFailures]=useState<string[]>([]);
+  const[expiryAvailable,setExpiryAvailable]=useState(false);
+  const[valuationAvailable,setValuationAvailable]=useState(false);
 
   const load=useCallback(async()=>{
-    setLoading(true);setError("");
+    if(sessionLoading)return;
+    setLoading(true);setError("");setOptionalFailures([]);
     try{
-      const[i,l,s,lot,a,e,v]=await Promise.all([
-        api<Item[]>("/items"),api<Location[]>("/locations"),api<Supplier[]>("/suppliers"),api<Lot[]>("/lots"),api<Availability[]>("/availability"),api<Expiry[]>("/reports/expiry?days=60"),api<Valuation[]>("/reports/valuation")
+      // Core stock data must load; role-restricted supplements are independent.
+      const[i,l,lot,a]=await Promise.all([
+        api<Item[]>("/items"),api<Location[]>("/locations"),
+        api<Lot[]>("/lots"),api<Availability[]>("/availability"),
       ]);
-      setItems(i);setLocations(l.filter(row=>row.is_active));setSuppliers(s);setLots(lot);setAvailability(a);setExpiry(e);setValuation(v);
+      setItems(i);setLocations(l.filter(row=>row.is_active));setLots(lot);setAvailability(a);
+      const[s,e,v]=await Promise.allSettled([
+        can("suppliers.read")?api<Supplier[]>("/suppliers"):Promise.resolve([] as Supplier[]),
+        can("reports.read")?api<Expiry[]>("/reports/expiry?days=60"):Promise.resolve([] as Expiry[]),
+        can("reports.read")?api<Valuation[]>("/reports/valuation"):Promise.resolve([] as Valuation[]),
+      ]);
+      setSuppliers(s.status==="fulfilled"?s.value:[]);
+      setExpiry(e.status==="fulfilled"?e.value:[]);
+      setValuation(v.status==="fulfilled"?v.value:[]);
+      setExpiryAvailable(can("reports.read")&&e.status==="fulfilled");
+      setValuationAvailable(can("reports.read")&&v.status==="fulfilled");
+      setOptionalFailures([
+        ...(s.status==="rejected"?["Suppliers"]:[]),
+        ...(e.status==="rejected"?["Expiry report"]:[]),
+        ...(v.status==="rejected"?["Valuation report"]:[]),
+      ]);
     }catch(exception){setError((exception as Error).message)}
     finally{setLoading(false)}
-  },[]);
+  },[can,sessionLoading]);
   useEffect(()=>{void load()},[load]);
 
   const itemName=(id:string)=>items.find(row=>row.id===id)?.sku||id;
@@ -54,16 +80,17 @@ export default function Page(){
   async function postLotTransaction(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);await run(()=>api("/lot-transactions",{method:"POST",body:JSON.stringify({lot_id:data.get("lot"),location_id:data.get("location"),quantity:Number(data.get("quantity")),unit_cost:Number(data.get("unit_cost")||0),transaction_type:data.get("type"),reason:data.get("reason")||null,idempotency_key:crypto.randomUUID()})}),"Lot transaction posted","The lot balance and stock ledger were updated together.");form.reset()}
   async function reserve(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form);await run(()=>api("/reservations",{method:"POST",body:JSON.stringify({item_id:data.get("item"),location_id:data.get("location"),quantity:Number(data.get("quantity")),reference_type:data.get("reference_type"),reference_id:data.get("reference_id")})}),"Stock reserved","Available quantity now excludes the reservation.");form.reset()}
 
-  if(error)return <AppShell title="Inventory Operations"><ErrorState title="Inventory operations unavailable" message={error} onRetry={()=>void load()}/></AppShell>;
-  if(loading&&!items.length)return <AppShell title="Inventory Operations"><LoadingState title="Loading inventory controls" rows={6}/></AppShell>;
+  if(error)return <ErrorState title="Inventory operations unavailable" message={error} onRetry={()=>void load()}/>;
+  if((loading||sessionLoading)&&!items.length)return <LoadingState title="Loading inventory controls" rows={6}/>;
 
   const availableTotal=availability.reduce((sum,row)=>sum+Number(row.available_quantity),0);
   const reservedTotal=availability.reduce((sum,row)=>sum+Number(row.reserved_quantity),0);
   const inventoryValue=valuation.reduce((sum,row)=>sum+Number(row.inventory_value),0);
 
-  return <AppShell title="Inventory Operations" description="Transfers, adjustments, waste, and expiry.">
-    <section className="operations-metrics"><div><span>Available stock</span><strong>{formatQuantity(availableTotal)}</strong><small>Physical less active reservations</small></div><div><span>Reserved stock</span><strong>{formatQuantity(reservedTotal)}</strong><small>Committed to active references</small></div><div><span>Near expiry</span><strong>{expiry.length}</strong><small>Lots expiring within 60 days</small></div><div><span>Inventory value</span><strong>{formatMoney(inventoryValue)}</strong><small>Weighted-average valuation</small></div></section>
+  return <>
+    <section className="operations-metrics"><div><span>Available stock</span><strong>{formatQuantity(availableTotal)}</strong><small>Physical less active reservations</small></div><div><span>Reserved stock</span><strong>{formatQuantity(reservedTotal)}</strong><small>Committed to active references</small></div><div><span>Near expiry</span><strong>{expiryAvailable?expiry.length:"—"}</strong><small>{expiryAvailable?"Lots expiring within 60 days":"Reporting unavailable"}</small></div><div><span>Inventory value</span><strong>{valuationAvailable?formatMoney(inventoryValue):"—"}</strong><small>{valuationAvailable?"Weighted-average valuation":"Reporting unavailable"}</small></div></section>
 
+    {optionalFailures.length?<FeedbackBanner tone="warning" title="Supplementary information unavailable" message={optionalFailures.join(", ")}/>:null}
     {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}
 
     <InventoryControlPanel items={items} locations={locations} lots={lots} onChanged={load}/>
@@ -78,6 +105,6 @@ export default function Page(){
 
     <section className="card section-gap"><div className="topline"><div><h2>Availability</h2><p>Physical quantity less active reservations by item and location.</p></div></div><DataTable columns={["Item","Location","Physical","Reserved","Available"]} rows={availability.map(row=>[itemName(row.item_id),locationName(row.location_id),formatQuantity(row.physical_quantity),formatQuantity(row.reserved_quantity),<span className={Number(row.available_quantity)<0?"negative":""} key={`${row.item_id}:${row.location_id}`}>{formatQuantity(row.available_quantity)}</span>])} rowIds={availability.map(row=>`${row.item_id}:${row.location_id}`)} searchPlaceholder="Search availability" exportFileName="hidden-oasis-availability" emptyTitle="No availability records" emptyMessage="Stock balances will appear after the first posted transaction."/></section>
 
-    <section className="card section-gap"><div className="topline"><div><h2>Expiry queue</h2><p>Positive lot balances expiring within 60 days.</p></div></div><DataTable columns={["Lot","Item","Location","Quantity","Expiry","Days","Status"]} rows={expiry.map(row=>[row.lot_number,itemName(row.item_id),locationName(row.location_id),formatQuantity(row.quantity),formatDate(row.expiry_date),row.days_to_expiry,<StatusBadge key={`${row.lot_id}-status`} status={row.status}/>])} rowIds={expiry.map(row=>`${row.lot_id}:${row.location_id}`)} searchPlaceholder="Search expiry queue" exportFileName="hidden-oasis-expiry-queue" emptyTitle="No near-expiry stock" emptyMessage="No positive lot balances expire within the next 60 days."/></section>
-  </AppShell>;
+    {can("reports.read")?<section className="card section-gap"><div className="topline"><div><h2>Expiry queue</h2><p>Positive lot balances expiring within 60 days.</p></div></div><DataTable columns={["Lot","Item","Location","Quantity","Expiry","Days","Status"]} rows={expiry.map(row=>[row.lot_number,itemName(row.item_id),locationName(row.location_id),formatQuantity(row.quantity),formatDate(row.expiry_date),row.days_to_expiry,<StatusBadge key={`${row.lot_id}-status`} status={row.status}/>])} rowIds={expiry.map(row=>`${row.lot_id}:${row.location_id}`)} searchPlaceholder="Search expiry queue" exportFileName="hidden-oasis-expiry-queue" emptyTitle="No near-expiry stock" emptyMessage="No positive lot balances expire within the next 60 days."/></section>:null}
+  </>;
 }

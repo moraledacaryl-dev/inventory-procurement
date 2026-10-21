@@ -160,3 +160,35 @@ test("critical pages have no serious Axe violations", async ({ page }) => {
     expect(serious, `${path}: ${serious.map(v => `${v.id} (${v.nodes.length})`).join(", ")}`).toEqual([]);
   }
 });
+
+
+test("inventory operations remains usable when supplementary suppliers request fails", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/v1/suppliers", route => route.fulfill({
+    status: 500, contentType: "application/json",
+    body: JSON.stringify({ detail: "Temporary supplier lookup failure" }),
+  }));
+  await page.goto("/inventory-operations");
+  await expect(page.getByRole("heading", { name: "Inventory Operations", exact: true })).toBeVisible();
+  await expect(page.getByText("Available stock", { exact: true })).toBeVisible();
+  await expect(page.getByText("Supplementary information unavailable")).toBeVisible();
+  await expect(page.getByText("Inventory operations unavailable")).toHaveCount(0);
+});
+
+test("counter inventory operations avoids forbidden supplier and reports endpoints", async ({ page }) => {
+  test.skip(process.env.VISUAL_CAPTURE !== "1", "Counter user exists in exhaustive visual seed");
+  await page.goto("/login");
+  await page.getByLabel("Email address").fill("visual-counter@example.com");
+  await page.locator('input[name="password"]').fill(process.env.E2E_VISUAL_PASSWORD || "visual-acceptance-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  const restrictedCalls: string[] = [];
+  page.on("request", request => {
+    const url = request.url();
+    if (/\/api\/v1\/(suppliers|reports\/expiry|reports\/valuation)(?:\?|$)/.test(url)) restrictedCalls.push(url);
+  });
+  await page.goto("/inventory-operations");
+  await expect(page.getByText("Available stock", { exact: true })).toBeVisible();
+  await expect(page.getByText("Inventory operations unavailable")).toHaveCount(0);
+  expect(restrictedCalls).toEqual([]);
+});

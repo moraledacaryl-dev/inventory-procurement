@@ -149,32 +149,51 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
     event_lines=[]
     for idx, entry in enumerate(entries, 1):
         item = _get_item(db, entry["item_id"]); _get_location(db, entry["location_id"])
-        qty = Decimal(entry["quantity"]); cost = Decimal(entry.get("unit_cost", 0))
-        if qty == 0: raise InventoryError("Movement quantity cannot be zero")
+        # Match the ledger's Numeric(18, 4) storage precision before
+        # calculating value changes; avoid a misleading in-memory precision.
+        precision = Decimal("0.0001")
+        qty = Decimal(entry["quantity"]).quantize(precision)
+        cost = Decimal(entry.get("unit_cost", 0)).quantize(precision)
+        if qty == 0: raise InventoryError("Movement quantity cannot be zero at stock precision")
         if cost < 0: raise InventoryError("Movement unit cost cannot be negative")
         source_location_id = entry.get("cost_from_location_id")
         bal = _balance(db, item.id, entry["location_id"])
+        old_qty = Decimal(bal.quantity)
+        old_cost = Decimal(bal.average_cost)
+        old_book_value = old_qty * old_cost
         if qty < 0:
-            cost = Decimal(bal.average_cost)
+            cost = old_cost
         elif kind in {"adjustment", "count_adjustment"} and cost == 0:
             # Found inventory is not free: keep its existing valuation, or use
             # the item standard cost when this location has no valuation yet.
-            cost = Decimal(bal.average_cost) or Decimal(item.standard_cost)
+            cost = old_cost or Decimal(item.standard_cost)
         elif source_location_id:
             # Transfers carry the source's book value, never a supplied line price.
             source_balance = _balance(db, item.id, source_location_id)
             cost = Decimal(source_balance.average_cost)
-        new_qty = Decimal(bal.quantity) + qty
+        cost = cost.quantize(precision)
+        new_qty = old_qty + qty
         if new_qty < 0 and not item.allow_negative_stock: raise InventoryError(f"Insufficient stock for {item.sku} at location")
         if qty > 0:
-            current_value = Decimal(bal.quantity) * Decimal(bal.average_cost); incoming_value = qty * cost
-            if Decimal(bal.quantity) < 0:
-                bal.average_cost = cost if new_qty > 0 else Decimal(bal.average_cost)
+            incoming_value = qty * cost
+            if old_qty < 0:
+                # A negative shortage covered by fresh stock requires a
+                # replacement cost once positive, not a negative-cost average.
+                next_cost = cost if new_qty > 0 else old_cost
             else:
-                bal.average_cost = (current_value + incoming_value) / new_qty if new_qty else Decimal("0")
+                next_cost = (old_book_value + incoming_value) / new_qty if new_qty else Decimal("0")
+            bal.average_cost = next_cost.quantize(precision)
         bal.quantity = new_qty
-        db.add(StockMovement(document_id=doc.id, line_number=idx, item_id=item.id, location_id=entry["location_id"], quantity=qty, unit_cost=cost, reason=entry.get("reason")))
-        event_lines.append({'item_id':item.id,'location_id':entry['location_id'],'quantity':str(qty),'unit_cost':str(cost),'reason':entry.get('reason')})
+        # A revaluation occurs when negative stock becomes positive at a new
+        # replacement cost. quantity * unit_cost alone is not the change in
+        # actual book value. Capture the real balance transition instead.
+        book_value_delta = new_qty * Decimal(bal.average_cost) - old_book_value
+        db.add(StockMovement(document_id=doc.id, line_number=idx, item_id=item.id,
+                             location_id=entry["location_id"], quantity=qty,
+                             unit_cost=cost, book_value_delta=book_value_delta,
+                             reason=entry.get("reason")))
+        event_lines.append({'item_id':item.id,'location_id':entry['location_id'],'quantity':str(qty),'unit_cost':str(cost),
+                            'book_value_delta':str(book_value_delta),'reason':entry.get('reason')})
     add_audit(db,actor_user_id=actor_id,action='stock.document_posted',entity_type='stock_document',entity_id=doc.id,details={'document_number':doc.document_number,'document_type':kind,'line_count':len(event_lines),'reference':reference})
     enqueue_event(db,destination_system='accounting',event_type='inventory.stock_document.posted',aggregate_type='stock_document',aggregate_id=doc.id,idempotency_key=f'stock-document:{doc.id}',payload={'document_id':doc.id,'document_number':doc.document_number,'document_type':kind,'reference':reference,'lines':event_lines})
     if not commit:

@@ -1,8 +1,11 @@
 import csv, io
+from pathlib import Path
+from alembic.config import Config as AlembicConfig
+from alembic.script import ScriptDirectory
 from datetime import datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import func, select, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from app.api.deps import require_permission
@@ -133,14 +136,32 @@ def print_grn(document_id:str,db:Session=Depends(get_db),_:User=Depends(require_
         item=db.get(Item,line.item_id); lines.append({'sku':item.sku,'item':item.name,'received':str(line.received_quantity),'accepted':str(line.accepted_quantity),'rejected':str(line.rejected_quantity),'unit_cost':str(line.unit_cost)})
     return PrintableDocumentOut(document_type='goods_receipt',document_number=row.goods_receipt_number,status='posted',title='GOODS RECEIPT NOTE',header={'purchase_order':po.purchase_order_number,'delivery_reference':row.delivery_reference or '','received_at':row.received_at.isoformat(),'notes':row.notes or ''},lines=lines,totals={'accepted_quantity':str(sum((Decimal(x.accepted_quantity) for x in row.lines),Decimal('0'))),'rejected_quantity':str(sum((Decimal(x.rejected_quantity) for x in row.lines),Decimal('0')))})
 
+def migration_state(db: Session) -> str:
+    """Verify the installed revision(s) against the actual Alembic heads.
+
+    The absence of a version table is not an up-to-date deployment.
+    This is a read-only readiness probe; do not run migrations here.
+    """
+    if not inspect(db.get_bind()).has_table('alembic_version'):
+        return 'unversioned'
+    installed = set(db.scalars(text('SELECT version_num FROM alembic_version')).all())
+    config = AlembicConfig()
+    config.set_main_option('script_location', str(Path(__file__).resolve().parents[3] / 'alembic'))
+    heads = set(ScriptDirectory.from_config(config).get_heads())
+    if not installed:
+        return 'unversioned'
+    return 'head' if installed == heads else 'out_of_sync'
+
+
 @router.get('/deployment/status',response_model=DeploymentStatusOut)
 def deployment_status(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
     db.execute(text('SELECT 1')); pending=db.scalar(select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status.in_(['pending','processing','failed']))) or 0; dead=db.scalar(select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status=='dead_letter')) or 0; backup=db.scalar(select(BackupRecord).order_by(BackupRecord.created_at.desc()))
-    age=(now()-aware(backup.created_at)).total_seconds()/3600 if backup else None; status='healthy' if dead==0 and pending<100 and age is not None and age<=settings.backup_max_age_hours else 'attention'
-    return DeploymentStatusOut(environment=settings.app_env,database='ok',migrations='head',worker_backlog=pending,dead_letter_events=dead,latest_backup_at=backup.created_at if backup else None,backup_age_hours=age,status=status)
+    age=(now()-aware(backup.created_at)).total_seconds()/3600 if backup else None; migrations=migration_state(db)
+    status='healthy' if migrations=='head' and dead==0 and pending<100 and age is not None and age<=settings.backup_max_age_hours else 'attention'
+    return DeploymentStatusOut(environment=settings.app_env,database='ok',migrations=migrations,worker_backlog=pending,dead_letter_events=dead,latest_backup_at=backup.created_at if backup else None,backup_age_hours=age,status=status)
 
 @router.post('/acceptance-runs',response_model=AcceptanceRunOut,status_code=201)
-def run_acceptance(p:AcceptanceRunCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+def run_acceptance(p:AcceptanceRunCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     run=AcceptanceRun(run_number=next_document_number(db,'UAT'),environment=p.environment,notes=p.notes,created_by_user_id=user.id); db.add(run); db.flush(); checks={}
     try:
         db.execute(text('SELECT 1')); checks['database']={'passed':True}; mismatches=[]

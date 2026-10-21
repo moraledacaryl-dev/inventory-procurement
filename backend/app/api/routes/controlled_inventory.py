@@ -508,7 +508,7 @@ def dispatch_transfer_controlled(
     row = transfer_row(db, transfer_id, lock=True)
     if not row:
         fail(404, "Transfer order not found")
-    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id}
+    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id})
     if row.status != "draft":
         fail(409, "Only draft transfers can be dispatched")
 
@@ -578,7 +578,7 @@ def receive_transfer_controlled(
     row = transfer_row(db, transfer_id, lock=True)
     if not row:
         fail(404, "Transfer order not found")
-    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id}
+    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id})
     if row.status != "dispatched":
         fail(409, "Only dispatched transfers can be received")
 
@@ -708,7 +708,7 @@ def cancel_transfer(
     row = transfer_row(db, transfer_id, lock=True)
     if not row:
         fail(404, "Transfer order not found")
-    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id}
+    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id})
     if row.status != "draft":
         fail(409, "Only draft transfers can be cancelled")
     row.status = "cancelled"

@@ -1,4 +1,6 @@
 from datetime import date
+import hashlib
+import json
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -76,6 +78,51 @@ class ControlledReturnCreate(BaseModel):
 
 def fail(status: int, message: str):
     raise HTTPException(status_code=status, detail=message)
+
+
+def _canonical(value):
+    if isinstance(value, BaseModel):
+        return _canonical(value.model_dump())
+    if isinstance(value, Decimal):
+        return str(value.normalize()) if value else "0"
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _canonical(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(item) for item in value]
+    return value
+
+
+def _workflow_fingerprint(kind: str, po_id: str, actor_id: str, payload: BaseModel) -> str:
+    request = {"kind": kind, "purchase_order_id": po_id, "actor_id": actor_id,
+               "payload": _canonical(payload)}
+    return hashlib.sha256(
+        json.dumps(request, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def _verified_workflow_replay(db: Session, *, key: str | None, fingerprint: str,
+                              po_id: str, kind: str):
+    if not key:
+        return None
+    document = db.scalar(select(StockDocument).where(StockDocument.idempotency_key == key))
+    if not document:
+        return None
+    if kind == "receipt":
+        existing = db.scalar(
+            select(GoodsReceipt).where(GoodsReceipt.stock_document_id == document.id)
+            .options(selectinload(GoodsReceipt.lines))
+        )
+    else:
+        existing = db.scalar(select(PurchaseReturn).where(PurchaseReturn.stock_document_id == document.id))
+    if not existing:
+        fail(409, "Idempotency key is already used by a different stock document")
+    if existing.purchase_order_id != po_id or existing.request_fingerprint != fingerprint:
+        # Legacy documents do not carry the complete incoming lot/discrepancy
+        # payload; an operator must reconcile them rather than guess.
+        fail(409, "Idempotency key belongs to a different or unverifiable receiving request")
+    return existing
 
 
 def load_po(db: Session, po_id: str, lock: bool = False):
@@ -227,16 +274,19 @@ def receiving_workspace(db: Session = Depends(get_db), _: User = Depends(require
 
 @router.post("/receiving/purchase-orders/{po_id}", status_code=201)
 def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("receiving.*"))):
-    if payload.idempotency_key:
-        existing_doc = db.scalar(select(StockDocument).where(StockDocument.idempotency_key == payload.idempotency_key))
-        if existing_doc:
-            existing = db.scalar(select(GoodsReceipt).where(GoodsReceipt.stock_document_id == existing_doc.id).options(selectinload(GoodsReceipt.lines)))
-            if existing:
-                return receipt_payload(db, existing)
-            fail(409, "Idempotency key is already used")
+    fingerprint = _workflow_fingerprint("receipt", po_id, user.id, payload)
+    replay = _verified_workflow_replay(db, key=payload.idempotency_key, fingerprint=fingerprint,
+                                       po_id=po_id, kind="receipt")
+    if replay:
+        return receipt_payload(db, replay)
     po = load_po(db, po_id, lock=True)
     if not po:
         fail(404, "Purchase order not found")
+    # Another receiver may have committed while we waited for the PO lock.
+    replay = _verified_workflow_replay(db, key=payload.idempotency_key, fingerprint=fingerprint,
+                                       po_id=po_id, kind="receipt")
+    if replay:
+        return receipt_payload(db, replay)
     if po.status not in {"approved", "partially_received"}:
         fail(409, "Purchase order is not receivable")
     ensure_new_delivery_reference(db, po.id, payload.delivery_reference)
@@ -259,7 +309,7 @@ def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Se
             discrepancy_lines.append({"item_id": line.item_id, "rejected_quantity": str(received.rejected_quantity), "reason": received.discrepancy_reason})
     try:
         document = post_document(db, kind="po_receipt", actor_id=user.id, entries=entries, reference=po.purchase_order_number, notes=payload.notes, idempotency_key=payload.idempotency_key, commit=False, allow_empty=True)
-        receipt = GoodsReceipt(goods_receipt_number=next_document_number(db, "GRN"), purchase_order_id=po.id, stock_document_id=document.id, delivery_reference=payload.delivery_reference, received_by_user_id=user.id, notes=payload.notes)
+        receipt = GoodsReceipt(goods_receipt_number=next_document_number(db, "GRN"), purchase_order_id=po.id, stock_document_id=document.id, delivery_reference=payload.delivery_reference, received_by_user_id=user.id, notes=payload.notes, request_fingerprint=fingerprint)
         for received in payload.lines:
             line = po_lines[received.purchase_order_line_id]
             line.received_quantity = Decimal(line.received_quantity) + received.received_quantity
@@ -292,16 +342,18 @@ def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Se
 
 @router.post("/receiving/purchase-orders/{po_id}/returns", status_code=201)
 def post_controlled_return(po_id: str, payload: ControlledReturnCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("receiving.*"))):
-    if payload.idempotency_key:
-        existing_doc = db.scalar(select(StockDocument).where(StockDocument.idempotency_key == payload.idempotency_key))
-        if existing_doc:
-            existing = db.scalar(select(PurchaseReturn).where(PurchaseReturn.stock_document_id == existing_doc.id))
-            if existing:
-                return return_payload(db, existing)
-            fail(409, "Idempotency key is already used")
+    fingerprint = _workflow_fingerprint("return", po_id, user.id, payload)
+    replay = _verified_workflow_replay(db, key=payload.idempotency_key, fingerprint=fingerprint,
+                                       po_id=po_id, kind="return")
+    if replay:
+        return return_payload(db, replay)
     po = load_po(db, po_id, lock=True)
     if not po:
         fail(404, "Purchase order not found")
+    replay = _verified_workflow_replay(db, key=payload.idempotency_key, fingerprint=fingerprint,
+                                       po_id=po_id, kind="return")
+    if replay:
+        return return_payload(db, replay)
     po_lines = {line.id: line for line in po.lines}
     entries = []
     for returned in payload.lines:
@@ -317,7 +369,7 @@ def post_controlled_return(po_id: str, payload: ControlledReturnCreate, db: Sess
         for returned in payload.lines:
             line = po_lines[returned.purchase_order_line_id]
             line.returned_quantity = Decimal(line.returned_quantity) + returned.quantity
-        row = PurchaseReturn(return_number=next_document_number(db, "PRTN"), purchase_order_id=po.id, stock_document_id=document.id, reason=payload.reason, created_by_user_id=user.id)
+        row = PurchaseReturn(return_number=next_document_number(db, "PRTN"), purchase_order_id=po.id, stock_document_id=document.id, reason=payload.reason, created_by_user_id=user.id, request_fingerprint=fingerprint)
         db.add(row)
         db.flush()
         add_audit(db, actor_user_id=user.id, action="purchase_return.controlled_posted", entity_type="purchase_return", entity_id=row.id, details={"purchase_order_id": po.id, "supplier_reference": payload.supplier_reference, "line_count": len(payload.lines)})

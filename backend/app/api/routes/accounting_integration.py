@@ -61,7 +61,13 @@ def journal_lines(event:IntegrationEvent)->list[dict]:
 
 def event_row(event:IntegrationEvent)->dict:
     rule=ACCOUNTING_RULES.get(event.event_type,{"debit":"Unmapped","credit":"Unmapped"})
-    return {"id":event.id,"event_type":event.event_type,"aggregate_type":event.aggregate_type,"aggregate_id":event.aggregate_id,"idempotency_key":event.idempotency_key,"status":event.status,"attempts":event.attempts,"max_attempts":event.max_attempts,"last_error":event.last_error,"created_at":event.created_at,"processed_at":event.processed_at,"amount":event_amount(event),"debit_account":rule["debit"],"credit_account":rule["credit"],"mapped":event.event_type in ACCOUNTING_RULES,"journal_lines":journal_lines(event),"accounting_receipt":(event.payload or {}).get("accounting_receipt")}
+    payload=event.payload if isinstance(event.payload,dict) else {}
+    intake=payload.get("accounting_intake") if isinstance(payload.get("accounting_intake"),dict) else {}
+    receipt=payload.get("accounting_receipt") if isinstance(payload.get("accounting_receipt"),dict) else {}
+    intake_status=str(intake.get("status") or ("unverified_delivery" if event.status=="completed" else "not_delivered"))
+    # An Accounting intake acknowledgement/review is not evidence of a
+    # booked and balanced GL journal. Never surface transport success as posting.
+    return {"id":event.id,"event_type":event.event_type,"aggregate_type":event.aggregate_type,"aggregate_id":event.aggregate_id,"idempotency_key":event.idempotency_key,"status":event.status,"attempts":event.attempts,"max_attempts":event.max_attempts,"last_error":event.last_error,"created_at":event.created_at,"processed_at":event.processed_at,"amount":event_amount(event),"debit_account":rule["debit"],"credit_account":rule["credit"],"mapped":event.event_type in ACCOUNTING_RULES,"journal_lines":journal_lines(event),"accounting_receipt":receipt or None,"accounting_intake_status":intake_status,"accounting_review_id":intake.get("review_id"),"ledger_posting_confirmed":False}
 
 
 class AccountingReceipt(BaseModel):
@@ -77,7 +83,7 @@ def accounting_workspace(status:str|None=None,limit:int=Query(200,ge=1,le=500),d
     stmt=select(IntegrationEvent).where(IntegrationEvent.destination_system=="accounting").order_by(IntegrationEvent.created_at.desc())
     if status:stmt=stmt.where(IntegrationEvent.status==status)
     events=db.scalars(stmt.limit(limit)).all();counts=dict(db.execute(select(IntegrationEvent.status,func.count()).where(IntegrationEvent.destination_system=="accounting").group_by(IntegrationEvent.status)).all());rows=[event_row(event) for event in events]
-    return {"summary":{"pending":counts.get("pending",0)+counts.get("processing",0),"completed":counts.get("completed",0),"failed":counts.get("failed",0),"dead_letter":counts.get("dead_letter",0),"unmapped":sum(1 for row in rows if not row["mapped"]),"queued_value":sum((row["amount"] for row in rows if row["status"] in {"pending","processing","failed"}),Decimal("0"))},"rules":[{"event_type":event_type,**accounts} for event_type,accounts in sorted(ACCOUNTING_RULES.items())],"events":rows}
+    return {"summary":{"pending":counts.get("pending",0)+counts.get("processing",0),"completed":counts.get("completed",0),"failed":counts.get("failed",0),"dead_letter":counts.get("dead_letter",0),"unmapped":sum(1 for row in rows if not row["mapped"]),"queued_value":sum((row["amount"] for row in rows if row["status"] in {"pending","processing","failed"}),Decimal("0")),"ready_for_review":sum(1 for row in rows if row["accounting_intake_status"]=="ready_for_review"),"review_rejected":sum(1 for row in rows if row["accounting_intake_status"]=="rejected"),"unverified_delivery":sum(1 for row in rows if row["accounting_intake_status"]=="unverified_delivery")},"rules":[{"event_type":event_type,**accounts} for event_type,accounts in sorted(ACCOUNTING_RULES.items())],"events":rows}
 
 
 @router.post("/integrations/accounting/receipts")

@@ -1,5 +1,7 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
+import hashlib
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +19,17 @@ from app.services.operational_authorization import require_purchase_approval, re
 router=APIRouter(tags=['procurement'])
 def now(): return datetime.now(timezone.utc)
 def fail(code:int,message:str): raise HTTPException(code,message)
+
+def legacy_request_fingerprint(kind:str,po_id:str,actor_id:str,payload)->str:
+    """Bind retries to exact operation, PO, actor and canonical monetary payload."""
+    def canonical(value):
+        if isinstance(value,Decimal): return str(value.normalize()) if value else '0'
+        if isinstance(value,(date,datetime)): return value.isoformat()
+        if isinstance(value,dict): return {str(k):canonical(v) for k,v in value.items()}
+        if isinstance(value,(list,tuple)): return [canonical(v) for v in value]
+        return value
+    document={'kind':kind,'po_id':po_id,'actor_id':actor_id,'payload':canonical(payload.model_dump())}
+    return hashlib.sha256(json.dumps(document,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode('utf-8')).hexdigest()
 def save(db,row):
     db.add(row)
     try: db.commit(); db.refresh(row); return row
@@ -208,12 +221,13 @@ def approve_po(po_id:str,db:Session=Depends(get_db),user:User=Depends(require_pe
 @router.post('/purchase-orders/{po_id}/receipts',response_model=GoodsReceiptOut,status_code=201)
 def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.*'))):
     require_po_location(db,user,po_id)
+    fingerprint=legacy_request_fingerprint('legacy_receipt',po_id,user.id,p)
     if p.idempotency_key:
         existing_doc=db.scalar(select(StockDocument).where(StockDocument.idempotency_key==p.idempotency_key))
         if existing_doc:
             existing=db.scalar(select(GoodsReceipt).where(GoodsReceipt.stock_document_id==existing_doc.id).options(selectinload(GoodsReceipt.lines)))
-            if existing: return existing
-            fail(409,'Idempotency key is already used by another stock operation')
+            if existing and existing.purchase_order_id==po_id and existing.request_fingerprint==fingerprint: return existing
+            fail(409,'Idempotency key belongs to a different or unverifiable receiving request')
     po=load_po(db,po_id,lock=True)
     if not po: fail(404,'Purchase order not found')
     if po.status not in {'approved','partially_received'}: fail(409,'Purchase order is not receivable')
@@ -229,7 +243,7 @@ def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:Us
         if x.accepted_quantity: entries.append({'item_id':line.item_id,'location_id':po.delivery_location_id,'quantity':x.accepted_quantity,'unit_cost':line.unit_price,'reason':'purchase order receipt'})
     try:
         doc=post_document(db,kind='po_receipt',actor_id=user.id,entries=entries,reference=po.purchase_order_number,notes=p.notes,idempotency_key=p.idempotency_key,commit=False,allow_empty=True)
-        receipt=GoodsReceipt(goods_receipt_number=next_document_number(db,'GRN'),purchase_order_id=po.id,stock_document_id=doc.id,delivery_reference=p.delivery_reference,received_by_user_id=user.id,notes=p.notes)
+        receipt=GoodsReceipt(goods_receipt_number=next_document_number(db,'GRN'),purchase_order_id=po.id,stock_document_id=doc.id,delivery_reference=p.delivery_reference,received_by_user_id=user.id,notes=p.notes,request_fingerprint=fingerprint)
         for x in p.lines:
             line=po_lines[x.purchase_order_line_id]; line.received_quantity=Decimal(line.received_quantity)+x.received_quantity
             receipt.lines.append(GoodsReceiptLine(purchase_order_line_id=line.id,item_id=line.item_id,received_quantity=x.received_quantity,accepted_quantity=x.accepted_quantity,rejected_quantity=x.rejected_quantity,unit_cost=line.unit_price))
@@ -247,12 +261,13 @@ def goods_receipts(db:Session=Depends(get_db),user:User=Depends(require_permissi
 @router.post('/purchase-orders/{po_id}/returns',response_model=ReturnOut,status_code=201)
 def create_return(po_id:str,p:ReturnCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.*'))):
     require_po_location(db,user,po_id)
+    fingerprint=legacy_request_fingerprint('legacy_return',po_id,user.id,p)
     if p.idempotency_key:
         existing_doc=db.scalar(select(StockDocument).where(StockDocument.idempotency_key==p.idempotency_key))
         if existing_doc:
             existing=db.scalar(select(PurchaseReturn).where(PurchaseReturn.stock_document_id==existing_doc.id))
-            if existing: return existing
-            fail(409,'Idempotency key is already used by another stock operation')
+            if existing and existing.purchase_order_id==po_id and existing.request_fingerprint==fingerprint: return existing
+            fail(409,'Idempotency key belongs to a different or unverifiable supplier return')
     po=load_po(db,po_id,lock=True)
     if not po: fail(404,'Purchase order not found')
     ids=[x.purchase_order_line_id for x in p.lines]
@@ -267,6 +282,6 @@ def create_return(po_id:str,p:ReturnCreate,db:Session=Depends(get_db),user:User=
     try:
         doc=post_document(db,kind='purchase_return',actor_id=user.id,entries=entries,reference=po.purchase_order_number,notes=p.reason,idempotency_key=p.idempotency_key,commit=False)
         for x in p.lines: lines[x.purchase_order_line_id].returned_quantity=Decimal(lines[x.purchase_order_line_id].returned_quantity)+x.quantity
-        row=PurchaseReturn(return_number=next_document_number(db,'PRTN'),purchase_order_id=po.id,stock_document_id=doc.id,reason=p.reason,created_by_user_id=user.id); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='purchase_return.posted',entity_type='purchase_return',entity_id=row.id,details={'purchase_order_id':po.id}); enqueue_event(db,destination_system='accounting',event_type='procurement.purchase_return.posted',aggregate_type='purchase_return',aggregate_id=row.id,idempotency_key=f'purchase-return:{row.id}',payload={'purchase_return_id':row.id,'return_number':row.return_number,'purchase_order_id':po.id,'reason':row.reason}); db.commit(); db.refresh(row); return row
+        row=PurchaseReturn(return_number=next_document_number(db,'PRTN'),purchase_order_id=po.id,stock_document_id=doc.id,reason=p.reason,created_by_user_id=user.id,request_fingerprint=fingerprint); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='purchase_return.posted',entity_type='purchase_return',entity_id=row.id,details={'purchase_order_id':po.id}); enqueue_event(db,destination_system='accounting',event_type='procurement.purchase_return.posted',aggregate_type='purchase_return',aggregate_id=row.id,idempotency_key=f'purchase-return:{row.id}',payload={'purchase_return_id':row.id,'return_number':row.return_number,'purchase_order_id':po.id,'reason':row.reason}); db.commit(); db.refresh(row); return row
     except (InventoryError,IntegrityError) as exc:
         db.rollback(); fail(409,str(exc) if isinstance(exc,InventoryError) else 'Purchase return could not be posted')

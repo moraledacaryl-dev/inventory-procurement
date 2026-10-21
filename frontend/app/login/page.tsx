@@ -57,12 +57,12 @@ export default function Login() {
 
   return <main className="login">
     <section className="login-visual" aria-label="Application overview">
-      <div className="login-brand"><div className="brand-mark">HO</div><div><div className="brand-name">Hidden Oasis</div><div className="brand-subtitle">Operations Platform</div></div></div>
+      <div className="login-brand"><div className="brand-mark">HO</div><div><div className="brand-name">Hidden Oasis</div><div className="brand-subtitle">Inventory</div></div></div>
       <div className="login-copy">
         <div className="eyebrow" style={{color:"#a9cbbd"}}>Inventory & procurement</div>
-        <h1>One operational view from supplier to sale.</h1>
-        <p>Control stock, purchasing, receiving, recipes, production, and connected accounting activity with a complete audit trail.</p>
-        <div className="login-points"><div className="login-point"><span>✓</span><span>Immutable stock and costing records</span></div><div className="login-point"><span>✓</span><span>Controlled approvals and receiving</span></div><div className="login-point"><span>✓</span><span>Recipe, production, POS, and accounting flows</span></div></div>
+        <h1>Inventory & procurement.</h1>
+        <p>The essentials for your stock, suppliers, and daily operations.</p>
+        <div className="login-points"><div className="login-point"><span>✓</span><span>Stock & locations</span></div><div className="login-point"><span>✓</span><span>Purchasing & receiving</span></div><div className="login-point"><span>✓</span><span>Recipes & production</span></div></div>
       </div>
       <div className="brand-subtitle">Authorized Hidden Oasis personnel only</div>
     </section>

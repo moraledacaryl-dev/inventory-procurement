@@ -142,7 +142,7 @@ export default function Page() {
     <button key={`${row.id}-action`} className="secondary compact" type="button" onClick={() => void toggle(row)}>{row.is_active ? "Deactivate" : "Restore"}</button>,
   ]), [currentRows, dimensions]);
 
-  return <AppShell title="Operating Structure" description="Configure how F&B, Hotel, shared operations, reusable property, and future fixed assets are classified. Visible names and defaults are editable; protected behavior keys preserve system integrity.">
+  return <AppShell title="Operating Structure" description="Workspaces, categories, and item types.">
     {feedback ? <FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message} /> : null}
     <section className="classification-summary">
       <div className="metric-card"><span>Active workspaces</span><strong>{bootstrap?.summary.active_workspaces ?? "—"}</strong><small>Used by the global workspace selector</small></div>

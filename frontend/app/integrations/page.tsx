@@ -73,7 +73,7 @@ export default function Page() {
         <div className="topline">
           <div>
             <h2>Event inbox and outbox</h2>
-            <p>Durable, idempotent exchange with Accounting, POS, Staff, and Command Center.</p>
+            <p>Recent events across connected apps.</p>
           </div>
           <select value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">All statuses</option>

@@ -26,7 +26,6 @@ import "./accessibility.css";
 import "./responsive-remediation.css";
 import "./mobile-ux.css";
 import "./inventory-workspace.css";
-import { ScrollableRegionA11y } from "../components/ScrollableRegionA11y";
 import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
 
 export const metadata = {
@@ -38,5 +37,5 @@ export const metadata = {
 export const viewport = { width: "device-width", initialScale: 1, themeColor: "#14293b", colorScheme: "light" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body><SidebarScrollMemory/><ScrollableRegionA11y/>{children}</body></html>;
+  return <html lang="en"><body><SidebarScrollMemory/>{children}</body></html>;
 }

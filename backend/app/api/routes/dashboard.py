@@ -232,7 +232,8 @@ def valuation_history(
     if location_id:
         movement_stmt = movement_stmt.where(StockMovement.location_id == location_id)
     movement_rows = db.execute(movement_stmt.group_by(func.date(StockMovement.created_at))).all()
-    change_by_date = {row.movement_date: Decimal(row.value_change or 0) for row in movement_rows}
+    # SQLite returns date strings; PostgreSQL returns date objects.
+    change_by_date = {str(row.movement_date): Decimal(row.value_change or 0) for row in movement_rows}
 
     balance_stmt = select(func.coalesce(func.sum(StockBalance.quantity * StockBalance.average_cost), 0))
     if location_id:
@@ -244,7 +245,7 @@ def valuation_history(
     points = []
     for offset in range(days):
         point_date = start_date + timedelta(days=offset)
-        running_value += change_by_date.get(point_date, Decimal("0"))
+        running_value += change_by_date.get(point_date.isoformat(), Decimal("0"))
         points.append({"date": point_date.isoformat(), "value": str(running_value)})
 
     return {

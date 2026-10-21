@@ -30,3 +30,38 @@ def test_dashboard_rejects_invalid_period(client):
     headers = auth_headers(client)
     response = client.get("/api/v1/dashboard/summary?days=2", headers=headers)
     assert response.status_code == 422
+
+
+def test_valuation_history_includes_dated_receipts_and_issues(client):
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+    from sqlalchemy import select
+    from app.db.session import SessionLocal
+    from app.models.inventory import StockMovement
+    from tests.test_inventory import setup_master
+
+    headers = auth_headers(client)
+    item, location, other_location = setup_master(client, headers)
+    for target, quantity in [(location, "10"), (other_location, "3")]:
+        result = client.post("/api/v1/stock/receipts", headers=headers, json={
+            "location_id": target["id"],
+            "lines": [{"item_id": item["id"], "quantity": quantity, "unit_cost": "40"}],
+        })
+        assert result.status_code == 201
+    with SessionLocal() as db:
+        for movement in db.scalars(select(StockMovement)):
+            movement.created_at = datetime.now(timezone.utc) - timedelta(days=2)
+        db.commit()
+    result = client.post("/api/v1/stock/issues", headers=headers, json={
+        "location_id": location["id"],
+        "lines": [{"item_id": item["id"], "quantity": "2"}],
+    })
+    assert result.status_code == 201
+    for query, received, current in [("", 520, 440), (f"&location_id={location['id']}", 400, 320)]:
+        result = client.get(f"/api/v1/dashboard/valuation-history?days=7{query}", headers=headers)
+        assert result.status_code == 200
+        history = result.json()
+        assert Decimal(history["points"][0]["value"]) == 0
+        assert Decimal(history["points"][-3]["value"]) == received
+        assert Decimal(history["points"][-1]["value"]) == current
+        assert Decimal(history["current_value"]) == current

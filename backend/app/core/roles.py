@@ -63,5 +63,6 @@ def accessible_modules(role: str) -> list[str]:
         "integrations": "reports.read",
         "readiness": "reports.read",
         "rollout": "reports.read",
+        "users": "users.*",
     }
     return [module for module, permission in modules.items() if has_permission(role, permission)]

@@ -14,6 +14,7 @@ from app.models.inventory_operations import InventoryLot, LotBalance, StockReser
 from app.models.user import User
 from app.services.controls import add_audit, add_notification
 from app.services.inventory import InventoryError, post_document
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["controlled-inventory"])
 
@@ -253,9 +254,10 @@ def transfer_payload(db: Session, row: TransferOrder) -> dict:
 def list_controlled_adjustments(
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
-    rows = db.execute(
+    allowed = visible_location_ids(db, user)
+    stmt = (
         select(StockDocument, StockMovement, Item, Location)
         .join(StockMovement, StockMovement.document_id == StockDocument.id)
         .join(Item, Item.id == StockMovement.item_id)
@@ -263,7 +265,10 @@ def list_controlled_adjustments(
         .where(StockDocument.document_type == "adjustment")
         .order_by(StockDocument.posted_at.desc(), StockMovement.line_number)
         .limit(limit)
-    ).all()
+    )
+    if allowed is not None:
+        stmt = stmt.where(StockMovement.location_id.in_(allowed))
+    rows = db.execute(stmt).all()
     return [
         {
             "document_id": document.id,
@@ -347,9 +352,10 @@ def create_controlled_adjustment(
 def list_waste_events(
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
-    rows = db.execute(
+    allowed = visible_location_ids(db, user)
+    stmt = (
         select(StockDocument, StockMovement, Item, Location)
         .join(StockMovement, StockMovement.document_id == StockDocument.id)
         .join(Item, Item.id == StockMovement.item_id)
@@ -357,7 +363,10 @@ def list_waste_events(
         .where(StockDocument.document_type == "waste")
         .order_by(StockDocument.posted_at.desc())
         .limit(limit)
-    ).all()
+    )
+    if allowed is not None:
+        stmt = stmt.where(StockMovement.location_id.in_(allowed))
+    rows = db.execute(stmt).all()
     return [
         {
             "document_id": document.id,
@@ -466,9 +475,12 @@ def create_waste_event(
 def transfer_workspace(
     status: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
+    allowed = visible_location_ids(db, user)
     stmt = select(TransferOrder).options(selectinload(TransferOrder.lines)).order_by(TransferOrder.created_at.desc())
+    if allowed is not None:
+        stmt = stmt.where(TransferOrder.source_location_id.in_(allowed), TransferOrder.destination_location_id.in_(allowed))
     if status:
         stmt = stmt.where(TransferOrder.status == status)
     return [transfer_payload(db, row) for row in db.scalars(stmt).unique().all()]
@@ -478,11 +490,12 @@ def transfer_workspace(
 def transfer_detail(
     transfer_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
     row = transfer_row(db, transfer_id)
     if not row:
         fail(404, "Transfer order not found")
+    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id})
     return transfer_payload(db, row)
 
 
@@ -495,6 +508,7 @@ def dispatch_transfer_controlled(
     row = transfer_row(db, transfer_id, lock=True)
     if not row:
         fail(404, "Transfer order not found")
+    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id}
     if row.status != "draft":
         fail(409, "Only draft transfers can be dispatched")
 
@@ -564,6 +578,7 @@ def receive_transfer_controlled(
     row = transfer_row(db, transfer_id, lock=True)
     if not row:
         fail(404, "Transfer order not found")
+    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id}
     if row.status != "dispatched":
         fail(409, "Only dispatched transfers can be received")
 
@@ -693,6 +708,7 @@ def cancel_transfer(
     row = transfer_row(db, transfer_id, lock=True)
     if not row:
         fail(404, "Transfer order not found")
+    require_scoped_locations(db, user, {row.source_location_id, row.destination_location_id}
     if row.status != "draft":
         fail(409, "Only draft transfers can be cancelled")
     row.status = "cancelled"

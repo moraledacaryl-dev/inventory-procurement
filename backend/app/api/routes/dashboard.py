@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models.inventory import Item, Location, StockBalance, StockMovement
+from app.models.inventory_operations import ItemLocationSetting
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.user import User
 
@@ -41,7 +42,7 @@ def dashboard_summary(
     previous_start, current_start, now = _period_bounds(days)
 
     item_rows = db.execute(
-        select(Item.id, Item.sku, Item.name, Item.minimum_stock, Item.standard_cost, Item.is_active)
+        select(Item.id, Item.sku, Item.name, Item.minimum_stock, Item.is_active, Item.track_stock)
         .order_by(Item.sku)
     ).all()
 
@@ -56,19 +57,26 @@ def dashboard_summary(
     balance_by_item = {row.item_id: row for row in balance_rows}
 
     active_items = [row for row in item_rows if row.is_active]
+    tracked_items = [row for row in active_items if row.track_stock]
     inactive_count = len(item_rows) - len(active_items)
-    inventory_value = Decimal("0")
+    # The stock balance ledger is the source of truth for book valuation.
+    # Do not substitute standard cost or omit inactive items: both would make
+    # Dashboard disagree with /reports/valuation and historical book value.
+    inventory_value = sum((Decimal(row.value) for row in balance_rows), Decimal("0"))
+    location_minimums = {}
+    if location_id:
+        overrides = db.scalars(select(ItemLocationSetting).where(
+            ItemLocationSetting.location_id == location_id,
+            ItemLocationSetting.is_active.is_(True),
+        )).all()
+        location_minimums = {row.item_id: Decimal(row.minimum_stock) for row in overrides}
     in_stock = low_stock = out_of_stock = 0
     low_items = []
 
-    for item in active_items:
+    for item in tracked_items:
         balance = balance_by_item.get(item.id)
         quantity = Decimal(balance.quantity if balance else 0)
-        value = Decimal(balance.value if balance else 0)
-        if value == 0 and quantity != 0:
-            value = quantity * Decimal(item.standard_cost or 0)
-        inventory_value += value
-        minimum = Decimal(item.minimum_stock or 0)
+        minimum = location_minimums.get(item.id, Decimal(item.minimum_stock or 0))
         if quantity <= 0:
             out_of_stock += 1
         elif quantity < minimum:

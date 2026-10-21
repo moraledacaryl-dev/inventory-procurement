@@ -91,6 +91,9 @@ class StockMovement(Base):
     location_id: Mapped[str] = mapped_column(String(36), ForeignKey("locations.id"), index=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
+    # Exact movement effect on quantity × stored weighted-average cost.
+    # Nullable to preserve the historical ledger without inventing a value.
+    book_value_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 8), nullable=True)
     reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     document: Mapped[StockDocument] = relationship(back_populates="movements")

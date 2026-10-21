@@ -12,7 +12,7 @@ from app.models.procurement import Supplier, SupplierItem, PurchaseRequisition, 
 from app.schemas.procurement import *
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
 from app.services.inventory import InventoryError, post_document
-from app.services.operational_authorization import require_purchase_approval
+from app.services.operational_authorization import require_purchase_approval, require_scoped_locations, visible_location_ids
 
 router=APIRouter(tags=['procurement'])
 def now(): return datetime.now(timezone.utc)
@@ -27,6 +27,12 @@ def load_po(db,id,lock:bool=False):
     stmt=select(PurchaseOrder).where(PurchaseOrder.id==id).options(selectinload(PurchaseOrder.lines))
     if lock: stmt=stmt.with_for_update()
     return db.scalar(stmt)
+
+def require_po_location(db:Session,user:User,po_id:str):
+    """Check the destination before idempotent replay or any stock mutation."""
+    po=db.get(PurchaseOrder,po_id)
+    if not po: fail(404,'Purchase order not found')
+    require_scoped_locations(db,user,{po.delivery_location_id})
 def unique_items(lines):
     ids=[x.item_id for x in lines]
     if len(ids)!=len(set(ids)): fail(422,'Duplicate item lines are not allowed')
@@ -165,14 +171,17 @@ def compare_quotes(requisition_id:str,db:Session=Depends(get_db),_:User=Depends(
     return sorted(result,key=lambda x:(x.total,x.delivery_days))
 
 @router.get('/purchase-orders',response_model=list[POOut])
-def purchase_orders(status:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.read'))):
+def purchase_orders(status:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.read'))):
     stmt=select(PurchaseOrder).options(selectinload(PurchaseOrder.lines)).order_by(PurchaseOrder.created_at.desc())
+    allowed=visible_location_ids(db,user)
+    if allowed is not None: stmt=stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
     if status: stmt=stmt.where(PurchaseOrder.status==status)
     return db.scalars(stmt).unique().all()
 @router.post('/purchase-orders',response_model=POOut,status_code=201)
 def create_po(p:POCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     unique_items(p.lines)
     if not db.get(Supplier,p.supplier_id) or not db.get(Location,p.delivery_location_id): fail(422,'Supplier or delivery location not found')
+    require_scoped_locations(db,user,{p.delivery_location_id})
     req=None
     if p.requisition_id:
         req=load_pr(db,p.requisition_id)
@@ -198,6 +207,7 @@ def approve_po(po_id:str,db:Session=Depends(get_db),user:User=Depends(require_pe
 
 @router.post('/purchase-orders/{po_id}/receipts',response_model=GoodsReceiptOut,status_code=201)
 def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.*'))):
+    require_po_location(db,user,po_id)
     if p.idempotency_key:
         existing_doc=db.scalar(select(StockDocument).where(StockDocument.idempotency_key==p.idempotency_key))
         if existing_doc:
@@ -228,10 +238,15 @@ def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:Us
     except (InventoryError,IntegrityError) as exc:
         db.rollback(); fail(409,str(exc) if isinstance(exc,InventoryError) else 'Goods receipt could not be posted')
 @router.get('/goods-receipts',response_model=list[GoodsReceiptOut])
-def goods_receipts(db:Session=Depends(get_db),_:User=Depends(require_permission('receiving.read'))): return db.scalars(select(GoodsReceipt).options(selectinload(GoodsReceipt.lines)).order_by(GoodsReceipt.received_at.desc())).unique().all()
+def goods_receipts(db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.read'))):
+    stmt=select(GoodsReceipt).join(PurchaseOrder,GoodsReceipt.purchase_order_id==PurchaseOrder.id).options(selectinload(GoodsReceipt.lines)).order_by(GoodsReceipt.received_at.desc())
+    allowed=visible_location_ids(db,user)
+    if allowed is not None: stmt=stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
+    return db.scalars(stmt).unique().all()
 
 @router.post('/purchase-orders/{po_id}/returns',response_model=ReturnOut,status_code=201)
 def create_return(po_id:str,p:ReturnCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.*'))):
+    require_po_location(db,user,po_id)
     if p.idempotency_key:
         existing_doc=db.scalar(select(StockDocument).where(StockDocument.idempotency_key==p.idempotency_key))
         if existing_doc:

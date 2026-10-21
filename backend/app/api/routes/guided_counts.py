@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.models.inventory import CountLine, CountSession, Item, Location, StockBalance
 from app.models.user import User
 from app.services.controls import add_audit, add_notification
-from app.services.inventory import InventoryError, post_document
+from app.services.inventory import InventoryError, assert_count_snapshot_current, post_document
 
 router = APIRouter(prefix="/counts", tags=["guided-counts"])
 
@@ -124,6 +124,7 @@ def serialize_session(db: Session, session: CountSession) -> dict:
 
 
 def finalize_count(db: Session, session: CountSession, user: User):
+    assert_count_snapshot_current(db, session)
     current = live_balances(db, session.location_id)
     entries = []
     for line in session.lines:
@@ -187,6 +188,7 @@ def submit_count(count_id: str, db: Session = Depends(get_db), user: User = Depe
         fail(422, f"Count is incomplete: {len(missing)} item(s) remain uncounted")
     max_variance = max((abs(Decimal(line.counted_quantity) - Decimal(line.system_quantity)) for line in session.lines), default=Decimal("0"))
     try:
+        assert_count_snapshot_current(db, session)
         if Decimal(session.approval_threshold) > 0 and max_variance > Decimal(session.approval_threshold):
             session.status = "pending_approval"
             add_audit(db, actor_user_id=user.id, action="count.approval_requested", entity_type="count_session", entity_id=session.id, details={"max_variance": str(max_variance)})

@@ -74,6 +74,7 @@ class StockDocument(Base):
     reference: Mapped[str | None] = mapped_column(String(120), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     posted_by_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
     posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     reversed_document_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("stock_documents.id"), nullable=True)

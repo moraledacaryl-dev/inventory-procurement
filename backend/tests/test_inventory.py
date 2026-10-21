@@ -195,3 +195,230 @@ def test_concurrent_first_balance_creation_is_serialized_on_postgres(client):
         )).all()
         assert len(rows) == 1
         assert Decimal(rows[0].quantity) == Decimal('12')
+
+
+def test_stock_request_replay_is_bound_to_original_payload(client):
+    from decimal import Decimal
+    from sqlalchemy import select
+    from app.db.session import SessionLocal
+    from app.models.inventory import StockDocument, StockBalance
+
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    original = {
+        'location_id': location['id'],
+        'idempotency_key': 'replay-original-payload',
+        'reference': 'DELIVERY-001',
+        'lines': [{'item_id': item['id'], 'quantity': '5', 'unit_cost': '40'}],
+    }
+    first = client.post('/api/v1/stock/receipts', headers=headers, json=original)
+    assert first.status_code == 201
+    equivalent = {**original, 'lines': [{**original['lines'][0], 'quantity': '5.00', 'unit_cost': '40.000'}]}
+    replay = client.post('/api/v1/stock/receipts', headers=headers, json=equivalent)
+    assert replay.status_code == 201
+    assert replay.json()['id'] == first.json()['id']
+    for changed in (
+        {**original, 'reference': 'DELIVERY-002'},
+        {**original, 'lines': [{**original['lines'][0], 'quantity': '6'}]},
+        {**original, 'lines': [{**original['lines'][0], 'unit_cost': '41'}]},
+    ):
+        conflict = client.post('/api/v1/stock/receipts', headers=headers, json=changed)
+        assert conflict.status_code == 409
+        assert 'Idempotency key' in conflict.json()['detail']
+
+    cross_type = client.post('/api/v1/stock/issues', headers=headers, json={
+        'location_id': location['id'], 'idempotency_key': original['idempotency_key'],
+        'lines': [{'item_id': item['id'], 'quantity': '2'}],
+    })
+    assert cross_type.status_code == 409
+    with SessionLocal() as db:
+        documents = db.scalars(select(StockDocument).where(
+            StockDocument.idempotency_key == original['idempotency_key']
+        )).all()
+        assert len(documents) == 1
+        assert len(documents[0].request_fingerprint) == 64
+        balance = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item['id'], StockBalance.location_id == location['id']
+        ))
+        assert Decimal(balance.quantity) == Decimal('5')
+
+
+def test_historical_stock_document_replay_checks_original_movements(client):
+    from app.db.session import SessionLocal
+    from app.models.inventory import StockDocument
+
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    original = {
+        'location_id': location['id'],
+        'idempotency_key': 'pre-fingerprint-document',
+        'lines': [{'item_id': item['id'], 'quantity': '3', 'unit_cost': '40'}],
+    }
+    first = client.post('/api/v1/stock/receipts', headers=headers, json=original)
+    assert first.status_code == 201
+    with SessionLocal() as db:
+        document = db.get(StockDocument, first.json()['id'])
+        document.request_fingerprint = None
+        db.commit()
+    identical = client.post('/api/v1/stock/receipts', headers=headers, json=original)
+    assert identical.status_code == 201
+    assert identical.json()['id'] == first.json()['id']
+    altered = client.post('/api/v1/stock/receipts', headers=headers, json={
+        **original,
+        'lines': [{**original['lines'][0], 'quantity': '4'}],
+    })
+    assert altered.status_code == 409
+
+
+def test_legacy_count_rejects_stale_snapshot_and_incomplete_lines(client):
+    from decimal import Decimal
+    from app.db.session import SessionLocal
+    from app.models.inventory import StockBalance
+    from sqlalchemy import select
+
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    assert client.post('/api/v1/stock/receipts', headers=headers, json={
+        'location_id': location['id'], 'lines': [{'item_id': item['id'], 'quantity': 5, 'unit_cost': 40}]
+    }).status_code == 201
+    count = client.post('/api/v1/counts', headers=headers, json={'location_id': location['id']}).json()
+    endpoint = f"/api/v1/counts/{count['id']}/post"
+    assert client.post(endpoint, headers=headers, json={'lines': [
+        {'item_id': item['id'], 'counted_quantity': 4},
+        {'item_id': item['id'], 'counted_quantity': 4},
+    ]}).status_code == 422
+    assert client.post('/api/v1/stock/receipts', headers=headers, json={
+        'location_id': location['id'], 'lines': [{'item_id': item['id'], 'quantity': 1, 'unit_cost': 40}]
+    }).status_code == 201
+    stale = client.post(endpoint, headers=headers, json={
+        'lines': [{'item_id': item['id'], 'counted_quantity': 4}]
+    })
+    assert stale.status_code == 409
+    assert 'count' in stale.json()['detail'].lower()
+    with SessionLocal() as db:
+        row = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item['id'], StockBalance.location_id == location['id']
+        ))
+        assert Decimal(row.quantity) == Decimal('6')
+
+
+def test_postgres_concurrent_conflicting_replays_commit_only_one_payload(client):
+    from concurrent.futures import ThreadPoolExecutor
+    from decimal import Decimal
+    from threading import Barrier
+    from sqlalchemy import select
+    from app.db.session import SessionLocal, engine
+    from app.models.inventory import StockBalance, StockDocument
+    from app.models.user import User
+    from app.services.inventory import InventoryError, post_document
+    import pytest
+
+    if engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL advisory idempotency locks are tested here')
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    gate = Barrier(2, timeout=10)
+
+    def try_post(quantity):
+        with SessionLocal() as db:
+            user = db.scalar(select(User).where(User.email == 'owner@example.com'))
+            gate.wait()
+            try:
+                doc = post_document(db, kind='receipt', actor_id=user.id,
+                    entries=[{'item_id': item['id'], 'location_id': location['id'],
+                              'quantity': Decimal(quantity), 'unit_cost': Decimal('40')}],
+                    idempotency_key='concurrent-conflicting-request')
+                return ('posted', doc.id)
+            except InventoryError:
+                db.rollback()
+                return ('conflict', None)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(try_post, '3')
+        second = pool.submit(try_post, '4')
+        results = [first.result(timeout=20), second.result(timeout=20)]
+    assert sorted(status for status, _ in results) == ['conflict', 'posted']
+    with SessionLocal() as db:
+        assert len(db.scalars(select(StockDocument).where(
+            StockDocument.idempotency_key == 'concurrent-conflicting-request'
+        )).all()) == 1
+        stock = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item['id'], StockBalance.location_id == location['id']
+        ))
+        assert Decimal(stock.quantity) in {Decimal('3'), Decimal('4')}
+
+
+def test_postgres_count_validation_waits_for_in_flight_stock_posting(client):
+    from concurrent.futures import ThreadPoolExecutor
+    from decimal import Decimal
+    from threading import Event
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.db.session import SessionLocal, engine
+    from app.models.inventory import CountSession, StockBalance
+    from app.models.user import User
+    from app.services.inventory import InventoryError, assert_count_snapshot_current, post_document
+    import pytest
+
+    if engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL balance row/advisory locks are tested here')
+    headers = login(client)
+    item, location, _ = setup_master(client, headers)
+    assert client.post('/api/v1/stock/receipts', headers=headers, json={
+        'location_id': location['id'], 'lines': [
+            {'item_id': item['id'], 'quantity': 5, 'unit_cost': 40}
+        ],
+    }).status_code == 201
+    count = client.post('/api/v1/counts', headers=headers, json={
+        'location_id': location['id']
+    }).json()
+    count_id = count['id']
+    held = Event()
+    release = Event()
+    started = Event()
+    completed = Event()
+
+    def post_while_locked():
+        with SessionLocal() as db:
+            actor = db.scalar(select(User).where(User.email == 'owner@example.com'))
+            post_document(db, kind='receipt', actor_id=actor.id,
+                entries=[{'item_id': item['id'], 'location_id': location['id'],
+                          'quantity': Decimal('1'), 'unit_cost': Decimal('40')}],
+                commit=False)
+            held.set()
+            assert release.wait(timeout=10)
+            db.commit()
+
+    def validate_count():
+        assert held.wait(timeout=10)
+        with SessionLocal() as db:
+            session = db.scalar(select(CountSession).where(
+                CountSession.id == count_id
+            ).options(selectinload(CountSession.lines)))
+            session.lines[0].counted_quantity = Decimal('4')
+            started.set()
+            try:
+                assert_count_snapshot_current(db, session)
+                return 'unexpected-success'
+            except InventoryError:
+                return 'stale'
+            finally:
+                completed.set()
+                db.rollback()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        writer = pool.submit(post_while_locked)
+        assert held.wait(timeout=10)
+        checker = pool.submit(validate_count)
+        try:
+            assert started.wait(timeout=10)
+            assert not completed.wait(timeout=.25), 'Count validation did not wait for the writer'
+        finally:
+            release.set()
+        writer.result(timeout=20)
+        assert checker.result(timeout=20) == 'stale'
+    with SessionLocal() as db:
+        balance = db.scalar(select(StockBalance).where(
+            StockBalance.item_id == item['id'], StockBalance.location_id == location['id']
+        ))
+        assert Decimal(balance.quantity) == Decimal('6')

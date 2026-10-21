@@ -144,3 +144,88 @@ def test_guided_count_workspace_and_missing(client):
     assert isinstance(workspace.json(), list)
     missing = client.get("/api/v1/counts/not-real/detail", headers=headers)
     assert missing.status_code == 404
+
+
+def test_guided_count_rejects_stock_change_before_submit(client):
+    from decimal import Decimal
+    headers = auth_headers(client)
+    location, item = seed_count_context(client, headers)
+    created = client.post('/api/v1/counts', headers=headers, json={
+        'location_id': location['id'], 'blind_count': True, 'approval_threshold': 0
+    }).json()
+    count_id = created['id']
+    assert client.put(f'/api/v1/counts/{count_id}/entries', headers=headers, json={
+        'lines': [{'item_id': item['id'], 'counted_quantity': 4}]
+    }).status_code == 200
+    receipt = client.post('/api/v1/stock/receipts', headers=headers, json={
+        'location_id': location['id'],
+        'lines': [{'item_id': item['id'], 'quantity': 1, 'unit_cost': 10}],
+    })
+    assert receipt.status_code == 201
+    submit = client.post(f'/api/v1/counts/{count_id}/submit', headers=headers)
+    assert submit.status_code == 409
+    detail = client.get(f'/api/v1/counts/{count_id}/detail', headers=headers).json()
+    assert detail['status'] == 'open'
+    assert detail['posted_document_id'] is None
+    balance = client.get(f"/api/v1/stock/balances?item_id={item['id']}&location_id={location['id']}", headers=headers).json()[0]
+    assert Decimal(balance['quantity']) == Decimal('6')
+
+
+def test_guided_count_rejects_net_zero_stock_movement_after_snapshot(client):
+    headers = auth_headers(client)
+    location, item = seed_count_context(client, headers)
+    created = client.post('/api/v1/counts', headers=headers, json={
+        'location_id': location['id'], 'blind_count': False
+    }).json()
+    count_id = created['id']
+    assert client.put(f'/api/v1/counts/{count_id}/entries', headers=headers, json={
+        'lines': [{'item_id': item['id'], 'counted_quantity': 4}]
+    }).status_code == 200
+    assert client.post('/api/v1/stock/receipts', headers=headers, json={
+        'location_id': location['id'],
+        'lines': [{'item_id': item['id'], 'quantity': 1, 'unit_cost': 10}]
+    }).status_code == 201
+    assert client.post('/api/v1/stock/issues', headers=headers, json={
+        'location_id': location['id'],
+        'lines': [{'item_id': item['id'], 'quantity': 1}]
+    }).status_code == 201
+    result = client.post(f'/api/v1/counts/{count_id}/submit', headers=headers)
+    assert result.status_code == 409
+    assert 'moved after' in result.json()['detail']
+    assert client.get(f'/api/v1/counts/{count_id}/detail', headers=headers).json()['status'] == 'open'
+
+
+def test_guided_count_rejects_movement_during_approval_window(client):
+    from decimal import Decimal
+    from app.core.security import hash_password
+    from app.db.session import SessionLocal
+    from app.models.user import User
+    owner = auth_headers(client)
+    location, item = seed_count_context(client, owner)
+    created = client.post('/api/v1/counts', headers=owner, json={
+        'location_id': location['id'], 'blind_count': True, 'approval_threshold': 1
+    }).json()
+    count_id = created['id']
+    assert client.put(f'/api/v1/counts/{count_id}/entries', headers=owner, json={
+        'lines': [{'item_id': item['id'], 'counted_quantity': 1}]
+    }).status_code == 200
+    submitted = client.post(f'/api/v1/counts/{count_id}/submit', headers=owner)
+    assert submitted.status_code == 200
+    assert submitted.json()['status'] == 'pending_approval'
+    with SessionLocal() as db:
+        db.add(User(
+            email='independent-count-approver@example.com', full_name='Independent Approver',
+            password_hash=hash_password('password123'), role='owner'
+        ))
+        db.commit()
+    approver = auth_headers(client, 'independent-count-approver@example.com')
+    assert client.post('/api/v1/stock/issues', headers=owner, json={
+        'location_id': location['id'], 'lines': [{'item_id': item['id'], 'quantity': 1}]
+    }).status_code == 201
+    result = client.post(f'/api/v1/counts/{count_id}/approve-guided', headers=approver)
+    assert result.status_code == 409
+    detail = client.get(f'/api/v1/counts/{count_id}/detail', headers=owner).json()
+    assert detail['status'] == 'pending_approval'
+    assert detail['posted_document_id'] is None
+    balances = client.get(f"/api/v1/stock/balances?item_id={item['id']}&location_id={location['id']}", headers=owner).json()
+    assert Decimal(balances[0]['quantity']) == Decimal('4')

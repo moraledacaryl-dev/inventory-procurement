@@ -1,11 +1,85 @@
 from decimal import Decimal
+import hashlib
+import json
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.models.inventory import Item, Location, StockBalance, StockDocument, StockMovement
+from app.models.inventory import CountSession, Item, Location, StockBalance, StockDocument, StockMovement
 from app.services.controls import add_audit, enqueue_event, next_document_number
 
 class InventoryError(ValueError): pass
+
+def _number(value) -> str:
+    number = Decimal(str(value if value is not None else 0))
+    if not number.is_finite():
+        raise InventoryError("Movement quantity and unit cost must be finite")
+    return str(number.normalize()) if number else "0"
+
+
+def _request_fingerprint(*, kind: str, actor_id: str, entries: list[dict],
+                         reference: str | None, notes: str | None,
+                         allow_empty: bool) -> str:
+    # Bind a retry key to the supplied request, not the computed book cost.
+    body = {
+        "kind": kind, "actor_id": actor_id, "reference": reference,
+        "notes": notes, "allow_empty": allow_empty,
+        "entries": [
+            {
+                "item_id": str(line["item_id"]),
+                "location_id": str(line["location_id"]),
+                "quantity": _number(line["quantity"]),
+                "unit_cost": _number(line.get("unit_cost", 0)),
+                "reason": line.get("reason"),
+                "cost_from_location_id": line.get("cost_from_location_id"),
+            }
+            for line in entries
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def _verified_replay(existing: StockDocument, *, fingerprint: str, kind: str,
+                     actor_id: str, reference: str | None, notes: str | None,
+                     entries: list[dict]) -> StockDocument:
+    if existing.request_fingerprint:
+        if existing.request_fingerprint != fingerprint:
+            raise InventoryError("Idempotency key was already used for a different stock request")
+        return existing
+
+    # Historical documents predate fingerprints. Permit matching replays only.
+    movements = sorted(existing.movements, key=lambda line: line.line_number)
+    matches = (
+        existing.document_type == kind
+        and existing.posted_by_user_id == actor_id
+        and existing.reference == reference
+        and existing.notes == notes
+        and len(movements) == len(entries)
+    )
+    if matches:
+        for movement, request in zip(movements, entries):
+            qty = _number(request["quantity"])
+            supplied_cost = _number(request.get("unit_cost", 0))
+            if (
+                movement.item_id != request["item_id"]
+                or movement.location_id != request["location_id"]
+                or _number(movement.quantity) != qty
+                or movement.reason != request.get("reason")
+            ):
+                matches = False
+                break
+            computed_cost = (
+                Decimal(qty) < 0
+                or bool(request.get("cost_from_location_id"))
+                or (kind in {"adjustment", "count_adjustment"} and Decimal(supplied_cost) == 0)
+            )
+            if not computed_cost and _number(movement.unit_cost) != supplied_cost:
+                matches = False
+                break
+    if not matches:
+        raise InventoryError("Idempotency key was already used for a different stock request")
+    return existing
 
 def _get_item(db: Session, item_id: str) -> Item:
     item = db.get(Item, item_id)
@@ -24,14 +98,53 @@ def _balance(db: Session, item_id: str, location_id: str) -> StockBalance:
         row = StockBalance(item_id=item_id, location_id=location_id, quantity=Decimal("0"), average_cost=Decimal("0")); db.add(row); db.flush()
     return row
 
+def assert_count_snapshot_current(db: Session, session: CountSession) -> None:
+    """Lock counted item balances and reject posting against a stale count.
+
+    Lock acquisition follows item ID order and uses the same advisory/row locks
+    as every stock document. These locks must remain held until the caller
+    commits both the physical-count status and its adjustment document.
+    """
+    for line in sorted(session.lines, key=lambda row: row.item_id):
+        if line.counted_quantity is None:
+            continue
+        balance = _balance(db, line.item_id, session.location_id)
+        if Decimal(balance.quantity) != Decimal(line.system_quantity):
+            raise InventoryError(
+                "Stock changed since this count started; create a new physical count"
+            )
+        # A sale followed by a receipt can restore the same balance; that still
+        # makes the original count window ambiguous and requires a fresh count.
+        newer_movement = db.scalar(
+            select(StockMovement.id)
+            .where(
+                StockMovement.item_id == line.item_id,
+                StockMovement.location_id == session.location_id,
+                StockMovement.created_at >= session.created_at,
+            )
+            .limit(1)
+        )
+        if newer_movement is not None:
+            raise InventoryError(
+                "Stock moved after this count started; create a new physical count"
+            )
+
+
 def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict], reference: str | None = None, notes: str | None = None, idempotency_key: str | None = None, commit: bool = True, allow_empty: bool = False) -> StockDocument:
+    if not entries and not allow_empty: raise InventoryError("At least one stock line is required")
+    fingerprint = _request_fingerprint(
+        kind=kind, actor_id=actor_id, entries=entries,
+        reference=reference, notes=notes, allow_empty=allow_empty,
+    )
     if idempotency_key:
         if db.bind is not None and db.bind.dialect.name == 'postgresql':
             db.execute(text('select pg_advisory_xact_lock(hashtext(:key))'), {'key': idempotency_key})
         existing = db.scalar(select(StockDocument).where(StockDocument.idempotency_key == idempotency_key))
-        if existing: return existing
-    if not entries and not allow_empty: raise InventoryError("At least one stock line is required")
-    doc = StockDocument(document_number=next_document_number(db,kind), document_type=kind, posted_by_user_id=actor_id, reference=reference, notes=notes, idempotency_key=idempotency_key)
+        if existing:
+            return _verified_replay(existing, fingerprint=fingerprint, kind=kind,
+                                    actor_id=actor_id, reference=reference,
+                                    notes=notes, entries=entries)
+    doc = StockDocument(document_number=next_document_number(db,kind), document_type=kind, posted_by_user_id=actor_id, reference=reference, notes=notes, idempotency_key=idempotency_key, request_fingerprint=fingerprint)
     db.add(doc); db.flush()
     event_lines=[]
     for idx, entry in enumerate(entries, 1):
@@ -71,7 +184,10 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         db.rollback()
         if idempotency_key:
             existing = db.scalar(select(StockDocument).where(StockDocument.idempotency_key == idempotency_key))
-            if existing: return existing
+            if existing:
+                return _verified_replay(existing, fingerprint=fingerprint, kind=kind,
+                                        actor_id=actor_id, reference=reference,
+                                        notes=notes, entries=entries)
         raise InventoryError("Stock document could not be posted") from exc
     return doc
 

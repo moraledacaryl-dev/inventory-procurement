@@ -87,7 +87,7 @@ function InventoryOperationsContent(){
   const reservedTotal=availability.reduce((sum,row)=>sum+Number(row.reserved_quantity),0);
   const inventoryValue=valuation.reduce((sum,row)=>sum+Number(row.inventory_value),0);
 
-  return <AppShell title="Inventory Operations" description="Transfers, adjustments, waste, and expiry.">
+  return <>
     <section className="operations-metrics"><div><span>Available stock</span><strong>{formatQuantity(availableTotal)}</strong><small>Physical less active reservations</small></div><div><span>Reserved stock</span><strong>{formatQuantity(reservedTotal)}</strong><small>Committed to active references</small></div><div><span>Near expiry</span><strong>{expiryAvailable?expiry.length:"—"}</strong><small>{expiryAvailable?"Lots expiring within 60 days":"Reporting unavailable"}</small></div><div><span>Inventory value</span><strong>{valuationAvailable?formatMoney(inventoryValue):"—"}</strong><small>{valuationAvailable?"Weighted-average valuation":"Reporting unavailable"}</small></div></section>
 
     {optionalFailures.length?<FeedbackBanner tone="warning" title="Supplementary information unavailable" message={optionalFailures.join(", ")}/>:null}

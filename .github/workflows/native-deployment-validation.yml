@@ -9,6 +9,24 @@ jobs:
         run: |
           bash -n deploy/install-native.sh
           bash -n deploy/release-native.sh
+      - name: Validate example backend environment is shell-sourceable and valid JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source deploy/env/inventory-backend.env.example
+          set +a
+          python3 - <<'PY'
+          import json,os
+          for key in ('CORS_ORIGINS','TRUSTED_HOSTS'):
+              assert isinstance(json.loads(os.environ[key]),list), f'{key} is not a JSON list'
+          destinations=json.loads(os.environ['INTEGRATION_ENDPOINTS_JSON'])
+          assert isinstance(destinations,dict)
+          assert destinations.get('accounting')=='https://accounting.hiddenoasis.app'
+          assert destinations.get('operations')=='https://operations.hiddenoasis.app'
+          assert os.environ['APP_NAME']=='Hidden Oasis Inventory & Procurement'
+          print('Example Inventory systemd/bash integration JSON is valid')
+          PY
       - name: Validate generated frontend file handling
         run: |
           grep -q 'chown hiddenoasis:hiddenoasis.*frontend/next-env.d.ts' deploy/install-native.sh

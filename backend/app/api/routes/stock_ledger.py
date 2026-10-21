@@ -71,6 +71,10 @@ def stock_ledger(
             "quantity": str(movement.quantity),
             "unit_cost": str(movement.unit_cost),
             "line_value": str(Decimal(movement.quantity) * Decimal(movement.unit_cost)),
+            "book_value_change": str(movement.book_value_delta) if movement.book_value_delta is not None else None,
+            "valuation_difference": str(
+                Decimal(movement.book_value_delta) - Decimal(movement.quantity) * Decimal(movement.unit_cost)
+            ) if movement.book_value_delta is not None else None,
             "running_quantity": str(running[key]),
             "reason": movement.reason,
             "created_at": movement.created_at.isoformat(),
@@ -79,6 +83,9 @@ def stock_ledger(
 
     total_quantity = sum((Decimal(row["quantity"]) for row in result), Decimal("0"))
     total_value = sum((Decimal(row["line_value"]) for row in result), Decimal("0"))
+    missing_book_values = sum(row["book_value_change"] is None for row in result)
+    actual_book_change = sum((Decimal(row["book_value_change"]) for row in result
+                              if row["book_value_change"] is not None), Decimal("0"))
     return {
         "filters": {
             "item_id": item_id,
@@ -92,6 +99,8 @@ def stock_ledger(
             "movement_count": len(result),
             "net_quantity": str(total_quantity),
             "net_value": str(total_value),
+            "book_value_change": str(actual_book_change) if not missing_book_values else None,
+            "legacy_unverified_value_lines": missing_book_values,
             "document_count": len({row["document_id"] for row in result}),
         },
         "rows": result,
@@ -118,6 +127,9 @@ def stock_document_detail(
     locations = {row.id: row for row in db.scalars(select(Location).where(Location.id.in_(location_ids))).all()} if location_ids else {}
 
     total_value = sum((Decimal(row.quantity) * Decimal(row.unit_cost) for row in document.movements), Decimal("0"))
+    all_book_values = all(line.book_value_delta is not None for line in document.movements)
+    book_delta = sum((Decimal(line.book_value_delta) for line in document.movements
+                      if line.book_value_delta is not None), Decimal("0"))
     return {
         "document": {
             "id": document.id,
@@ -135,6 +147,8 @@ def stock_document_detail(
             "line_count": len(document.movements),
             "net_quantity": str(sum((Decimal(row.quantity) for row in document.movements), Decimal("0"))),
             "net_value": str(total_value),
+            "book_value_change": str(book_delta) if all_book_values else None,
+            "legacy_unverified_value_lines": sum(line.book_value_delta is None for line in document.movements),
         },
         "lines": [
             {
@@ -149,6 +163,10 @@ def stock_document_detail(
                 "quantity": str(row.quantity),
                 "unit_cost": str(row.unit_cost),
                 "line_value": str(Decimal(row.quantity) * Decimal(row.unit_cost)),
+                "book_value_change": str(row.book_value_delta) if row.book_value_delta is not None else None,
+                "valuation_difference": str(
+                    Decimal(row.book_value_delta) - Decimal(row.quantity) * Decimal(row.unit_cost)
+                ) if row.book_value_delta is not None else None,
                 "reason": row.reason,
                 "created_at": row.created_at.isoformat(),
             }

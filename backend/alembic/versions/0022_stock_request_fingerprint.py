@@ -16,7 +16,11 @@ def upgrade():
     # Historical documents remain nullable and are validated by their movement
     # lineage when an old idempotency key is replayed.
     op.add_column("stock_documents", sa.Column("request_fingerprint", sa.String(64), nullable=True))
+    op.add_column("goods_receipts", sa.Column("request_fingerprint", sa.String(64), nullable=True))
+    op.add_column("purchase_returns", sa.Column("request_fingerprint", sa.String(64), nullable=True))
 
 
 def downgrade():
+    op.drop_column("purchase_returns", "request_fingerprint")
+    op.drop_column("goods_receipts", "request_fingerprint")
     op.drop_column("stock_documents", "request_fingerprint")

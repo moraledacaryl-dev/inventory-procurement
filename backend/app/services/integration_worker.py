@@ -10,6 +10,7 @@ from app.models.procurement import PurchaseOrder, PurchaseReturn, Supplier
 from app.services.controls import add_audit, add_notification, enqueue_event
 
 ACCOUNTING_ENDPOINT='/api/integration-review/service-intake'
+ACCOUNTING_STATUS_ENDPOINT='/api/integration-review/service-status'
 ACCOUNTING_DELIVERED_STATUSES={'ready_for_review','accepted','rejected'}
 OPERATIONS_SOURCE_APP='inventory_procurement'
 OPERATIONS_ENDPOINT=f'/api/integrations/v2/events/{OPERATIONS_SOURCE_APP}'
@@ -176,8 +177,131 @@ def process_event(db:Session,event_id:str,worker_id:str,endpoints:dict[str,str]|
         else:event.status='failed';delay=min(3600,30*(2**(event.attempts-1)));event.available_at=utcnow()+timedelta(seconds=delay);add_audit(db,actor_user_id=None,action='integration.retry_scheduled',entity_type='integration_event',entity_id=event.id,details={'error':event.last_error,'attempts':event.attempts,'delay_seconds':delay})
     db.commit();db.refresh(event);return event
 
+def _accounting_status_url(base: str) -> str:
+    clean = base.rstrip('/')
+    if clean.endswith(ACCOUNTING_ENDPOINT):
+        clean = clean[:-len(ACCOUNTING_ENDPOINT)]
+    return _join_url(clean, ACCOUNTING_STATUS_ENDPOINT)
+
+
+def _verified_accounting_status(status: dict, source_event_id: str) -> dict:
+    if not isinstance(status, dict) or status.get('source_app') != 'inventory' or status.get('source_event_id') != source_event_id:
+        raise RuntimeError('Accounting journal status returned an unrelated source event')
+    if status.get('review_status') not in {'ready_for_review', 'accepted', 'rejected', 'validation_failed'}:
+        raise RuntimeError('Accounting journal status returned an unknown review state')
+    claimed = status.get('ledger_posting_confirmed')
+    if type(claimed) is not bool:
+        raise RuntimeError('Accounting journal proof has no explicit confirmation boolean')
+    from decimal import Decimal
+    try:
+        debit = Decimal(str(status.get('journal_debit') or 0))
+        credit = Decimal(str(status.get('journal_credit') or 0))
+    except Exception as exc:
+        raise RuntimeError('Accounting journal proof has invalid monetary values') from exc
+    # Producer independently validates the essential invariants rather than
+    # treating a review acknowledgement as journal posting evidence.
+    confirmed = bool(
+        claimed
+        and status['review_status'] == 'accepted'
+        and status.get('journal_status') == 'posted'
+        and status.get('journal_is_reversed') is False
+        and status.get('accepted_journal_entry_id') is not None
+        and int(status.get('journal_line_count') or 0) >= 2
+        and debit > 0
+        and debit == credit
+    )
+    if claimed and not confirmed:
+        raise RuntimeError('Accounting journal proof was inconsistent with posted journal state')
+    return {
+        'review_id': str(status.get('review_id')) if status.get('review_id') is not None else None,
+        'review_status': status['review_status'],
+        'financial_effect': status.get('financial_effect'),
+        'journal_entry_id': str(status['accepted_journal_entry_id']) if status.get('accepted_journal_entry_id') is not None else None,
+        'journal_status': status.get('journal_status'),
+        'ledger_posting_confirmed': confirmed,
+        'journal_debit': str(debit) if status.get('journal_debit') is not None else None,
+        'journal_credit': str(credit) if status.get('journal_credit') is not None else None,
+    }
+
+
+def reconcile_accounting_reviews(db: Session, endpoints: dict[str, str] | None = None,
+                                 client: httpx.Client | None = None, limit: int = 8) -> dict:
+    """Read back Accounting's authoritative review and journal state.
+
+    No financial postings or Accounting accept/reject actions are performed.
+    Errors only mark local verification as unavailable, without mutating the
+    successful outbound-delivery state.
+    """
+    endpoints = endpoints if endpoints is not None else endpoint_map()
+    base = endpoints.get('accounting')
+    token = os.getenv('INTEGRATION_API_KEY', '').strip()
+    if not base or not token or limit <= 0:
+        return {'checked': 0, 'confirmed': 0, 'errors': 0}
+    now = utcnow()
+    # Bounded scan with a per-event cooling window to avoid flooding Accounting.
+    rows = db.scalars(
+        select(IntegrationEvent).where(
+            IntegrationEvent.direction == 'outbound',
+            IntegrationEvent.destination_system == 'accounting',
+            IntegrationEvent.status == 'completed',
+        ).order_by(IntegrationEvent.created_at.desc()).limit(600)
+    ).all()
+    eligible = []
+    for row in rows:
+        state = (row.payload or {}).get('accounting_reconciliation') if isinstance(row.payload, dict) else None
+        checked_at = state.get('checked_at') if isinstance(state, dict) else None
+        if checked_at:
+            try:
+                last = datetime.fromisoformat(checked_at)
+                if last.tzinfo is None:
+                    last = last.replace(tzinfo=timezone.utc)
+                if now - last < timedelta(minutes=30):
+                    continue
+            except (TypeError, ValueError):
+                pass
+        eligible.append(row)
+    # Oldest reconciled first; new/legacy outbox deliveries are checked first.
+    eligible.sort(key=lambda row: ((row.payload or {}).get('accounting_reconciliation') or {}).get('checked_at') or '')
+    selected = eligible[:limit]
+    owns_client = client is None
+    client = client or httpx.Client(timeout=7)
+    checked = confirmed_count = errors = 0
+    try:
+        for event in selected:
+            try:
+                response = client.get(
+                    _accounting_status_url(base),
+                    params={'source_event_id': event.id},
+                    headers={'X-Integration-Api-Key': token},
+                )
+                response.raise_for_status()
+                proof = _verified_accounting_status(response.json(), event.id)
+                state = {**proof, 'checked_at': utcnow().isoformat(), 'last_error': None}
+                confirmed_count += int(proof['ledger_posting_confirmed'])
+            except Exception as exc:
+                errors += 1
+                state = {
+                    'review_status': 'verification_unavailable',
+                    'ledger_posting_confirmed': False,
+                    'checked_at': utcnow().isoformat(),
+                    'last_error': str(exc)[:240],
+                }
+            event.payload = {
+                **(event.payload if isinstance(event.payload, dict) else {}),
+                'accounting_reconciliation': state,
+            }
+            checked += 1
+        if checked:
+            db.commit()
+    finally:
+        if owns_client:
+            client.close()
+    return {'checked': checked, 'confirmed': confirmed_count, 'errors': errors}
+
+
 def run_once(db:Session,limit:int=25)->dict:
     endpoints=endpoint_map();queued=enqueue_operations_stock_alerts(db,endpoints);worker_id=f'{socket.gethostname()}:{os.getpid()}';rows=claim_events(db,worker_id,limit);completed=failed=dead=0
     for row in rows:
         result=process_event(db,row.id,worker_id,endpoints=endpoints);completed+=result.status=='completed';failed+=result.status=='failed';dead+=result.status=='dead_letter'
-    return {'queued_operations_alerts':queued,'claimed':len(rows),'completed':completed,'failed':failed,'dead_letter':dead}
+    reconciliation=reconcile_accounting_reviews(db,endpoints=endpoints)
+    return {'queued_operations_alerts':queued,'claimed':len(rows),'completed':completed,'failed':failed,'dead_letter':dead,'accounting_reconciliation':reconciliation}

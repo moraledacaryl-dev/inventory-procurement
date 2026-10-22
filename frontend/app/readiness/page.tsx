@@ -13,7 +13,23 @@ export default function Page(){
   const[deployment,setDeployment]=useState<Deployment|null>(null);const[jobs,setJobs]=useState<ImportJob[]>([]);const[runs,setRuns]=useState<Acceptance[]>([]);const[msg,setMsg]=useState("");
   const load=useCallback(async()=>{try{const[d,j,r]=await Promise.all([api<Deployment>("/deployment/status"),api<ImportJob[]>("/migration/imports"),api<Acceptance[]>("/acceptance-runs")]);setDeployment(d);setJobs(j);setRuns(r)}catch(error){setMsg((error as Error).message)}},[]);
   useEffect(()=>{void load()},[load]);
-  async function validateImport(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget,data=new FormData(form),type=String(data.get("import_type"));const file=data.get("file");if(!(file instanceof File))return;const body=new FormData();body.append("file",file);try{const token=localStorage.getItem("inventory_token");const response=await fetch(`${process.env.NEXT_PUBLIC_API_URL||"http://localhost:8000/api/v1"}/migration/imports/${type}/validate`,{method:"POST",headers:token?{Authorization:`Bearer ${token}`}:{},body});if(!response.ok)throw new Error((await response.json()).detail||"Validation failed");const result=await response.json();setMsg(result.status==="validated"?"Import validated and ready to apply.":`Import contains ${result.errors.length} errors.`);form.reset();await load()}catch(error){setMsg((error as Error).message)}}
+  async function validateImport(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();
+    const form=event.currentTarget,data=new FormData(form);
+    const type=String(data.get("import_type"));
+    const file=data.get("file");
+    if(!(file instanceof File)||file.size===0){setMsg("Select a nonempty CSV file.");return;}
+    const body=new FormData();
+    body.append("file",file);
+    try{
+      // Use the same cookie-authenticated API client as every other action.
+      // Legacy localStorage tokens and localhost URLs fail in production.
+      const result=await api<{status:string;errors:{line:number;error:string}[]}>(`/migration/imports/${type}/validate`,{method:"POST",body});
+      setMsg(result.status==="validated"?"Import validated and ready to apply.":`Import contains ${result.errors.length} errors.`);
+      if(result.status==="validated")form.reset();
+      await load();
+    }catch(error){setMsg((error as Error).message)}
+  }
   async function applyImport(id:string){try{await api(`/migration/imports/${id}/apply`,{method:"POST"});setMsg("Import applied successfully.");await load()}catch(error){setMsg((error as Error).message)}}
   async function runAcceptance(){try{const result=await api<Acceptance>("/acceptance-runs",{method:"POST",body:JSON.stringify({environment:"production-candidate",notes:"Pass 9 release acceptance"})});setMsg(`Acceptance run ${result.run_number}: ${result.status}`);await load()}catch(error){setMsg((error as Error).message)}}
   return <AppShell title="Production Readiness">

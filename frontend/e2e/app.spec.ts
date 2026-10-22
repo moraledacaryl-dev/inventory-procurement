@@ -230,7 +230,7 @@ test("stock ledger clearly labels truncated totals and validates filter dates", 
   const dates = page.locator(".ledger-filters input[type=date]");
   await dates.nth(0).fill("2026-02-15");
   await dates.nth(1).fill("2026-02-01");
-  await expect(page.getByRole("alert", { name: /start date/i })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: /start date must be on or before the end date/i })).toBeVisible();
   const requestsBefore = ledgerRequests;
   await page.waitForTimeout(100);
   expect(ledgerRequests).toBe(requestsBefore);

@@ -14,6 +14,7 @@ from app.models.inventory_operations import ItemLocationSetting, StockReservatio
 from app.models.procurement import PurchaseOrder, PurchaseRequisition, PurchaseRequisitionLine, Supplier, SupplierItem
 from app.models.user import User
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["procurement-planning"])
 
@@ -40,10 +41,14 @@ class PlanningRequisitionCreate(BaseModel):
 def fail(status: int, message: str):
     raise HTTPException(status_code=status, detail=message)
 
-def planned_rows(db: Session, location_id: str | None = None):
+def planned_rows(db: Session, location_id: str | None = None, *, allowed_location_ids: set[str] | None = None):
     if location_id and not db.get(Location, location_id):
         fail(404, "Location not found")
-    locations = db.scalars(select(Location).where(Location.is_active.is_(True)).order_by(Location.code)).all()
+    location_stmt = select(Location).where(Location.is_active.is_(True))
+    if allowed_location_ids is not None:
+        location_stmt = location_stmt.where(Location.id.in_(allowed_location_ids))
+    locations = db.scalars(location_stmt.order_by(Location.code)).all()
+    # Never fetch financial or stock data for locations outside assigned scope.
     location_ids = [location_id] if location_id else [row.id for row in locations]
     location_map = {row.id: row for row in locations}
     items = {row.id: row for row in db.scalars(select(Item).where(Item.is_active.is_(True), Item.track_stock.is_(True))).all()}
@@ -114,8 +119,10 @@ def planned_rows(db: Session, location_id: str | None = None):
     return rows
 
 @router.get("/procurement/planning")
-def procurement_planning(location_id: str | None = None, db: Session = Depends(get_db), _: User = Depends(require_permission("procurement.read"))):
-    rows = planned_rows(db, location_id)
+def procurement_planning(location_id: str | None = None, db: Session = Depends(get_db), user: User = Depends(require_permission("procurement.read"))):
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
+    rows = planned_rows(db, location_id, allowed_location_ids=visible_location_ids(db, user))
     return {"summary": {"suggestion_count": len(rows), "critical_count": sum(1 for row in rows if row["priority"] == "critical"), "estimated_value": str(sum((Decimal(row["estimated_value"]) for row in rows), Decimal("0"))), "supplier_assigned_count": sum(1 for row in rows if row["preferred_supplier_id"])}, "rows": rows}
 
 @router.post("/procurement/planning/requisitions", status_code=201)
@@ -123,6 +130,7 @@ def create_planned_requisition(payload: PlanningRequisitionCreate, db: Session =
     location = db.get(Location, payload.location_id)
     if not location or not location.is_active:
         fail(422, "Active location not found")
+    require_scoped_locations(db, user, {payload.location_id})
     for line in payload.lines:
         item = db.get(Item, line.item_id)
         if not item or not item.is_active or not item.track_stock:

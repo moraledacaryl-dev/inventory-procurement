@@ -101,10 +101,15 @@ def add_supplier_item(supplier_id:str,p:SupplierItemCreate,db:Session=Depends(ge
     row=SupplierItem(supplier_id=supplier_id,**p.model_dump()); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='supplier.item_linked',entity_type='supplier_item',entity_id=row.id,details={'supplier_id':supplier_id,'item_id':p.item_id,'preferred':p.is_preferred}); db.commit(); db.refresh(row); return row
 
 @router.get('/supplier-performance',response_model=list[SupplierPerformance])
-def supplier_performance(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def supplier_performance(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
     suppliers=db.scalars(select(Supplier).order_by(Supplier.code)).all(); result=[]
-    pos=db.scalars(select(PurchaseOrder).options(selectinload(PurchaseOrder.lines))).unique().all()
-    receipts=db.scalars(select(GoodsReceipt).options(selectinload(GoodsReceipt.lines))).unique().all()
+    allowed=visible_location_ids(db,user)
+    po_stmt=select(PurchaseOrder).options(selectinload(PurchaseOrder.lines))
+    if allowed is not None: po_stmt=po_stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
+    pos=db.scalars(po_stmt).unique().all()
+    po_ids=[po.id for po in pos]
+    receipt_stmt=select(GoodsReceipt).where(GoodsReceipt.purchase_order_id.in_(po_ids)).options(selectinload(GoodsReceipt.lines))
+    receipts=db.scalars(receipt_stmt).unique().all()
     receipts_by_po={}
     for receipt in receipts: receipts_by_po.setdefault(receipt.purchase_order_id,[]).append(receipt)
     for supplier in suppliers:
@@ -125,14 +130,26 @@ def supplier_performance(db:Session=Depends(get_db),_:User=Depends(require_permi
     return result
 
 @router.get('/reorder-suggestions',response_model=list[ReorderSuggestion])
-def reorder_suggestions(location_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.read'))): return reorder_rows(db,location_id)
+def reorder_suggestions(location_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.read'))):
+    allowed=visible_location_ids(db,user)
+    if location_id:
+        require_scoped_locations(db,user,{location_id})
+        return reorder_rows(db,location_id)
+    if allowed is None: return reorder_rows(db)
+    # Global reorder totals cannot represent a restricted user's locations.
+    return [row for loc_id in sorted(allowed) for row in reorder_rows(db,loc_id)]
 @router.post('/reorder-suggestions/requisition',response_model=PROut,status_code=201)
 def create_reorder_requisition(p:ReorderRequisitionCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
+    allowed=visible_location_ids(db,user)
+    if allowed is not None and not p.location_id:
+        fail(403,'A location is required for a scoped reorder requisition')
+    if p.location_id:
+        require_scoped_locations(db,user,{p.location_id})
     suggestions=reorder_rows(db,p.location_id)
     if p.item_ids is not None: suggestions=[x for x in suggestions if x.item_id in set(p.item_ids)]
     if not suggestions: fail(409,'No reorder quantities are currently required')
     row=PurchaseRequisition(requisition_number=next_document_number(db,'PR'),department=p.department,needed_by=p.needed_by,justification=p.justification,status='submitted',requested_by_user_id=user.id)
-    row.lines=[PurchaseRequisitionLine(item_id=x.item_id,quantity=x.suggested_quantity,estimated_unit_cost=x.standard_cost,notes=f'Auto-reorder; stock {x.current_quantity}, minimum {x.minimum_stock}, on order {x.on_order_quantity}') for x in suggestions]
+    row.lines=[PurchaseRequisitionLine(item_id=x.item_id,quantity=x.suggested_quantity,estimated_unit_cost=x.standard_cost,notes=f'Auto-reorder; stock {x.current_quantity}, minimum {x.minimum_stock}, on order {x.on_order_quantity}' + (f'; location:{p.location_id}' if p.location_id else '')) for x in suggestions]
     db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='requisition.auto_created',entity_type='purchase_requisition',entity_id=row.id,details={'line_count':len(row.lines),'location_id':p.location_id}); add_notification(db,title='Reorder requisition submitted',message=f'{row.requisition_number} was generated with {len(row.lines)} low-stock items.',severity='info'); db.commit(); return load_pr(db,row.id)
 
 @router.get('/requisitions',response_model=list[PROut])

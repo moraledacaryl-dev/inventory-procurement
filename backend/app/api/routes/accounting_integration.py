@@ -31,8 +31,16 @@ ACCOUNTING_RULES = {
 def utcnow(): return datetime.now(timezone.utc)
 
 def money(value) -> Decimal:
-    try:return Decimal(str(value or 0))
-    except (InvalidOperation,TypeError,ValueError):return Decimal("0")
+    """Never disguise malformed financial evidence as an actual zero."""
+    if value is None or isinstance(value, bool):
+        raise ValueError("Financial quantity or amount is missing")
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("Financial quantity or amount is not numeric") from exc
+    if not amount.is_finite():
+        raise ValueError("Financial quantity or amount must be finite")
+    return amount
 
 
 def event_amount(event: IntegrationEvent) -> Decimal:
@@ -51,9 +59,10 @@ def event_amount(event: IntegrationEvent) -> Decimal:
     return total
 
 
-def journal_lines(event:IntegrationEvent)->list[dict]:
+def journal_lines(event:IntegrationEvent, amount:Decimal|None=None)->list[dict]:
     rule=ACCOUNTING_RULES.get(event.event_type)
-    amount=event_amount(event)
+    if amount is None:
+        amount=event_amount(event)
     if not rule or not rule["debit"] or not rule["credit"] or amount==0:return []
     debit,credit=rule["debit"],rule["credit"]
     if amount<0:debit,credit=credit,debit;amount=-amount
@@ -70,7 +79,16 @@ def event_row(event:IntegrationEvent)->dict:
     # Only a recent verified Accounting journal proof can establish posting.
     # A receipt or accepted review by itself is never a posted GL entry.
     confirmed=proof.get("ledger_posting_confirmed") is True and intake_status=="accepted" and proof.get("journal_status")=="posted"
-    return {"id":event.id,"event_type":event.event_type,"aggregate_type":event.aggregate_type,"aggregate_id":event.aggregate_id,"idempotency_key":event.idempotency_key,"status":event.status,"attempts":event.attempts,"max_attempts":event.max_attempts,"last_error":event.last_error,"created_at":event.created_at,"processed_at":event.processed_at,"amount":event_amount(event),"debit_account":rule["debit"],"credit_account":rule["credit"],"mapped":event.event_type in ACCOUNTING_RULES,"journal_lines":journal_lines(event),"accounting_receipt":receipt or None,"accounting_intake_status":intake_status,"accounting_review_id":proof.get("review_id") or intake.get("review_id"),"ledger_posting_confirmed":confirmed,"accounting_journal_entry_id":proof.get("journal_entry_id"),"accounting_journal_status":proof.get("journal_status"),"accounting_verified_at":proof.get("checked_at"),"accounting_verification_error":proof.get("last_error")}
+    try:
+        amount=event_amount(event)
+        evidence_error=None
+    except (ValueError, InvalidOperation, ArithmeticError) as exc:
+        # This is a read-only preview. Do not change delivery or GL status and
+        # never invent a zero amount for incomplete historical source events.
+        amount=None
+        evidence_error=str(exc)
+    lines=journal_lines(event,amount) if amount is not None else []
+    return {"id":event.id,"event_type":event.event_type,"aggregate_type":event.aggregate_type,"aggregate_id":event.aggregate_id,"idempotency_key":event.idempotency_key,"status":event.status,"attempts":event.attempts,"max_attempts":event.max_attempts,"last_error":event.last_error,"created_at":event.created_at,"processed_at":event.processed_at,"amount":amount,"financial_evidence_error":evidence_error,"financial_evidence_valid":evidence_error is None,"debit_account":rule["debit"],"credit_account":rule["credit"],"mapped":event.event_type in ACCOUNTING_RULES,"journal_lines":lines,"accounting_receipt":receipt or None,"accounting_intake_status":intake_status,"accounting_review_id":proof.get("review_id") or intake.get("review_id"),"ledger_posting_confirmed":confirmed,"accounting_journal_entry_id":proof.get("journal_entry_id"),"accounting_journal_status":proof.get("journal_status"),"accounting_verified_at":proof.get("checked_at"),"accounting_verification_error":proof.get("last_error")}
 
 
 class AccountingReceipt(BaseModel):
@@ -86,8 +104,34 @@ def accounting_workspace(status:str|None=None,limit:int=Query(200,ge=1,le=500),d
     require_global_operational_access(db,user)
     stmt=select(IntegrationEvent).where(IntegrationEvent.destination_system=="accounting").order_by(IntegrationEvent.created_at.desc())
     if status:stmt=stmt.where(IntegrationEvent.status==status)
-    events=db.scalars(stmt.limit(limit)).all();counts=dict(db.execute(select(IntegrationEvent.status,func.count()).where(IntegrationEvent.destination_system=="accounting").group_by(IntegrationEvent.status)).all());rows=[event_row(event) for event in events]
-    return {"summary":{"pending":counts.get("pending",0)+counts.get("processing",0),"completed":counts.get("completed",0),"failed":counts.get("failed",0),"dead_letter":counts.get("dead_letter",0),"unmapped":sum(1 for row in rows if not row["mapped"]),"queued_value":sum((row["amount"] for row in rows if row["status"] in {"pending","processing","failed"}),Decimal("0")),"ready_for_review":sum(1 for row in rows if row["accounting_intake_status"]=="ready_for_review"),"review_rejected":sum(1 for row in rows if row["accounting_intake_status"]=="rejected"),"unverified_delivery":sum(1 for row in rows if row["accounting_intake_status"]=="unverified_delivery"),"posted_journals_verified":sum(1 for row in rows if row["ledger_posting_confirmed"]),"verification_unavailable":sum(1 for row in rows if row["accounting_intake_status"]=="verification_unavailable")},"rules":[{"event_type":event_type,**accounts} for event_type,accounts in sorted(ACCOUNTING_RULES.items())],"events":rows}
+    events=db.scalars(stmt.limit(limit)).all()
+    counts=dict(db.execute(select(IntegrationEvent.status,func.count()).where(IntegrationEvent.destination_system=="accounting").group_by(IntegrationEvent.status)).all())
+    rows=[event_row(event) for event in events]
+    total_events=sum(counts.values())
+    return {
+        "summary":{
+            # Backlog counts reflect ALL Accounting events; all other event
+            # metrics reflect displayed rows, which may be truncated by limit.
+            "pending":counts.get("pending",0)+counts.get("processing",0),
+            "completed":counts.get("completed",0),
+            "failed":counts.get("failed",0),
+            "dead_letter":counts.get("dead_letter",0),
+            "total_events":total_events,
+            "displayed_events":len(rows),
+            "has_more":total_events>len(rows),
+            "event_metrics_scope":"displayed_rows",
+            "unmapped":sum(1 for row in rows if not row["mapped"]),
+            "financial_evidence_errors":sum(1 for row in rows if not row["financial_evidence_valid"]),
+            "queued_value":sum((row["amount"] for row in rows if row["status"] in {"pending","processing","failed"} and row["amount"] is not None),Decimal("0")),
+            "ready_for_review":sum(1 for row in rows if row["accounting_intake_status"]=="ready_for_review"),
+            "review_rejected":sum(1 for row in rows if row["accounting_intake_status"]=="rejected"),
+            "unverified_delivery":sum(1 for row in rows if row["accounting_intake_status"]=="unverified_delivery"),
+            "posted_journals_verified":sum(1 for row in rows if row["ledger_posting_confirmed"]),
+            "verification_unavailable":sum(1 for row in rows if row["accounting_intake_status"]=="verification_unavailable"),
+        },
+        "rules":[{"event_type":event_type,**accounts} for event_type,accounts in sorted(ACCOUNTING_RULES.items())],
+        "events":rows,
+    }
 
 
 @router.post("/integrations/accounting/receipts")

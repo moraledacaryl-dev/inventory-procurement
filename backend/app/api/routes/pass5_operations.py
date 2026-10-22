@@ -12,7 +12,7 @@ from app.models.inventory import Item, Location
 from app.models.pass5 import MaintenancePlan, WorkOrder, WorkOrderPart, PurchaseLineTreatment, AccountingMapping
 from app.models.user import User
 from app.services.controls import add_audit, enqueue_event, next_document_number
-from app.services.operational_authorization import visible_location_ids
+from app.services.operational_authorization import visible_location_ids, require_global_operational_access
 
 router=APIRouter(tags=['maintenance-accounting'])
 def fail(c,m): raise HTTPException(c,m)
@@ -110,12 +110,15 @@ def complete_work_order(work_order_id:str,p:CompleteIn,db:Session=Depends(get_db
     add_audit(db,actor_user_id=u.id,action='maintenance.work_order_completed',entity_type='maintenance_work_order',entity_id=row.id,details={'total_cost':str(total)}); db.commit(); db.refresh(row); return work_order_payload(row)
 
 @router.get('/purchase-line-treatments')
-def treatments(source_type:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))):
+def treatments(source_type:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.read'))):
+    # Source line IDs have no normalized, verified location provenance here.
+    require_global_operational_access(db,user)
     q=select(PurchaseLineTreatment)
     if source_type:q=q.where(PurchaseLineTreatment.source_type==source_type)
     return db.scalars(q.order_by(PurchaseLineTreatment.created_at.desc())).all()
 @router.post('/purchase-line-treatments',status_code=201)
 def set_treatment(p:TreatmentIn,db:Session=Depends(get_db),u:User=Depends(require_permission('inventory.*'))):
+    require_global_operational_access(db,u)
     allowed={'stock','reusable_property','fixed_asset','service_expense'}
     if p.treatment not in allowed: fail(422,'Unsupported purchasing treatment')
     if p.intended_location_id and not db.get(Location,p.intended_location_id): fail(422,'Location not found')
@@ -126,9 +129,12 @@ def set_treatment(p:TreatmentIn,db:Session=Depends(get_db),u:User=Depends(requir
     db.commit(); db.refresh(row); return row
 
 @router.get('/accounting-mappings')
-def mappings(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))): return db.scalars(select(AccountingMapping).order_by(AccountingMapping.event_key)).all()
+def mappings(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
+    return db.scalars(select(AccountingMapping).order_by(AccountingMapping.event_key)).all()
 @router.post('/accounting-mappings',status_code=201)
 def create_mapping(p:MappingIn,db:Session=Depends(get_db),u:User=Depends(require_permission('inventory.*'))):
+    require_global_operational_access(db,u)
     row=AccountingMapping(**p.model_dump()); db.add(row)
     try: db.commit(); db.refresh(row); return row
     except IntegrityError: db.rollback(); fail(409,'Accounting mapping already exists')

@@ -168,10 +168,17 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
         # quantities, sale identity, disposition or lifecycle type. A silent
         # success here would hide an upstream conflict and an incorrect stock
         # deduction/reversal even though the immutable row was unchanged.
+        # Compare typed business values, not raw JSON serialization: 2 and
+        # 2.000 represent the same POS quantity, while a different quantity,
+        # disposition, sale, or event type must fail closed.
+        try:
+            original_request = PosSaleEventIn.model_validate(existing.payload)
+        except ValueError:
+            fail(409, 'POS external event ID has invalid stored evidence')
         if (existing.pos_system != p.pos_system
                 or existing.external_sale_id != p.external_sale_id
                 or existing.event_type != p.event_type
-                or existing.payload != p.model_dump(mode='json')):
+                or original_request != p):
             fail(409, 'POS external event ID was already used for a different event')
         return existing
     original=None

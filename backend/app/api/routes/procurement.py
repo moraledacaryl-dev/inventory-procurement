@@ -14,7 +14,7 @@ from app.models.procurement import Supplier, SupplierItem, PurchaseRequisition, 
 from app.schemas.procurement import *
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
 from app.services.inventory import InventoryError, post_document
-from app.services.operational_authorization import require_purchase_approval, require_scoped_locations, visible_location_ids
+from app.services.operational_authorization import require_purchase_approval, require_scoped_locations, visible_location_ids, require_requisition_location
 
 router=APIRouter(tags=['procurement'])
 def now(): return datetime.now(timezone.utc)
@@ -148,54 +148,71 @@ def create_reorder_requisition(p:ReorderRequisitionCreate,db:Session=Depends(get
     suggestions=reorder_rows(db,p.location_id)
     if p.item_ids is not None: suggestions=[x for x in suggestions if x.item_id in set(p.item_ids)]
     if not suggestions: fail(409,'No reorder quantities are currently required')
-    row=PurchaseRequisition(requisition_number=next_document_number(db,'PR'),department=p.department,needed_by=p.needed_by,justification=p.justification,status='submitted',requested_by_user_id=user.id)
+    row=PurchaseRequisition(requisition_number=next_document_number(db,'PR'),department=p.department,location_id=p.location_id,needed_by=p.needed_by,justification=p.justification,status='submitted',requested_by_user_id=user.id)
     row.lines=[PurchaseRequisitionLine(item_id=x.item_id,quantity=x.suggested_quantity,estimated_unit_cost=x.standard_cost,notes=f'Auto-reorder; stock {x.current_quantity}, minimum {x.minimum_stock}, on order {x.on_order_quantity}' + (f'; location:{p.location_id}' if p.location_id else '')) for x in suggestions]
     db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='requisition.auto_created',entity_type='purchase_requisition',entity_id=row.id,details={'line_count':len(row.lines),'location_id':p.location_id}); add_notification(db,title='Reorder requisition submitted',message=f'{row.requisition_number} was generated with {len(row.lines)} low-stock items.',severity='info'); db.commit(); return load_pr(db,row.id)
 
 @router.get('/requisitions',response_model=list[PROut])
-def requisitions(status:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.read'))):
+def requisitions(status:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.read'))):
     stmt=select(PurchaseRequisition).options(selectinload(PurchaseRequisition.lines)).order_by(PurchaseRequisition.created_at.desc())
+    allowed=visible_location_ids(db,user)
+    if allowed is not None: stmt=stmt.where(PurchaseRequisition.location_id.in_(allowed))
     if status: stmt=stmt.where(PurchaseRequisition.status==status)
     return db.scalars(stmt).unique().all()
 @router.post('/requisitions',response_model=PROut,status_code=201)
 def create_requisition(p:PRCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
+    # Scoped accounts cannot create location-less financial records.
+    require_requisition_location(db,user,p.location_id)
+    if p.location_id and (not (loc:=db.get(Location,p.location_id)) or not loc.is_active):
+        fail(422,'Active requisition location not found')
     unique_items(p.lines)
     for line in p.lines:
         if not db.get(Item,line.item_id): fail(422,'Item not found')
-    row=PurchaseRequisition(requisition_number=next_document_number(db,'PR'),department=p.department,needed_by=p.needed_by,justification=p.justification,status='submitted',requested_by_user_id=user.id)
+    row=PurchaseRequisition(requisition_number=next_document_number(db,'PR'),department=p.department,location_id=p.location_id,needed_by=p.needed_by,justification=p.justification,status='submitted',requested_by_user_id=user.id)
     row.lines=[PurchaseRequisitionLine(**x.model_dump()) for x in p.lines]; db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='requisition.submitted',entity_type='purchase_requisition',entity_id=row.id,details={'line_count':len(row.lines)}); db.commit(); return load_pr(db,row.id)
 @router.post('/requisitions/{requisition_id}/approve',response_model=PROut)
 def approve_requisition(requisition_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     row=load_pr(db,requisition_id)
     if not row: fail(404,'Requisition not found')
+    require_requisition_location(db,user,row.location_id)
     if row.status!='submitted': fail(409,'Only submitted requisitions can be approved')
     if row.requested_by_user_id==user.id: fail(409,'Requester cannot approve their own requisition')
     total=sum((Decimal(line.quantity)*Decimal(line.estimated_unit_cost) for line in row.lines),Decimal('0'))
-    require_purchase_approval(db,user,total)
+    require_purchase_approval(db,user,total,location_id=row.location_id)
     row.status='approved'; row.approved_by_user_id=user.id; row.approved_at=now(); add_audit(db,actor_user_id=user.id,action='requisition.approved',entity_type='purchase_requisition',entity_id=row.id); enqueue_event(db,destination_system='command-center',event_type='procurement.requisition.approved',aggregate_type='purchase_requisition',aggregate_id=row.id,idempotency_key=f'requisition-approved:{row.id}',payload={'requisition_id':row.id,'requisition_number':row.requisition_number}); db.commit(); return load_pr(db,row.id)
 @router.post('/requisitions/{requisition_id}/reject',response_model=PROut)
 def reject_requisition(requisition_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     row=load_pr(db,requisition_id)
     if not row: fail(404,'Requisition not found')
+    require_requisition_location(db,user,row.location_id)
     if row.status not in {'submitted','approved'}: fail(409,'Requisition cannot be rejected')
     row.status='rejected'; add_audit(db,actor_user_id=user.id,action='requisition.rejected',entity_type='purchase_requisition',entity_id=row.id); db.commit(); return load_pr(db,row.id)
 
 @router.get('/quotations',response_model=list[QuoteOut])
-def quotations(requisition_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.read'))):
+def quotations(requisition_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.read'))):
     stmt=select(SupplierQuotation).options(selectinload(SupplierQuotation.lines)).order_by(SupplierQuotation.created_at.desc())
-    if requisition_id: stmt=stmt.where(SupplierQuotation.requisition_id==requisition_id)
+    allowed=visible_location_ids(db,user)
+    if allowed is not None:
+        stmt=stmt.join(PurchaseRequisition,SupplierQuotation.requisition_id==PurchaseRequisition.id).where(PurchaseRequisition.location_id.in_(allowed))
+    if requisition_id:
+        req=db.get(PurchaseRequisition,requisition_id)
+        if req: require_requisition_location(db,user,req.location_id)
+        stmt=stmt.where(SupplierQuotation.requisition_id==requisition_id)
     return db.scalars(stmt).unique().all()
 @router.post('/quotations',response_model=QuoteOut,status_code=201)
 def create_quotation(p:QuoteCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     unique_items(p.lines); req=load_pr(db,p.requisition_id)
     if not req or req.status!='approved': fail(409,'Quotation requires an approved requisition')
+    require_requisition_location(db,user,req.location_id)
     if not db.get(Supplier,p.supplier_id): fail(422,'Supplier not found')
     allowed={x.item_id:Decimal(x.quantity) for x in req.lines}
     if any(x.item_id not in allowed or Decimal(x.quantity)>allowed[x.item_id] for x in p.lines): fail(422,'Quotation item or quantity exceeds requisition')
     row=SupplierQuotation(quotation_number=next_document_number(db,'RFQ'),requisition_id=p.requisition_id,supplier_id=p.supplier_id,valid_until=p.valid_until,delivery_days=p.delivery_days,payment_terms_days=p.payment_terms_days,notes=p.notes)
     row.lines=[SupplierQuotationLine(**x.model_dump()) for x in p.lines]; db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='quotation.recorded',entity_type='supplier_quotation',entity_id=row.id,details={'supplier_id':p.supplier_id}); db.commit(); return load_quote(db,row.id)
 @router.get('/requisitions/{requisition_id}/quotation-comparison',response_model=list[QuoteComparison])
-def compare_quotes(requisition_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.read'))):
+def compare_quotes(requisition_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.read'))):
+    req=db.get(PurchaseRequisition,requisition_id)
+    if req: require_requisition_location(db,user,req.location_id)
     quotes=db.scalars(select(SupplierQuotation).where(SupplierQuotation.requisition_id==requisition_id).options(selectinload(SupplierQuotation.lines))).unique().all()
     result=[QuoteComparison(quotation_id=q.id,quotation_number=q.quotation_number,supplier_id=q.supplier_id,total=sum((Decimal(x.quantity)*Decimal(x.unit_price) for x in q.lines),Decimal('0')),delivery_days=q.delivery_days,payment_terms_days=q.payment_terms_days,status=q.status) for q in quotes]
     return sorted(result,key=lambda x:(x.total,x.delivery_days))
@@ -216,11 +233,17 @@ def create_po(p:POCreate,db:Session=Depends(get_db),user:User=Depends(require_pe
     if p.requisition_id:
         req=load_pr(db,p.requisition_id)
         if not req or req.status!='approved': fail(409,'Purchase order requires an approved requisition')
+        require_requisition_location(db,user,req.location_id)
+        if req.location_id and req.location_id!=p.delivery_location_id: fail(409,'Purchase order location differs from requisition')
         req_qty={x.item_id:Decimal(x.quantity) for x in req.lines}
         if any(x.item_id not in req_qty or Decimal(x.ordered_quantity)>req_qty[x.item_id] for x in p.lines): fail(422,'Purchase order item or quantity exceeds requisition')
     if p.quotation_id:
         quote=load_quote(db,p.quotation_id)
-        if not quote or quote.supplier_id!=p.supplier_id or (p.requisition_id and quote.requisition_id!=p.requisition_id): fail(409,'Quotation does not match supplier or requisition')
+        if not quote or quote.supplier_id!=p.supplier_id or not p.requisition_id or quote.requisition_id!=p.requisition_id: fail(409,'Quotation does not match supplier or requisition')
+        quote_req=req or load_pr(db,quote.requisition_id)
+        if not quote_req: fail(409,'Quotation requisition not found')
+        require_requisition_location(db,user,quote_req.location_id)
+        if quote_req.location_id and quote_req.location_id!=p.delivery_location_id: fail(409,'Quotation location differs from delivery location')
         quote_lines={x.item_id:(Decimal(x.quantity),Decimal(x.unit_price)) for x in quote.lines}
         if any(x.item_id not in quote_lines or Decimal(x.ordered_quantity)>quote_lines[x.item_id][0] or Decimal(x.unit_price)>quote_lines[x.item_id][1] for x in p.lines): fail(422,'Purchase order exceeds selected quotation')
     row=PurchaseOrder(purchase_order_number=next_document_number(db,'PO'),supplier_id=p.supplier_id,requisition_id=p.requisition_id,quotation_id=p.quotation_id,delivery_location_id=p.delivery_location_id,expected_delivery_date=p.expected_delivery_date,notes=p.notes,created_by_user_id=user.id,status='draft')
@@ -229,6 +252,7 @@ def create_po(p:POCreate,db:Session=Depends(get_db),user:User=Depends(require_pe
 def approve_po(po_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     po=load_po(db,po_id)
     if not po: fail(404,'Purchase order not found')
+    require_scoped_locations(db,user,{po.delivery_location_id})
     if po.status!='draft': fail(409,'Only draft purchase orders can be approved')
     if po.created_by_user_id==user.id: fail(409,'Creator cannot approve their own purchase order')
     total=sum((Decimal(x.ordered_quantity)*Decimal(x.unit_price) for x in po.lines),Decimal('0'))

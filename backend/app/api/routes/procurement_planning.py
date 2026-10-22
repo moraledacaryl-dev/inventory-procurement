@@ -64,13 +64,17 @@ def planned_rows(db: Session, location_id: str | None = None, *, allowed_locatio
             key = (line.item_id, po.delivery_location_id)
             on_order[key] = on_order.get(key, Decimal("0")) + max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity))
     pending_pr: dict[tuple[str, str], Decimal] = {}
-    for req in db.scalars(select(PurchaseRequisition).where(PurchaseRequisition.status.in_(["submitted", "approved"])).options(selectinload(PurchaseRequisition.lines))).unique().all():
+    for req in db.scalars(
+        select(PurchaseRequisition).where(
+            PurchaseRequisition.location_id.in_(location_ids),
+            PurchaseRequisition.status.in_(["submitted", "approved"]),
+        ).options(selectinload(PurchaseRequisition.lines))
+    ).unique().all():
+        # Only authoritative requisition ownership contributes to on-order
+        # planning. Legacy free-text location hints are unverified evidence.
         for line in req.lines:
-            for loc_id in location_ids:
-                if f"location:{loc_id}" in (line.notes or ""):
-                    key = (line.item_id, loc_id)
-                    pending_pr[key] = pending_pr.get(key, Decimal("0")) + Decimal(line.quantity)
-                    break
+            key = (line.item_id, req.location_id)
+            pending_pr[key] = pending_pr.get(key, Decimal("0")) + Decimal(line.quantity)
     supplier_links = db.scalars(select(SupplierItem).order_by(SupplierItem.is_preferred.desc())).all()
     preferred: dict[str, SupplierItem] = {}
     for link in supplier_links:
@@ -135,7 +139,7 @@ def create_planned_requisition(payload: PlanningRequisitionCreate, db: Session =
         item = db.get(Item, line.item_id)
         if not item or not item.is_active or not item.track_stock:
             fail(422, "Invalid or inactive stock item")
-    row = PurchaseRequisition(requisition_number=next_document_number(db, "PR"), department=payload.department.strip(), needed_by=payload.needed_by, justification=payload.justification.strip(), status="submitted", requested_by_user_id=user.id)
+    row = PurchaseRequisition(requisition_number=next_document_number(db, "PR"), department=payload.department.strip(), location_id=payload.location_id, needed_by=payload.needed_by, justification=payload.justification.strip(), status="submitted", requested_by_user_id=user.id)
     row.lines = [PurchaseRequisitionLine(item_id=line.item_id, quantity=line.quantity, estimated_unit_cost=line.estimated_unit_cost, notes=((line.notes + "; ") if line.notes else "") + f"location:{payload.location_id}") for line in payload.lines]
     try:
         db.add(row); db.flush()
@@ -148,11 +152,15 @@ def create_planned_requisition(payload: PlanningRequisitionCreate, db: Session =
         db.rollback(); fail(409, "Requisition could not be created")
 
 @router.get("/procurement/requisitions/workspace")
-def requisition_workspace(db: Session = Depends(get_db), _: User = Depends(require_permission("procurement.read"))):
-    rows = db.scalars(select(PurchaseRequisition).options(selectinload(PurchaseRequisition.lines)).order_by(PurchaseRequisition.created_at.desc())).unique().all()
+def requisition_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("procurement.read"))):
+    stmt = select(PurchaseRequisition).options(selectinload(PurchaseRequisition.lines)).order_by(PurchaseRequisition.created_at.desc())
+    allowed = visible_location_ids(db, user)
+    if allowed is not None:
+        stmt = stmt.where(PurchaseRequisition.location_id.in_(allowed))
+    rows = db.scalars(stmt).unique().all()
     items = {row.id: row for row in db.scalars(select(Item)).all()}
     result = []
     for req in rows:
         total = sum((Decimal(line.quantity) * Decimal(line.estimated_unit_cost) for line in req.lines), Decimal("0"))
-        result.append({"id": req.id, "requisition_number": req.requisition_number, "department": req.department, "needed_by": req.needed_by.isoformat() if req.needed_by else None, "justification": req.justification, "status": req.status, "requested_by_user_id": req.requested_by_user_id, "approved_by_user_id": req.approved_by_user_id, "approved_at": req.approved_at.isoformat() if req.approved_at else None, "created_at": req.created_at.isoformat(), "estimated_value": str(total), "lines": [{"id": line.id, "item_id": line.item_id, "sku": items[line.item_id].sku if line.item_id in items else line.item_id, "item_name": items[line.item_id].name if line.item_id in items else "Unknown item", "quantity": str(line.quantity), "estimated_unit_cost": str(line.estimated_unit_cost), "notes": line.notes} for line in req.lines]})
+        result.append({"id": req.id, "requisition_number": req.requisition_number, "department": req.department, "location_id": req.location_id, "needed_by": req.needed_by.isoformat() if req.needed_by else None, "justification": req.justification, "status": req.status, "requested_by_user_id": req.requested_by_user_id, "approved_by_user_id": req.approved_by_user_id, "approved_at": req.approved_at.isoformat() if req.approved_at else None, "created_at": req.created_at.isoformat(), "estimated_value": str(total), "lines": [{"id": line.id, "item_id": line.item_id, "sku": items[line.item_id].sku if line.item_id in items else line.item_id, "item_name": items[line.item_id].name if line.item_id in items else "Unknown item", "quantity": str(line.quantity), "estimated_unit_cost": str(line.estimated_unit_cost), "notes": line.notes} for line in req.lines]})
     return result

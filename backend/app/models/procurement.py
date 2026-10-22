@@ -39,6 +39,8 @@ class PurchaseRequisition(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     requisition_number: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     department: Mapped[str] = mapped_column(String(100))
+    # NULL is legacy/unassigned, not a grant of access to scoped accounts.
+    location_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("locations.id"), nullable=True, index=True)
     needed_by: Mapped[date | None] = mapped_column(Date, nullable=True)
     justification: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="draft", index=True)

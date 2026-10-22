@@ -88,3 +88,18 @@ def require_purchase_approval(
             status_code=403,
             detail="An active operational scope with sufficient purchase approval limit is required",
         )
+
+
+def require_requisition_location(db: Session, user: User, location_id: str | None) -> None:
+    """Protect requisitions and their quotations using authoritative ownership.
+
+    An unassigned historical requisition does not belong to an arbitrary
+    location. Owners and never-configured role accounts retain legacy access;
+    explicitly scoped accounts must have an active matching location.
+    """
+    allowed = visible_location_ids(db, user)
+    if allowed is not None and (location_id is None or location_id not in allowed):
+        raise HTTPException(
+            status_code=403,
+            detail="Operational access scope does not authorize this requisition location",
+        )

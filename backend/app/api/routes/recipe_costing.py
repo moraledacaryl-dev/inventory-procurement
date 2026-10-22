@@ -12,6 +12,7 @@ from app.models.inventory import Item, Location, StockBalance
 from app.models.production import Recipe, RecipeLine
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_scoped_locations
 
 router = APIRouter(tags=["recipe-costing"])
 
@@ -120,7 +121,8 @@ def costing_payload(db: Session, recipe: Recipe, location_id: str):
 
 
 @router.get("/recipes/costing/workspace")
-def recipe_costing_workspace(location_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("reports.read"))):
+def recipe_costing_workspace(location_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("reports.read"))):
+    require_scoped_locations(db, user, {location_id})
     recipes = db.scalars(select(Recipe).options(selectinload(Recipe.lines)).order_by(Recipe.code, Recipe.version.desc())).unique().all()
     rows = []
     for recipe in recipes:
@@ -130,7 +132,8 @@ def recipe_costing_workspace(location_id: str, db: Session = Depends(get_db), _:
 
 
 @router.get("/recipes/{recipe_id}/costing-detail")
-def recipe_costing_detail(recipe_id: str, location_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("reports.read"))):
+def recipe_costing_detail(recipe_id: str, location_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("reports.read"))):
+    require_scoped_locations(db, user, {location_id})
     recipe = load_recipe(db, recipe_id)
     if not recipe:
         fail(404, "Recipe not found")
@@ -138,7 +141,8 @@ def recipe_costing_detail(recipe_id: str, location_id: str, db: Session = Depend
 
 
 @router.post("/recipes/{recipe_id}/margin-scenario")
-def recipe_margin(recipe_id: str, payload: MarginScenario, db: Session = Depends(get_db), _: User = Depends(require_permission("reports.read"))):
+def recipe_margin(recipe_id: str, payload: MarginScenario, db: Session = Depends(get_db), user: User = Depends(require_permission("reports.read"))):
+    require_scoped_locations(db, user, {payload.location_id})
     recipe = load_recipe(db, recipe_id)
     if not recipe:
         fail(404, "Recipe not found")

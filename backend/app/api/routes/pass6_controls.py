@@ -15,6 +15,7 @@ from app.models.pass6 import OperationalAccessScope, SavedView
 from app.models.property import PropertyBalance
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_global_operational_access
 
 router=APIRouter(tags=['final-controls'])
 def fail(code:int,message:str): raise HTTPException(code,message)
@@ -32,18 +33,21 @@ def validate_dimension(db:Session,value:str|None,kind:str):
     if not row or row.dimension_type!=kind: fail(422,f'{kind.replace("_"," ").title()} not found')
 
 @router.get('/access-scope-users')
-def access_scope_users(db:Session=Depends(get_db),_:User=Depends(require_permission('users.*'))):
+def access_scope_users(db:Session=Depends(get_db),user:User=Depends(require_permission('users.*'))):
+    require_global_operational_access(db,user)
     rows=db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name,User.email)).all()
     return [{'id':x.id,'email':x.email,'full_name':x.full_name,'role':x.role} for x in rows]
 
 @router.get('/access-scopes')
-def access_scopes(user_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('users.*'))):
+def access_scopes(user_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('users.*'))):
+    require_global_operational_access(db,user)
     q=select(OperationalAccessScope).order_by(OperationalAccessScope.user_id,OperationalAccessScope.created_at)
     if user_id:q=q.where(OperationalAccessScope.user_id==user_id)
     return db.scalars(q).all()
 
 @router.post('/access-scopes',status_code=201)
 def set_access_scope(p:ScopeIn,db:Session=Depends(get_db),u:User=Depends(require_permission('users.*'))):
+    require_global_operational_access(db,u)
     if not db.get(User,p.user_id): fail(422,'User not found')
     validate_dimension(db,p.workspace_id,'workspace'); validate_dimension(db,p.department_id,'department'); validate_dimension(db,p.record_class_id,'record_class')
     if p.location_id and not db.get(Location,p.location_id): fail(422,'Location not found')
@@ -68,7 +72,10 @@ def create_saved_view(p:SavedViewIn,db:Session=Depends(get_db),u:User=Depends(re
     except IntegrityError: db.rollback(); fail(409,'A saved view with this name already exists')
 
 @router.get('/reports/operating-summary')
-def operating_summary(workspace_id:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def operating_summary(workspace_id:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    # This report mixes global fixed-asset value, maintenance and reusable
+    # property balances with item stock; no reliable common location exists.
+    require_global_operational_access(db,user)
     items={x.id:x for x in db.scalars(select(Item)).all()}
     stock_rows=db.scalars(select(StockBalance)).all(); stock_value=Decimal('0'); stock_units=Decimal('0')
     for row in stock_rows:

@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models.operations import IntegrationEvent
 from app.models.user import User
 from app.services.controls import add_audit, add_notification, enqueue_event
+from app.services.operational_authorization import require_global_operational_access
 
 router = APIRouter(tags=["operational-integrations"])
 ALLOWED_SOURCES = {"staff", "command-center"}
@@ -74,7 +75,8 @@ def receive_operational_request(payload: OperationalRequestIn, token: str | None
 
 
 @router.get("/integrations/operations/workspace")
-def operational_workspace(status:str|None=None,limit:int=Query(200,ge=1,le=500),db:Session=Depends(get_db),_:User=Depends(require_permission("integrations.read"))):
+def operational_workspace(status:str|None=None,limit:int=Query(200,ge=1,le=500),db:Session=Depends(get_db),user:User=Depends(require_permission("integrations.read"))):
+    require_global_operational_access(db,user)
     events=db.scalars(select(IntegrationEvent).where(IntegrationEvent.direction=="inbound",IntegrationEvent.event_type=="operations.request.submitted",IntegrationEvent.source_system.in_(ALLOWED_SOURCES)).order_by(IntegrationEvent.created_at.desc()).limit(limit)).all()
     all_rows=[request_row(event,db) for event in events];filtered=[row for row in all_rows if not status or row["workflow_status"]==status]
     return {"summary":summary(all_rows),"filtered_summary":summary(filtered),"requests":filtered}
@@ -82,6 +84,7 @@ def operational_workspace(status:str|None=None,limit:int=Query(200,ge=1,le=500),
 
 @router.post("/integrations/operations/requests/{event_id}/decision")
 def decide_operational_request(event_id:str,payload:OperationalDecision,db:Session=Depends(get_db),user:User=Depends(require_permission("integrations.*"))):
+    require_global_operational_access(db,user)
     if payload.decision not in ALLOWED_DECISIONS:fail(422,"Decision must be accepted, rejected, or completed")
     event=db.scalar(select(IntegrationEvent).where(IntegrationEvent.id==event_id,IntegrationEvent.event_type=="operations.request.submitted").with_for_update())
     if not event:fail(404,"Operational request not found")

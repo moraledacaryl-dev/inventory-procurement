@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.models.operations import IntegrationEvent
 from app.models.user import User
 from app.services.controls import add_audit, add_notification
+from app.services.operational_authorization import require_global_operational_access
 
 router = APIRouter(tags=["accounting-integration"])
 
@@ -81,7 +82,8 @@ class AccountingReceipt(BaseModel):
 
 
 @router.get("/integrations/accounting/workspace")
-def accounting_workspace(status:str|None=None,limit:int=Query(200,ge=1,le=500),db:Session=Depends(get_db),_:User=Depends(require_permission("integrations.read"))):
+def accounting_workspace(status:str|None=None,limit:int=Query(200,ge=1,le=500),db:Session=Depends(get_db),user:User=Depends(require_permission("integrations.read"))):
+    require_global_operational_access(db,user)
     stmt=select(IntegrationEvent).where(IntegrationEvent.destination_system=="accounting").order_by(IntegrationEvent.created_at.desc())
     if status:stmt=stmt.where(IntegrationEvent.status==status)
     events=db.scalars(stmt.limit(limit)).all();counts=dict(db.execute(select(IntegrationEvent.status,func.count()).where(IntegrationEvent.destination_system=="accounting").group_by(IntegrationEvent.status)).all());rows=[event_row(event) for event in events]
@@ -110,6 +112,7 @@ def accounting_receipt(payload:AccountingReceipt,token:str|None=Depends(integrat
 
 @router.post("/integrations/accounting/events/{event_id}/requeue")
 def requeue_accounting_event(event_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission("integrations.*"))):
+    require_global_operational_access(db,user)
     event=db.get(IntegrationEvent,event_id)
     if not event or event.destination_system!="accounting":raise HTTPException(404,"Accounting event not found")
     if event.status not in {"failed","dead_letter"}:raise HTTPException(409,"Only failed or dead-letter accounting events can be requeued")

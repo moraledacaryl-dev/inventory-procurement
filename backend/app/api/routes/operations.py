@@ -11,12 +11,14 @@ from app.models.operations import Notification, NotificationRead, IntegrationEve
 from app.models.user import User
 from app.schemas.operations import *
 from app.services.controls import add_audit
+from app.services.operational_authorization import visible_location_ids, require_global_operational_access
 from app.services.integration_worker import run_once
 
 router=APIRouter(tags=['operations'])
 
 @router.get('/audit-logs',response_model=list[AuditOut])
-def audit_logs(action:str|None=None,entity_type:str|None=None,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def audit_logs(action:str|None=None,entity_type:str|None=None,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
     stmt=select(AuditLog).order_by(AuditLog.created_at.desc())
     if action: stmt=stmt.where(AuditLog.action==action)
     if entity_type: stmt=stmt.where(AuditLog.entity_type==entity_type)
@@ -40,24 +42,29 @@ def mark_read(notification_id:str,db:Session=Depends(get_db),user:User=Depends(r
     return NotificationOut(id=row.id,user_id=row.user_id,title=row.title,message=row.message,severity=row.severity,created_at=row.created_at,is_read=True)
 
 @router.get('/integration-events',response_model=list[IntegrationEventOut])
-def integration_events(status:str|None=None,limit:int=Query(100,ge=1,le=500),db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def integration_events(status:str|None=None,limit:int=Query(100,ge=1,le=500),db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
     stmt=select(IntegrationEvent).order_by(IntegrationEvent.created_at.desc())
     if status: stmt=stmt.where(IntegrationEvent.status==status)
     return db.scalars(stmt.limit(limit)).all()
 @router.post('/integration-events',response_model=IntegrationEventOut,status_code=201)
 def create_event(p:IntegrationEventCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
+    require_global_operational_access(db,user)
     existing=db.scalar(select(IntegrationEvent).where(IntegrationEvent.idempotency_key==p.idempotency_key))
     if existing: return existing
     row=IntegrationEvent(**p.model_dump()); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='integration.queued',entity_type='integration_event',entity_id=row.id,details={'destination':row.destination_system,'event_type':row.event_type}); db.commit(); db.refresh(row); return row
 @router.post('/integration-events/{event_id}/retry',response_model=IntegrationEventOut)
 def retry_event(event_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
+    require_global_operational_access(db,user)
     row=db.get(IntegrationEvent,event_id)
     if not row: raise HTTPException(404,'Event not found')
     row.status='pending'; row.last_error=None; row.locked_at=None; row.locked_by=None; row.attempts=0
     add_audit(db,actor_user_id=user.id,action='integration.manual_retry',entity_type='integration_event',entity_id=row.id)
     db.commit(); db.refresh(row); return row
 @router.post('/integration-events/process',response_model=WorkerRunOut)
-def process_events(limit:int=Query(25,ge=1,le=100),db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.*'))): return run_once(db,limit)
+def process_events(limit:int=Query(25,ge=1,le=100),db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
+    require_global_operational_access(db,user)
+    return run_once(db,limit)
 
 @router.get('/exports/items.csv')
 def export_items(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
@@ -65,9 +72,12 @@ def export_items(db:Session=Depends(get_db),_:User=Depends(require_permission('r
     for x in db.scalars(select(Item).order_by(Item.sku)).all(): writer.writerow([x.sku,x.name,x.category_id,x.base_unit_id,x.minimum_stock,x.standard_cost,x.is_active])
     return StreamingResponse(iter([output.getvalue()]),media_type='text/csv',headers={'Content-Disposition':'attachment; filename=items.csv'})
 @router.get('/exports/balances.csv')
-def export_balances(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def export_balances(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
     output=io.StringIO(); writer=csv.writer(output); writer.writerow(['item_id','location_id','quantity','average_cost'])
-    for x in db.scalars(select(StockBalance)).all(): writer.writerow([x.item_id,x.location_id,x.quantity,x.average_cost])
+    stmt=select(StockBalance)
+    allowed=visible_location_ids(db,user)
+    if allowed is not None: stmt=stmt.where(StockBalance.location_id.in_(allowed))
+    for x in db.scalars(stmt).all(): writer.writerow([x.item_id,x.location_id,x.quantity,x.average_cost])
     return StreamingResponse(iter([output.getvalue()]),media_type='text/csv',headers={'Content-Disposition':'attachment; filename=stock-balances.csv'})
 @router.post('/imports/items.csv')
 async def import_items(file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(require_permission('items.*'))):
@@ -82,4 +92,6 @@ async def import_items(file:UploadFile=File(...),db:Session=Depends(get_db),user
     add_audit(db,actor_user_id=user.id,action='items.imported',entity_type='item',details={'created':created,'skipped':skipped}); db.commit(); return {'created':created,'skipped':skipped}
 
 @router.get('/backups',response_model=list[BackupOut])
-def backups(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))): return db.scalars(select(BackupRecord).order_by(BackupRecord.created_at.desc())).all()
+def backups(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
+    return db.scalars(select(BackupRecord).order_by(BackupRecord.created_at.desc())).all()

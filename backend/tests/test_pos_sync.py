@@ -89,6 +89,17 @@ def test_pos_event_idempotency_and_reversal(client):
     assert duplicate.status_code == 201
     assert duplicate.json()["id"] == first.json()["id"]
 
+    # Conflicting retries must never masquerade as successful idempotent
+    # delivery: the original stock effect is authoritative.
+    for changed in (
+        {**event, "lines": [{"external_product_id": "CAFE-001", "quantity": 3}]},
+        {**event, "external_sale_id": "another-sale"},
+        {**event, "event_type": "sale_voided"},
+    ):
+        conflict = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json=changed)
+        assert conflict.status_code == 409
+        assert "different event" in conflict.json()["detail"]
+
     replayed_sale = client.post(
         "/api/v1/integrations/pos/events",
         headers=integration_headers,
@@ -108,6 +119,17 @@ def test_pos_event_idempotency_and_reversal(client):
     reversal = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json={**event, "external_event_id": "evt-002", "event_type": "sale_refunded"})
     assert reversal.status_code == 201
     assert reversal.json()["reversal_of_event_id"] == first.json()["id"]
+    same_reversal = client.post(
+        "/api/v1/integrations/pos/events", headers=integration_headers,
+        json={**event, "external_event_id": "evt-002", "event_type": "sale_refunded"},
+    )
+    assert same_reversal.status_code == 201
+    assert same_reversal.json()["id"] == reversal.json()["id"]
+    changed_reversal = client.post(
+        "/api/v1/integrations/pos/events", headers=integration_headers,
+        json={**event, "external_event_id": "evt-002", "event_type": "sale_voided"},
+    )
+    assert changed_reversal.status_code == 409
 
     with SessionLocal() as db:
         reversal_event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.event_type == "inventory.pos_sale_reversed"))

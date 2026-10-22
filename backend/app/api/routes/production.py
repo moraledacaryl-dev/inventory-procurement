@@ -15,7 +15,7 @@ from app.models.production import Recipe, RecipeLine, ProductionBatch, PosProduc
 from app.schemas.production import *
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
 from app.services.inventory import InventoryError, post_document
-from app.services.operational_authorization import visible_location_ids, require_scoped_locations
+from app.services.operational_authorization import visible_location_ids, require_scoped_locations, require_global_operational_access
 
 router=APIRouter(tags=['production'])
 INGREDIENT_BEHAVIORS={'ingredient','recipe_output','recipe_packaging'}
@@ -257,6 +257,7 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
         db.rollback(); fail(409,str(exc))
 
 @router.get('/integrations/reconciliation',response_model=ReconciliationOut)
-def reconciliation(db:Session=Depends(get_db),_:User=Depends(require_permission('integrations.read'))):
+def reconciliation(db:Session=Depends(get_db),user:User=Depends(require_permission('integrations.read'))):
+    require_global_operational_access(db,user)
     counts=dict(db.execute(select(IntegrationEvent.status,func.count()).group_by(IntegrationEvent.status)).all()); latest=db.scalar(select(func.max(PosSaleEvent.processed_at))); unprocessed=db.scalar(select(func.count()).select_from(PosSaleEvent).where(PosSaleEvent.status!='processed')) or 0
     return ReconciliationOut(pending_events=counts.get('pending',0)+counts.get('processing',0),failed_events=counts.get('failed',0),dead_letter_events=counts.get('dead_letter',0),unprocessed_pos_events=unprocessed,latest_pos_event_at=latest)

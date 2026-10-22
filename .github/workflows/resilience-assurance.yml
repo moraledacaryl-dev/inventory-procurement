@@ -27,6 +27,8 @@ jobs:
       BOOTSTRAP_OWNER_PASSWORD: acceptance-owner-password
       BOOTSTRAP_OWNER_NAME: Resilience Owner
       BACKUP_DIR: /tmp/inventory-production-backups
+      # Explicitly opt in only on this isolated PostgreSQL test instance.
+      INVENTORY_ALLOW_DESTRUCTIVE_RESILIENCE_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

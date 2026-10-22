@@ -67,7 +67,8 @@ def process_events(limit:int=Query(25,ge=1,le=100),db:Session=Depends(get_db),us
     return run_once(db,limit)
 
 @router.get('/exports/items.csv')
-def export_items(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def export_items(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
     output=io.StringIO(); writer=csv.writer(output); writer.writerow(['sku','name','category_id','base_unit_id','minimum_stock','standard_cost','is_active'])
     for x in db.scalars(select(Item).order_by(Item.sku)).all(): writer.writerow([x.sku,x.name,x.category_id,x.base_unit_id,x.minimum_stock,x.standard_cost,x.is_active])
     return StreamingResponse(iter([output.getvalue()]),media_type='text/csv',headers={'Content-Disposition':'attachment; filename=items.csv'})
@@ -81,6 +82,7 @@ def export_balances(db:Session=Depends(get_db),user:User=Depends(require_permiss
     return StreamingResponse(iter([output.getvalue()]),media_type='text/csv',headers={'Content-Disposition':'attachment; filename=stock-balances.csv'})
 @router.post('/imports/items.csv')
 async def import_items(file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(require_permission('items.*'))):
+    require_global_operational_access(db,user)
     content=(await file.read()).decode('utf-8-sig'); reader=csv.DictReader(io.StringIO(content)); created=0; skipped=0; errors=[]
     for index,row in enumerate(reader,2):
         try:

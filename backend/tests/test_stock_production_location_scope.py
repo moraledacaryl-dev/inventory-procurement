@@ -21,15 +21,6 @@ def auth(client, email="owner@example.com"):
 
 def post(client, path, headers, payload):
     response = client.post(path, json=payload, headers=headers)
-    if path == "/api/v1/recipes" and response.status_code == 500:
-        # Diagnostic: the catch-all HTTP middleware masks original exceptions.
-        # Reinvoke the same service function in a rollback-only test session.
-        from app.api.routes.production import create_recipe
-        from app.schemas.production import RecipeCreate
-        with SessionLocal() as db:
-            owner = db.query(User).filter(User.email == "owner@example.com").one()
-            create_recipe(RecipeCreate.model_validate(payload), db, owner)
-        raise AssertionError("Recipe failed through HTTP but direct route completed")
     assert response.status_code == 201, (path, response.text)
     return response.json()
 

@@ -183,13 +183,16 @@ def dashboard_summary(
         )
     recent_po_rows = db.execute(recent_po_stmt).all()
 
-    po_totals = {
-        po.id: db.scalar(
-            select(func.coalesce(func.sum(PurchaseOrderLine.ordered_quantity * PurchaseOrderLine.unit_price), 0))
-            .where(PurchaseOrderLine.purchase_order_id == po.id)
-        ) or Decimal("0")
-        for po, _supplier_name in recent_po_rows
-    }
+    # One grouped query rather than an additional query per displayed PO.
+    recent_po_ids = [po.id for po, _supplier_name in recent_po_rows]
+    po_totals = dict(db.execute(
+        select(
+            PurchaseOrderLine.purchase_order_id,
+            func.sum(PurchaseOrderLine.ordered_quantity * PurchaseOrderLine.unit_price),
+        )
+        .where(PurchaseOrderLine.purchase_order_id.in_(recent_po_ids))
+        .group_by(PurchaseOrderLine.purchase_order_id)
+    ).all()) if recent_po_ids else {}
 
     recent_movement_stmt = (
         select(StockMovement, Item.sku, Item.name, Location.name.label("location_name"))
@@ -240,7 +243,7 @@ def dashboard_summary(
                 "status": po.status,
                 "created_at": po.created_at.isoformat(),
                 "expected_delivery_date": po.expected_delivery_date.isoformat() if po.expected_delivery_date else None,
-                "total": str(po_totals[po.id]),
+                "total": str(po_totals.get(po.id, Decimal("0"))),
             }
             for po, supplier_name in recent_po_rows
         ],

@@ -162,6 +162,9 @@ def test_legacy_print_and_cancel_obey_authoritative_location(client):
     ]
     po_a, po_b = pos
     req_a, req_b = requisitions
+    with SessionLocal() as db:
+        db.get(PurchaseRequisition, req_a["id"]).status = "submitted"
+        db.commit()
 
     assert client.get(f"/api/v1/print/purchase-orders/{po_a['id']}",
                       headers=buyer).status_code == 200

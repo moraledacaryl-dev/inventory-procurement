@@ -13,6 +13,7 @@ from app.models.inventory import Item, Location
 from app.models.procurement import Supplier
 from app.models.user import User
 from app.services.controls import add_audit, enqueue_event
+from app.services.operational_authorization import require_global_operational_access
 
 router = APIRouter(tags=["shared-master-data"])
 
@@ -40,13 +41,15 @@ def snapshot_hash(payload: dict) -> str:
 
 
 @router.get("/shared-identities")
-def shared_identities(db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
+def shared_identities(db: Session = Depends(get_db), user: User = Depends(require_permission("users.read"))):
+    require_global_operational_access(db, user)
     rows = db.scalars(select(User).order_by(User.full_name, User.email)).all()
     return {"identities": [identity_row(row) for row in rows], "count": len(rows)}
 
 
 @router.get("/shared-identities/{canonical_user_id}")
-def resolve_identity_by_id(canonical_user_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
+def resolve_identity_by_id(canonical_user_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("users.read"))):
+    require_global_operational_access(db, user)
     row = db.get(User, canonical_user_id)
     if not row:
         raise HTTPException(404, "Shared identity not found")
@@ -54,7 +57,8 @@ def resolve_identity_by_id(canonical_user_id: str, db: Session = Depends(get_db)
 
 
 @router.get("/shared-identities/resolve/by-email")
-def resolve_identity_by_email(email: str, db: Session = Depends(get_db), _: User = Depends(require_permission("users.read"))):
+def resolve_identity_by_email(email: str, db: Session = Depends(get_db), user: User = Depends(require_permission("users.read"))):
+    require_global_operational_access(db, user)
     normalized = email.lower().strip()
     row = db.scalar(select(User).where(func.lower(User.email) == normalized))
     if not row:
@@ -79,7 +83,8 @@ def dimension_row(row: OperationalDimension) -> dict:
 
 
 @router.get("/master-data/workspace")
-def master_data_workspace(db: Session = Depends(get_db), _: User = Depends(require_permission("integrations.read"))):
+def master_data_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("integrations.read"))):
+    require_global_operational_access(db, user)
     users = db.scalars(select(User).order_by(User.full_name)).all()
     items = db.scalars(select(Item).order_by(Item.sku)).all()
     locations = db.scalars(select(Location).order_by(Location.code)).all()
@@ -121,6 +126,7 @@ def master_data_workspace(db: Session = Depends(get_db), _: User = Depends(requi
 
 @router.post("/master-data/publish")
 def publish_master_data(payload: PublishMasterData, db: Session = Depends(get_db), user: User = Depends(require_permission("integrations.*"))):
+    require_global_operational_access(db, user)
     allowed = {"staff", "command-center", "accounting"}
     destinations = list(dict.fromkeys(payload.destinations))
     invalid = set(destinations) - allowed

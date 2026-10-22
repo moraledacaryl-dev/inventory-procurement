@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.pos_rules import PosModifierTemplate, PosPricingRule
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_global_operational_access
 
 router=APIRouter(tags=["pos-rules"])
 
@@ -74,12 +75,14 @@ def list_rules(db:Session=Depends(get_db),_:User=Depends(require_permission("ite
 
 @router.post("/fnb/pos-rules/pricing",status_code=201)
 def create_rule(payload:PricingRuleIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    require_global_operational_access(db,user)
     row=PosPricingRule(name=payload.name.strip(),qualifier_tag=payload.qualifier_tag,target_tag=payload.target_tag,is_active=payload.is_active)
     row.priority=payload.priority
     db.add(row);db.flush();add_audit(db,actor_user_id=user.id,action="pos.pricing_rule_created",entity_type="pos_pricing_rule",entity_id=row.id,details=rule_out(row));commit_or_conflict(db);return rule_out(row)
 
 @router.put("/fnb/pos-rules/pricing/{rule_id}")
 def update_rule(rule_id:str,payload:PricingRuleIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    require_global_operational_access(db,user)
     row=db.get(PosPricingRule,rule_id)
     if not row: raise HTTPException(404,"Pricing rule not found")
     row.name=payload.name.strip();row.qualifier_tag=payload.qualifier_tag;row.target_tag=payload.target_tag;row.is_active=payload.is_active
@@ -88,11 +91,13 @@ def update_rule(rule_id:str,payload:PricingRuleIn,db:Session=Depends(get_db),use
 
 @router.post("/fnb/pos-rules/modifiers",status_code=201)
 def create_modifier(payload:ModifierTemplateIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    require_global_operational_access(db,user)
     row=PosModifierTemplate(name=payload.name.strip(),config_json=json.dumps(payload.group.model_dump(exclude_none=True)),is_active=payload.is_active)
     db.add(row);db.flush();add_audit(db,actor_user_id=user.id,action="pos.modifier_template_created",entity_type="pos_modifier_template",entity_id=row.id,details={"name":row.name});commit_or_conflict(db);return modifier_out(row)
 
 @router.put("/fnb/pos-rules/modifiers/{template_id}")
 def update_modifier(template_id:str,payload:ModifierTemplateIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    require_global_operational_access(db,user)
     row=db.get(PosModifierTemplate,template_id)
     if not row: raise HTTPException(404,"Modifier template not found")
     row.name=payload.name.strip();row.config_json=json.dumps(payload.group.model_dump(exclude_none=True));row.is_active=payload.is_active

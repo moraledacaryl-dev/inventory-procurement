@@ -16,24 +16,35 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column(
-        "purchase_requisitions",
-        sa.Column("location_id", sa.String(length=36), nullable=True),
-    )
+    if op.get_context().dialect.name == "sqlite":
+        # SQLite allows a nullable column with inline REFERENCES. It does not
+        # support ALTER TABLE ADD CONSTRAINT, including Alembic --sql mode.
+        # The existing NULL rows remain untouched with an actual FK constraint.
+        op.execute(
+            "ALTER TABLE purchase_requisitions "
+            "ADD COLUMN location_id VARCHAR(36) "
+            "REFERENCES locations(id)"
+        )
+    else:
+        op.add_column(
+            "purchase_requisitions",
+            sa.Column("location_id", sa.String(length=36), nullable=True),
+        )
+        op.create_foreign_key(
+            "fk_purchase_requisitions_location_id",
+            "purchase_requisitions", "locations", ["location_id"], ["id"],
+        )
     op.create_index(
         "ix_purchase_requisitions_location_id",
         "purchase_requisitions", ["location_id"],
     )
-    op.create_foreign_key(
-        "fk_purchase_requisitions_location_id",
-        "purchase_requisitions", "locations", ["location_id"], ["id"],
-    )
 
 
 def downgrade():
-    op.drop_constraint(
-        "fk_purchase_requisitions_location_id",
-        "purchase_requisitions", type_="foreignkey",
-    )
     op.drop_index("ix_purchase_requisitions_location_id", table_name="purchase_requisitions")
+    if op.get_context().dialect.name != "sqlite":
+        op.drop_constraint(
+            "fk_purchase_requisitions_location_id",
+            "purchase_requisitions", type_="foreignkey",
+        )
     op.drop_column("purchase_requisitions", "location_id")

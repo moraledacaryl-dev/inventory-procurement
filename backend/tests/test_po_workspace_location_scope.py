@@ -40,10 +40,11 @@ def seed(client):
     })
     reqs = [
         create(client, "/api/v1/requisitions", owner, {
-            "department": "Cafe", "justification": "Buy scoped stock",
+            "department": "Cafe", "location_id": loc,
+            "justification": "Buy scoped stock",
             "lines": [{"item_id": item["id"], "quantity": "5", "estimated_unit_cost": "10"}],
         })
-        for _ in locations
+        for loc in locations
     ]
     with SessionLocal() as db:
         for req in reqs:

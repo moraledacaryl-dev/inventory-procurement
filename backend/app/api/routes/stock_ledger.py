@@ -9,6 +9,7 @@ from app.api.deps import require_permission
 from app.db.session import get_db
 from app.models.inventory import Item, Location, StockDocument, StockMovement
 from app.models.user import User
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(prefix="/stock", tags=["stock-ledger"])
 
@@ -26,9 +27,15 @@ def stock_ledger(
     date_to: datetime | None = None,
     limit: int = Query(250, ge=1, le=1000),
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
+    allowed = visible_location_ids(db, user)
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
     filters = []
+    if allowed is not None:
+        # Apply the restriction in SQL so prices, totals and counts cannot leak.
+        filters.append(StockMovement.location_id.in_(allowed))
     if item_id:
         filters.append(StockMovement.item_id == item_id)
     if location_id:
@@ -111,7 +118,7 @@ def stock_ledger(
 def stock_document_detail(
     document_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
     document = db.scalar(
         select(StockDocument)
@@ -120,6 +127,12 @@ def stock_document_detail(
     )
     if not document:
         fail(404, "Stock document not found")
+    allowed = visible_location_ids(db, user)
+    document_locations = {row.location_id for row in document.movements}
+    if allowed is not None and (not document_locations or not document_locations.issubset(allowed)):
+        # Multi-location transfers are atomic: never expose a partial document
+        # or its unredacted totals to a user scoped to just one side.
+        fail(403, "Operational access scope does not authorize this stock document")
 
     item_ids = {row.item_id for row in document.movements}
     location_ids = {row.location_id for row in document.movements}

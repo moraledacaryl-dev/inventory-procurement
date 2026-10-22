@@ -14,6 +14,9 @@ from app.models.classification import OperationalDimension
 from app.models.inventory import Item, Location
 from app.models.user import User
 from app.services.controls import add_audit, enqueue_event
+from app.services.operational_authorization import (
+    require_global_operational_access, require_scoped_locations, visible_location_ids,
+)
 
 router = APIRouter(tags=["assets"])
 ZERO = Decimal("0")
@@ -53,13 +56,18 @@ def asset_payload(asset:FixedAsset):
     return {"id":asset.id,"asset_tag":asset.asset_tag,"item_id":asset.item_id,"asset_class_id":asset.asset_class_id,"depreciation_method_id":asset.depreciation_method_id,"location_id":asset.location_id,"department_id":asset.department_id,"cost_center_id":asset.cost_center_id,"custodian_user_id":asset.custodian_user_id,"serial_number":asset.serial_number,"model_number":asset.model_number,"acquisition_date":asset.acquisition_date,"placed_in_service_date":asset.placed_in_service_date,"acquisition_cost":asset.acquisition_cost,"capitalized_cost":asset.capitalized_cost,"residual_value":asset.residual_value,"useful_life_months":asset.useful_life_months,"accumulated_depreciation":asset.accumulated_depreciation,"impairment_loss":asset.impairment_loss,"net_book_value":carrying_value(asset),"status":asset.status,"condition":asset.condition,"warranty_expiry":asset.warranty_expiry,"disposal_date":asset.disposal_date,"disposal_proceeds":asset.disposal_proceeds,"notes":asset.notes}
 
 @router.get("/assets")
-def list_assets(status:str|None=None,db:Session=Depends(get_db),_:User=Depends(require_permission("inventory.read"))):
+def list_assets(status:str|None=None,db:Session=Depends(get_db),user:User=Depends(require_permission("inventory.read"))):
     stmt=select(FixedAsset).order_by(FixedAsset.asset_tag)
+    allowed=visible_location_ids(db,user)
+    if allowed is not None: stmt=stmt.where(FixedAsset.location_id.in_(allowed))
     if status: stmt=stmt.where(FixedAsset.status==status)
     return [asset_payload(x) for x in db.scalars(stmt).all()]
 
 @router.post("/assets",status_code=201)
 def create_asset(p:AssetIn,db:Session=Depends(get_db),user:User=Depends(require_permission("inventory.*"))):
+    # Location-less assets cannot be attributed to a permitted site.
+    if p.location_id is None: require_global_operational_access(db,user)
+    else: require_scoped_locations(db,user,{p.location_id})
     fixed_asset_item(db,p.item_id); dimension(db,p.asset_class_id,"asset_class"); method=dimension(db,p.depreciation_method_id,"depreciation_method")
     if p.location_id and not db.get(Location,p.location_id): fail(422,"Location not found")
     if money(p.residual_value)>money(p.acquisition_cost)+money(p.capitalized_cost): fail(422,"Residual value cannot exceed total capitalized cost")
@@ -75,6 +83,12 @@ def create_asset(p:AssetIn,db:Session=Depends(get_db),user:User=Depends(require_
 def create_event(asset_id:str,p:AssetEventIn,db:Session=Depends(get_db),user:User=Depends(require_permission("inventory.*"))):
     asset=db.get(FixedAsset,asset_id)
     if not asset: fail(404,"Asset not found")
+    # Asset ownership is the stored location, not client-supplied references.
+    if asset.location_id is None: require_global_operational_access(db,user)
+    else: require_scoped_locations(db,user,{asset.location_id})
+    if p.to_location_id is not None:
+        if p.event_type != "transfer": fail(422,"Destination is only supported for transfers")
+        require_scoped_locations(db,user,{p.to_location_id})
     if asset.status=="disposed": fail(409,"Disposed assets cannot be changed")
     from_location=asset.location_id
     if p.event_type=="place_in_service":
@@ -103,10 +117,14 @@ def monthly_amount(db:Session,asset:FixedAsset):
     return min(remaining,(depreciable/Decimal(asset.useful_life_months)).quantize(Decimal("0.01"),rounding=ROUND_HALF_UP))
 
 @router.get("/depreciation-runs")
-def list_runs(db:Session=Depends(get_db),_:User=Depends(require_permission("reports.read"))): return db.scalars(select(DepreciationRun).order_by(DepreciationRun.period.desc())).all()
+def list_runs(db:Session=Depends(get_db),user:User=Depends(require_permission("reports.read"))):
+    # Runs aggregate all asset locations and have no location-scoped ownership.
+    require_global_operational_access(db,user)
+    return db.scalars(select(DepreciationRun).order_by(DepreciationRun.period.desc())).all()
 
 @router.post("/depreciation-runs",status_code=201)
 def create_run(p:RunIn,db:Session=Depends(get_db),user:User=Depends(require_permission("inventory.*"))):
+    require_global_operational_access(db,user)
     if db.scalar(select(DepreciationRun.id).where(DepreciationRun.period==p.period)): fail(409,"Depreciation run already exists for this period")
     run=DepreciationRun(period=p.period,created_by_user_id=user.id); db.add(run); db.flush(); total=Decimal("0")
     for asset in db.scalars(select(FixedAsset).where(FixedAsset.status=="active",FixedAsset.placed_in_service_date.is_not(None))).all():
@@ -118,6 +136,7 @@ def create_run(p:RunIn,db:Session=Depends(get_db),user:User=Depends(require_perm
 
 @router.post("/depreciation-runs/{run_id}/post")
 def post_run(run_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission("inventory.*"))):
+    require_global_operational_access(db,user)
     run=db.scalar(select(DepreciationRun).where(DepreciationRun.id==run_id).with_for_update())
     if not run: fail(404,"Depreciation run not found")
     if run.status!="draft": fail(409,"Only draft depreciation runs can be posted")

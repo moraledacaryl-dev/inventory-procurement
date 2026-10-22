@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
+from app.services.operational_authorization import require_global_operational_access, require_scoped_locations
 from app.db.session import get_db
 from app.models.inventory import Item, Location, UnitOfMeasure
 from app.models.inventory_operations import ItemBarcode, ItemLocationSetting, UnitConversion
@@ -130,6 +131,7 @@ def item_configuration(
 
 @router.patch("/supplier-items/{link_id}")
 def update_supplier_item(link_id: str, payload: SupplierItemUpdate, db: Session = Depends(get_db), user: User = Depends(require_permission("suppliers.*"))):
+    require_global_operational_access(db, user)
     row = db.get(SupplierItem, link_id)
     if not row:
         fail(404, "Supplier-item link not found")
@@ -145,6 +147,7 @@ def update_supplier_item(link_id: str, payload: SupplierItemUpdate, db: Session 
 
 @router.delete("/supplier-items/{link_id}", status_code=204)
 def delete_supplier_item(link_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("suppliers.*"))):
+    require_global_operational_access(db, user)
     row = db.get(SupplierItem, link_id)
     if not row:
         fail(404, "Supplier-item link not found")
@@ -155,6 +158,7 @@ def delete_supplier_item(link_id: str, db: Session = Depends(get_db), user: User
 
 @router.patch("/items/{item_id}/barcodes/{barcode_id}")
 def update_barcode(item_id: str, barcode_id: str, payload: BarcodeUpdate, db: Session = Depends(get_db), user: User = Depends(require_permission("items.*"))):
+    require_global_operational_access(db, user)
     row = db.get(ItemBarcode, barcode_id)
     if not row or row.item_id != item_id:
         fail(404, "Barcode not found")
@@ -170,6 +174,7 @@ def update_barcode(item_id: str, barcode_id: str, payload: BarcodeUpdate, db: Se
 
 @router.delete("/items/{item_id}/barcodes/{barcode_id}", status_code=204)
 def delete_barcode(item_id: str, barcode_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("items.*"))):
+    require_global_operational_access(db, user)
     row = db.get(ItemBarcode, barcode_id)
     if not row or row.item_id != item_id:
         fail(404, "Barcode not found")
@@ -179,6 +184,7 @@ def delete_barcode(item_id: str, barcode_id: str, db: Session = Depends(get_db),
 
 @router.patch("/items/{item_id}/conversions/{conversion_id}")
 def update_conversion(item_id: str, conversion_id: str, payload: ConversionUpdate, db: Session = Depends(get_db), user: User = Depends(require_permission("items.*"))):
+    require_global_operational_access(db, user)
     row = db.get(UnitConversion, conversion_id)
     if not row or row.item_id != item_id:
         fail(404, "Conversion not found")
@@ -198,6 +204,7 @@ def update_location_setting(setting_id: str, payload: LocationSettingUpdate, db:
     row = db.get(ItemLocationSetting, setting_id)
     if not row:
         fail(404, "Item-location setting not found")
+    require_scoped_locations(db, user, {row.location_id})
     if payload.maximum_stock is not None and payload.maximum_stock < payload.minimum_stock:
         fail(422, "Maximum stock cannot be below minimum stock")
     if payload.preferred_supplier_id and not db.get(Supplier, payload.preferred_supplier_id):

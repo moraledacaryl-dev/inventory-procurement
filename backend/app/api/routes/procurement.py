@@ -14,7 +14,7 @@ from app.models.procurement import Supplier, SupplierItem, PurchaseRequisition, 
 from app.schemas.procurement import *
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
 from app.services.inventory import InventoryError, post_document
-from app.services.operational_authorization import require_purchase_approval, require_scoped_locations, visible_location_ids, require_requisition_location
+from app.services.operational_authorization import require_purchase_approval, require_scoped_locations, visible_location_ids, require_requisition_location, require_global_operational_access
 
 router=APIRouter(tags=['procurement'])
 def now(): return datetime.now(timezone.utc)
@@ -90,11 +90,13 @@ def reorder_rows(db:Session,location_id:str|None=None)->list[ReorderSuggestion]:
 def suppliers(db:Session=Depends(get_db),_:User=Depends(require_permission('suppliers.read'))): return db.scalars(select(Supplier).order_by(Supplier.code)).all()
 @router.post('/suppliers',response_model=SupplierOut,status_code=201)
 def create_supplier(p:SupplierCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('suppliers.*'))):
+    require_global_operational_access(db,user)
     row=Supplier(**{**p.model_dump(),'code':p.code.upper().strip(),'name':p.name.strip()}); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='supplier.created',entity_type='supplier',entity_id=row.id,details={'code':row.code}); db.commit(); db.refresh(row); return row
 @router.get('/suppliers/{supplier_id}/items',response_model=list[SupplierItemOut])
 def supplier_items(supplier_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('suppliers.read'))): return db.scalars(select(SupplierItem).where(SupplierItem.supplier_id==supplier_id)).all()
 @router.post('/suppliers/{supplier_id}/items',response_model=SupplierItemOut,status_code=201)
 def add_supplier_item(supplier_id:str,p:SupplierItemCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('suppliers.*'))):
+    require_global_operational_access(db,user)
     if not db.get(Supplier,supplier_id) or not db.get(Item,p.item_id): fail(422,'Supplier or item not found')
     if p.is_preferred:
         for old in db.scalars(select(SupplierItem).where(SupplierItem.item_id==p.item_id,SupplierItem.is_preferred==True)).all(): old.is_preferred=False

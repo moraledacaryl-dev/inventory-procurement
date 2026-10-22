@@ -232,3 +232,131 @@ def test_valued_csv_exports_and_global_diagnostics_are_scope_protected(client):
         db.commit()
     assert csv_rows(scoped) == []
     assert client.get("/api/v1/integration-events", headers=scoped).status_code == 403
+
+
+def test_fixed_asset_register_and_events_are_scoped(client):
+    s = seed(client)
+    owner, scoped, unscoped = s["owner"], s["scoped"], s["unscoped"]
+    asset_a, asset_b = s["assets"]
+    response = client.get("/api/v1/assets", headers=scoped)
+    assert response.status_code == 200, response.text
+    assert {a["id"] for a in response.json()} == {asset_a}
+    assert {a["id"] for a in client.get("/api/v1/assets", headers=unscoped).json()} == {asset_a, asset_b}
+    assert {a["id"] for a in client.get("/api/v1/assets", headers=owner).json()} == {asset_a, asset_b}
+    existing = next(a for a in client.get("/api/v1/assets", headers=owner).json() if a["id"] == asset_a)
+    payload = {
+        "asset_tag": "SCOPE-CREATE-TEST", "item_id": existing["item_id"],
+        "asset_class_id": existing["asset_class_id"],
+        "depreciation_method_id": existing["depreciation_method_id"],
+        "location_id": s["b"], "acquisition_date": "2026-01-01",
+        "placed_in_service_date": "2026-01-01", "acquisition_cost": "1000",
+    }
+    assert client.post("/api/v1/assets", headers=scoped, json=payload).status_code == 403
+    assert client.post("/api/v1/assets", headers=scoped, json={
+        **payload, "location_id": None,
+    }).status_code == 403
+    with SessionLocal() as db:
+        from app.models.assets import FixedAsset
+        assert db.query(FixedAsset).count() == 2
+
+    assert client.post("/api/v1/assets", headers=scoped, json={
+        **payload, "location_id": s["a"],
+    }).status_code == 201
+    event_payload = {"event_type": "impairment", "event_date": "2026-10-01", "amount": "50"}
+    with SessionLocal() as db:
+        initial_events = db.query(IntegrationEvent).count()
+    assert client.post(f"/api/v1/assets/{asset_b}/events",
+                       headers=scoped, json=event_payload).status_code == 403
+    assert client.post(f"/api/v1/assets/{asset_a}/events", headers=scoped,
+                       json={"event_type": "transfer", "event_date": "2026-10-01",
+                             "to_location_id": s["b"]}).status_code == 403
+    with SessionLocal() as db:
+        assert db.query(IntegrationEvent).count() == initial_events
+        assert db.get(FixedAsset, asset_b).impairment_loss == 0
+        assert db.get(FixedAsset, asset_a).location_id == s["a"]
+
+    assert client.post(f"/api/v1/assets/{asset_a}/events",
+                       headers=scoped, json=event_payload).status_code == 201
+    with SessionLocal() as db:
+        assert db.query(IntegrationEvent).count() == initial_events + 1
+        assert db.get(FixedAsset, asset_a).impairment_loss == Decimal("50")
+
+    with SessionLocal() as db:
+        db.get(OperationalAccessScope, s["scopes"]["maint-scoped@example.com"]).is_active = False
+        db.commit()
+    assert client.get("/api/v1/assets", headers=scoped).json() == []
+    assert client.post(f"/api/v1/assets/{asset_a}/events",
+                       headers=scoped, json=event_payload).status_code == 403
+
+
+def test_depreciation_runs_are_global_and_cannot_be_posted_by_scoped_users(client):
+    s = seed(client)
+    scoped, owner, unscoped = s["scoped"], s["owner"], s["unscoped"]
+    assert client.get("/api/v1/depreciation-runs", headers=scoped).status_code == 403
+    assert client.get("/api/v1/depreciation-runs", headers=s["viewer"]).status_code == 403
+    assert client.post("/api/v1/depreciation-runs", headers=scoped,
+                       json={"period": "2026-10"}).status_code == 403
+    created = client.post("/api/v1/depreciation-runs", headers=owner,
+                          json={"period": "2026-10"})
+    assert created.status_code == 201, created.text
+    run = created.json()
+    assert Decimal(str(run["total_amount"])) == Decimal("2000.00")
+    assert client.post(f"/api/v1/depreciation-runs/{run['id']}/post",
+                       headers=scoped).status_code == 403
+    with SessionLocal() as db:
+        from app.models.assets import DepreciationRun, FixedAsset
+        assert db.get(DepreciationRun, run["id"]).status == "draft"
+        assert all(a.accumulated_depreciation == 0 for a in db.query(FixedAsset).all())
+    assert client.get("/api/v1/depreciation-runs", headers=unscoped).status_code == 200
+    assert client.post(f"/api/v1/depreciation-runs/{run['id']}/post",
+                       headers=unscoped).status_code == 200
+
+
+def test_global_supplier_mutations_master_data_and_local_settings(client):
+    s = seed(client)
+    owner, scoped, procurement = s["owner"], s["scoped"], s["procurement"]
+    assert client.get("/api/v1/master-data/workspace", headers=s["viewer"]).status_code == 403
+    assert client.get("/api/v1/shared-identities", headers=s["viewer"]).status_code == 403
+    assert client.get("/api/v1/master-data/workspace", headers=owner).status_code == 200
+    assert client.get("/api/v1/shared-identities", headers=owner).status_code == 200
+
+    supplier_data = {"code": "GLOBAL-SCOPE-SUP", "name": "Global supplier"}
+    assert client.post("/api/v1/suppliers", headers=procurement,
+                       json=supplier_data).status_code == 403
+    supplier = create(client, "/api/v1/suppliers", owner, supplier_data)
+    linked = create(client, f"/api/v1/suppliers/{supplier['id']}/items", owner, {
+        "item_id": s["item"], "last_price": "100.00",
+    })
+    assert client.post(f"/api/v1/suppliers/{supplier['id']}/items",
+                       headers=procurement,
+                       json={"item_id": s["item"]}).status_code == 403
+    change = {"last_price": "1.00", "minimum_order_quantity": 1}
+    assert client.patch(f"/api/v1/supplier-items/{linked['id']}",
+                        headers=procurement, json=change).status_code == 403
+    assert client.delete(f"/api/v1/supplier-items/{linked['id']}",
+                         headers=procurement).status_code == 403
+    supplier_links = client.get(f"/api/v1/suppliers/{supplier['id']}/items",
+                                headers=owner).json()
+    assert len(supplier_links) == 1
+    assert Decimal(str(supplier_links[0]["last_price"])) == Decimal("100.00")
+    assert client.post("/api/v1/suppliers", headers=s["unscoped"],
+                       json={"code": "LEGACY-SUP", "name": "Legacy"}).status_code == 403
+    # Unscoped inventory manager retains existing role permissions, not a new supplier role.
+    assert client.post("/api/v1/suppliers", headers=owner,
+                       json={"code": "OWNER-SUP", "name": "Owner"}).status_code == 201
+
+    from app.models.inventory_operations import ItemLocationSetting
+    with SessionLocal() as db:
+        foreign = ItemLocationSetting(item_id=s["item"], location_id=s["b"])
+        local = ItemLocationSetting(item_id=s["item"], location_id=s["a"])
+        db.add_all([foreign, local])
+        db.commit()
+        foreign_id, local_id = foreign.id, local.id
+    settings = {"minimum_stock": "3", "reorder_quantity": "5"}
+    assert client.patch(f"/api/v1/item-location-settings/{foreign_id}",
+                        headers=scoped, json=settings).status_code == 403
+    assert client.patch(f"/api/v1/item-location-settings/{local_id}",
+                        headers=scoped, json=settings).status_code == 200
+    with SessionLocal() as db:
+        assert db.get(ItemLocationSetting, foreign_id).minimum_stock == 0
+        assert db.get(ItemLocationSetting, local_id).minimum_stock == 3

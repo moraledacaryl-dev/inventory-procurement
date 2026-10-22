@@ -13,6 +13,7 @@ from app.models.inventory import Item, Location
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, PurchaseRequisition, Supplier, SupplierQuotation
 from app.models.user import User
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["quotation-po-workspace"])
 
@@ -69,15 +70,29 @@ def po_outstanding(po: PurchaseOrder) -> Decimal:
 
 
 @router.get("/procurement/quotation-workspace")
-def quotation_workspace(db: Session = Depends(get_db), _: User = Depends(require_permission("procurement.read"))):
-    requisitions = db.scalars(
+def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("procurement.read"))):
+    allowed = visible_location_ids(db, user)
+    po_stmt = select(PurchaseOrder).options(selectinload(PurchaseOrder.lines)).order_by(PurchaseOrder.created_at.desc())
+    if allowed is not None:
+        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
+    purchase_orders = db.scalars(po_stmt).unique().all()
+    requisition_stmt = (
         select(PurchaseRequisition)
         .where(PurchaseRequisition.status == "approved")
         .options(selectinload(PurchaseRequisition.lines))
         .order_by(PurchaseRequisition.created_at.desc())
-    ).unique().all()
-    quotes = db.scalars(select(SupplierQuotation).options(selectinload(SupplierQuotation.lines)).order_by(SupplierQuotation.created_at.desc())).unique().all()
-    purchase_orders = db.scalars(select(PurchaseOrder).options(selectinload(PurchaseOrder.lines)).order_by(PurchaseOrder.created_at.desc())).unique().all()
+    )
+    quote_stmt = select(SupplierQuotation).options(selectinload(SupplierQuotation.lines)).order_by(SupplierQuotation.created_at.desc())
+    if allowed is not None:
+        # Requisitions and quotations have no authoritative location column.
+        # For scoped users only expose those already anchored to a visible PO;
+        # never infer authorization from mutable user-authored line notes.
+        requisition_ids = {po.requisition_id for po in purchase_orders if po.requisition_id}
+        quotation_ids = {po.quotation_id for po in purchase_orders if po.quotation_id}
+        requisition_stmt = requisition_stmt.where(PurchaseRequisition.id.in_(requisition_ids))
+        quote_stmt = quote_stmt.where(SupplierQuotation.id.in_(quotation_ids))
+    requisitions = db.scalars(requisition_stmt).unique().all()
+    quotes = db.scalars(quote_stmt).unique().all()
     items = {row.id: row for row in db.scalars(select(Item)).all()}
     suppliers = {row.id: row for row in db.scalars(select(Supplier)).all()}
     locations = {row.id: row for row in db.scalars(select(Location)).all()}
@@ -188,15 +203,17 @@ def quotation_workspace(db: Session = Depends(get_db), _: User = Depends(require
 
 @router.post("/requisitions/{requisition_id}/award-quotation", status_code=201)
 def award_quotation(requisition_id: str, payload: QuoteAwardCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("procurement.*"))):
+    location = db.get(Location, payload.delivery_location_id)
+    if not location or not location.is_active:
+        fail(422, "Active delivery location not found")
+    # Deny a foreign destination before querying the financial requisition/quote.
+    require_scoped_locations(db, user, {payload.delivery_location_id})
     requisition = load_requisition(db, requisition_id)
     quotation = load_quote(db, payload.quotation_id)
-    location = db.get(Location, payload.delivery_location_id)
     if not requisition or requisition.status != "approved":
         fail(409, "Quotation award requires an approved requisition")
     if not quotation or quotation.requisition_id != requisition_id:
         fail(422, "Quotation does not belong to this requisition")
-    if not location or not location.is_active:
-        fail(422, "Active delivery location not found")
     existing = db.scalar(select(PurchaseOrder).where(PurchaseOrder.quotation_id == quotation.id))
     if existing:
         fail(409, "This quotation has already been awarded")
@@ -232,10 +249,11 @@ def award_quotation(requisition_id: str, payload: QuoteAwardCreate, db: Session 
 
 
 @router.get("/purchase-orders/{po_id}/detail")
-def purchase_order_detail(po_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("procurement.read"))):
+def purchase_order_detail(po_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("procurement.read"))):
     po = load_po(db, po_id)
     if not po:
         fail(404, "Purchase order not found")
+    require_scoped_locations(db, user, {po.delivery_location_id})
     supplier = db.get(Supplier, po.supplier_id)
     location = db.get(Location, po.delivery_location_id)
     items = {row.id: row for row in db.scalars(select(Item).where(Item.id.in_({line.item_id for line in po.lines}))).all()}
@@ -293,6 +311,7 @@ def amend_purchase_order(po_id: str, payload: PurchaseOrderAmend, db: Session = 
     po = load_po(db, po_id, lock=True)
     if not po:
         fail(404, "Purchase order not found")
+    require_scoped_locations(db, user, {po.delivery_location_id})
     if po.status != "draft":
         fail(409, "Only draft purchase orders can be amended")
     if len({line.item_id for line in payload.lines}) != len(payload.lines):
@@ -315,6 +334,7 @@ def cancel_purchase_order(po_id: str, db: Session = Depends(get_db), user: User 
     po = load_po(db, po_id, lock=True)
     if not po:
         fail(404, "Purchase order not found")
+    require_scoped_locations(db, user, {po.delivery_location_id})
     if po.status not in {"draft", "approved"}:
         fail(409, "Purchase order cannot be cancelled in its current status")
     if any(Decimal(line.received_quantity) > 0 for line in po.lines):

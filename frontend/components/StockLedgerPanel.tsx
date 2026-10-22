@@ -24,8 +24,24 @@ export function StockLedgerPanel({items,locations,initialItemId="",initialLocati
   const[error,setError]=useState("");
 
   const query=useMemo(()=>{const params=new URLSearchParams({limit:"500"});if(itemId)params.set("item_id",itemId);if(locationId)params.set("location_id",locationId);if(documentType)params.set("document_type",documentType);if(dateFrom)params.set("date_from",`${dateFrom}T00:00:00Z`);if(dateTo)params.set("date_to",`${dateTo}T23:59:59Z`);return params.toString()},[itemId,locationId,documentType,dateFrom,dateTo]);
-  const load=useCallback(async()=>{setLoading(true);setError("");try{setData(await api<LedgerResponse>(`/stock/ledger?${query}`))}catch(exception){setError((exception as Error).message)}finally{setLoading(false)}},[query]);
-  useEffect(()=>{void load()},[load]);
+  const invalidDateRange=Boolean(dateFrom&&dateTo&&dateFrom>dateTo);
+  const load=useCallback(async(signal?:AbortSignal)=>{
+    setLoading(true);setError("");
+    try{
+      const response=await api<LedgerResponse>(`/stock/ledger?${query}`,{signal});
+      if(!signal?.aborted)setData(response);
+    }catch(exception){
+      if(!signal?.aborted)setError((exception as Error).message);
+    }finally{
+      if(!signal?.aborted)setLoading(false);
+    }
+  },[query]);
+  useEffect(()=>{
+    if(invalidDateRange){setData(null);setLoading(false);return;}
+    const controller=new AbortController();
+    void load(controller.signal);
+    return()=>controller.abort();
+  },[load,invalidDateRange]);
 
   return <section className="card section-gap">
     <div className="topline"><div><h2>Stock ledger</h2><p>Immutable movement history. Running quantities include earlier stock movements; totals summarize only the rows returned by the selected filters.</p></div></div>

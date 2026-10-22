@@ -19,13 +19,13 @@ class SupplierPerformance(BaseModel):
 class PRLineIn(BaseModel):
     item_id:str; quantity:Decimal=Field(gt=0); estimated_unit_cost:Decimal=Field(default=ZERO,ge=0); notes:str|None=None
 class PRCreate(BaseModel):
-    department:str=Field(min_length=1,max_length=100); needed_by:date|None=None; justification:str|None=None; lines:list[PRLineIn]=Field(min_length=1)
+    department:str=Field(min_length=1,max_length=100); location_id:str|None=None; needed_by:date|None=None; justification:str|None=None; lines:list[PRLineIn]=Field(min_length=1)
 class ReorderRequisitionCreate(BaseModel):
     department:str=Field(min_length=1,max_length=100); location_id:str|None=None; needed_by:date|None=None; justification:str='Automatic reorder requisition'; item_ids:list[str]|None=None
 class PRLineOut(ORMModel):
     id:str; item_id:str; quantity:Decimal; estimated_unit_cost:Decimal; notes:str|None
 class PROut(ORMModel):
-    id:str; requisition_number:str; department:str; needed_by:date|None; justification:str|None; status:str; requested_by_user_id:str; approved_by_user_id:str|None; approved_at:datetime|None; created_at:datetime; lines:list[PRLineOut]
+    id:str; requisition_number:str; department:str; location_id:str|None; needed_by:date|None; justification:str|None; status:str; requested_by_user_id:str; approved_by_user_id:str|None; approved_at:datetime|None; created_at:datetime; lines:list[PRLineOut]
 class ReorderSuggestion(BaseModel):
     item_id:str; sku:str; item_name:str; location_id:str|None; location_name:str|None; current_quantity:Decimal; minimum_stock:Decimal; on_order_quantity:Decimal; suggested_quantity:Decimal; standard_cost:Decimal; preferred_supplier_id:str|None; preferred_supplier_name:str|None; lead_time_days:int|None
 class QuoteLineIn(BaseModel):

@@ -38,10 +38,10 @@ def work_order_payload(row:WorkOrder):
 
 class PlanIn(BaseModel):
     code:str; name:str; asset_id:str; interval_days:int=Field(gt=0,le=3650); checklist:str|None=None; assigned_user_id:str|None=None; next_due_date:date
-class PartIn(BaseModel): item_id:str; quantity:Decimal=Field(gt=0); unit_cost:Decimal=Field(default=0,ge=0)
+class PartIn(BaseModel): item_id:str; quantity:Decimal=Field(gt=0); unit_cost:Decimal=Field(default=Decimal('0'),ge=0)
 class WorkOrderIn(BaseModel):
     asset_id:str; plan_id:str|None=None; title:str; description:str|None=None; priority:str='normal'; assigned_user_id:str|None=None; contractor:str|None=None; scheduled_date:date|None=None; parts:list[PartIn]=[]
-class CompleteIn(BaseModel): labor_cost:Decimal=Field(default=0,ge=0); external_cost:Decimal=Field(default=0,ge=0); downtime_hours:Decimal=Field(default=0,ge=0); completion_notes:str|None=None
+class CompleteIn(BaseModel): labor_cost:Decimal=Field(default=Decimal('0'),ge=0); external_cost:Decimal=Field(default=Decimal('0'),ge=0); downtime_hours:Decimal=Field(default=Decimal('0'),ge=0); completion_notes:str|None=None
 class TreatmentIn(BaseModel):
     source_type:str; source_line_id:str; treatment:str; workspace_id:str|None=None; department_id:str|None=None; cost_center_id:str|None=None; intended_location_id:str|None=None; asset_class_id:str|None=None; accounting_mapping_id:str|None=None; project_reference:str|None=None; notes:str|None=None
 class MappingIn(BaseModel): event_key:str; dimension_id:str|None=None; debit_account:str; credit_account:str; description:str|None=None

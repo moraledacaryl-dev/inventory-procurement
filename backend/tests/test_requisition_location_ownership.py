@@ -214,3 +214,23 @@ def test_legacy_untagged_is_unassigned_and_notes_cannot_grant_scope(client):
     q = post(client, "/api/v1/quotations", owner,
              quote_payload(legacy["id"], supplier, item))
     assert q["requisition_id"] == legacy["id"]
+
+
+def test_read_only_legacy_audit_preserves_null_and_reports_conflicts(client):
+    from scripts.audit_requisition_locations import report
+    owner, _a_user, _b_user, _open, a, b, item, supplier, _scopes = scenario(client)
+    legacy = post(client, "/api/v1/requisitions", owner,
+                  req_payload(item, notes=f"location:{b}"))
+    typed = post(client, "/api/v1/requisitions", owner, req_payload(item, a))
+    with SessionLocal() as db:
+        first = report(db)
+        second = report(db)
+        assert first == second  # no writes, even across repeat reads
+        assert first["read_only"] is True
+        assert first["requisition_total"] == 2
+        assert first["authoritatively_assigned"] == 1
+        assert first["unassigned_requires_review"] == 1
+        assert first["typed_location_po_conflicts"] == 0
+        assert first["unassigned_sample"][0]["requisition_id"] == legacy["id"]
+        assert db.get(PurchaseRequisition, legacy["id"]).location_id is None
+        assert db.get(PurchaseRequisition, typed["id"]).location_id == a

@@ -13,7 +13,7 @@ from app.models.inventory import Item, Location
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, PurchaseRequisition, Supplier, SupplierQuotation
 from app.models.user import User
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
-from app.services.operational_authorization import require_scoped_locations, visible_location_ids
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids, require_requisition_location
 
 router = APIRouter(tags=["quotation-po-workspace"])
 
@@ -84,13 +84,12 @@ def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(requ
     )
     quote_stmt = select(SupplierQuotation).options(selectinload(SupplierQuotation.lines)).order_by(SupplierQuotation.created_at.desc())
     if allowed is not None:
-        # Requisitions and quotations have no authoritative location column.
-        # For scoped users only expose those already anchored to a visible PO;
-        # never infer authorization from mutable user-authored line notes.
-        requisition_ids = {po.requisition_id for po in purchase_orders if po.requisition_id}
-        quotation_ids = {po.quotation_id for po in purchase_orders if po.quotation_id}
-        requisition_stmt = requisition_stmt.where(PurchaseRequisition.id.in_(requisition_ids))
-        quote_stmt = quote_stmt.where(SupplierQuotation.id.in_(quotation_ids))
+        # Quotations inherit their authoritative location from their parent PR.
+        # Include unawarded scoped requisitions/quotes, not only those with POs.
+        requisition_stmt = requisition_stmt.where(PurchaseRequisition.location_id.in_(allowed))
+        quote_stmt = quote_stmt.join(
+            PurchaseRequisition, SupplierQuotation.requisition_id == PurchaseRequisition.id
+        ).where(PurchaseRequisition.location_id.in_(allowed))
     requisitions = db.scalars(requisition_stmt).unique().all()
     quotes = db.scalars(quote_stmt).unique().all()
     items = {row.id: row for row in db.scalars(select(Item)).all()}
@@ -111,6 +110,7 @@ def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(requ
             "id": req.id,
             "requisition_number": req.requisition_number,
             "department": req.department,
+            "location_id": req.location_id,
             "needed_by": req.needed_by.isoformat() if req.needed_by else None,
             "justification": req.justification,
             "created_at": req.created_at.isoformat(),
@@ -214,6 +214,9 @@ def award_quotation(requisition_id: str, payload: QuoteAwardCreate, db: Session 
         fail(409, "Quotation award requires an approved requisition")
     if not quotation or quotation.requisition_id != requisition_id:
         fail(422, "Quotation does not belong to this requisition")
+    require_requisition_location(db, user, requisition.location_id)
+    if requisition.location_id and requisition.location_id != payload.delivery_location_id:
+        fail(409, "Delivery location differs from requisition ownership")
     existing = db.scalar(select(PurchaseOrder).where(PurchaseOrder.quotation_id == quotation.id))
     if existing:
         fail(409, "This quotation has already been awarded")

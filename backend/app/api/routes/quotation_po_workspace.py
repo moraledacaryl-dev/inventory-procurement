@@ -203,16 +203,17 @@ def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(requ
 
 @router.post("/requisitions/{requisition_id}/award-quotation", status_code=201)
 def award_quotation(requisition_id: str, payload: QuoteAwardCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("procurement.*"))):
+    location = db.get(Location, payload.delivery_location_id)
+    if not location or not location.is_active:
+        fail(422, "Active delivery location not found")
+    # Deny a foreign destination before querying the financial requisition/quote.
+    require_scoped_locations(db, user, {payload.delivery_location_id})
     requisition = load_requisition(db, requisition_id)
     quotation = load_quote(db, payload.quotation_id)
-    location = db.get(Location, payload.delivery_location_id)
     if not requisition or requisition.status != "approved":
         fail(409, "Quotation award requires an approved requisition")
     if not quotation or quotation.requisition_id != requisition_id:
         fail(422, "Quotation does not belong to this requisition")
-    if not location or not location.is_active:
-        fail(422, "Active delivery location not found")
-    require_scoped_locations(db, user, {payload.delivery_location_id})
     existing = db.scalar(select(PurchaseOrder).where(PurchaseOrder.quotation_id == quotation.id))
     if existing:
         fail(409, "This quotation has already been awarded")

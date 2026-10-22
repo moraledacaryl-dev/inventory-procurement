@@ -112,15 +112,20 @@ def dashboard_summary(
                 "shortfall": str(minimum - quantity),
             })
 
-    po_stmt = select(PurchaseOrder)
+    # Compute PO status counts in SQL. Loading every historical purchase
+    # order to count open/overdue work grows unbounded over the years.
+    open_po = PurchaseOrder.status.not_in(CLOSED_PO_STATUSES)
+    po_counts_stmt = select(
+        func.coalesce(func.sum(case((open_po, 1), else_=0)), 0),
+        func.coalesce(func.sum(case((
+            and_(open_po, PurchaseOrder.expected_delivery_date < date.today()), 1
+        ), else_=0)), 0),
+    )
     if scoped_locations is not None:
-        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(scoped_locations))
-    purchase_orders = db.scalars(po_stmt).all()
-    pending_purchase_orders = [po for po in purchase_orders if po.status not in CLOSED_PO_STATUSES]
-    overdue_purchase_orders = [
-        po for po in pending_purchase_orders
-        if po.expected_delivery_date and po.expected_delivery_date < date.today()
-    ]
+        po_counts_stmt = po_counts_stmt.where(
+            PurchaseOrder.delivery_location_id.in_(scoped_locations)
+        )
+    pending_po_count, overdue_po_count = db.execute(po_counts_stmt).one()
 
     if scoped_locations is not None:
         supplier_count = db.scalar(select(func.count(func.distinct(Supplier.id))).join(
@@ -183,13 +188,16 @@ def dashboard_summary(
         )
     recent_po_rows = db.execute(recent_po_stmt).all()
 
-    po_totals = {
-        po.id: db.scalar(
-            select(func.coalesce(func.sum(PurchaseOrderLine.ordered_quantity * PurchaseOrderLine.unit_price), 0))
-            .where(PurchaseOrderLine.purchase_order_id == po.id)
-        ) or Decimal("0")
-        for po, _supplier_name in recent_po_rows
-    }
+    # One grouped query rather than an additional query per displayed PO.
+    recent_po_ids = [po.id for po, _supplier_name in recent_po_rows]
+    po_totals = dict(db.execute(
+        select(
+            PurchaseOrderLine.purchase_order_id,
+            func.sum(PurchaseOrderLine.ordered_quantity * PurchaseOrderLine.unit_price),
+        )
+        .where(PurchaseOrderLine.purchase_order_id.in_(recent_po_ids))
+        .group_by(PurchaseOrderLine.purchase_order_id)
+    ).all()) if recent_po_ids else {}
 
     recent_movement_stmt = (
         select(StockMovement, Item.sku, Item.name, Location.name.label("location_name"))
@@ -212,8 +220,8 @@ def dashboard_summary(
             "active_products": len(active_items),
             "inactive_products": inactive_count,
             "inventory_value": str(inventory_value),
-            "pending_purchase_orders": len(pending_purchase_orders),
-            "overdue_purchase_orders": len(overdue_purchase_orders),
+            "pending_purchase_orders": int(pending_po_count),
+            "overdue_purchase_orders": int(overdue_po_count),
             "low_stock_items": low_stock,
             "out_of_stock_items": out_of_stock,
             "active_suppliers": supplier_count,
@@ -240,7 +248,7 @@ def dashboard_summary(
                 "status": po.status,
                 "created_at": po.created_at.isoformat(),
                 "expected_delivery_date": po.expected_delivery_date.isoformat() if po.expected_delivery_date else None,
-                "total": str(po_totals[po.id]),
+                "total": str(po_totals.get(po.id, Decimal("0"))),
             }
             for po, supplier_name in recent_po_rows
         ],

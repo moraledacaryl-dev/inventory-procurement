@@ -163,7 +163,17 @@ def create_mapping(p:PosMappingCreate,db:Session=Depends(get_db),user:User=Depen
 def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depends(require_integration_actor('hidden-oasis-pos'))):
     if p.pos_system!='hidden-oasis-pos': fail(422,'Unsupported POS system')
     existing=db.scalar(select(PosSaleEvent).where(PosSaleEvent.external_event_id==p.external_event_id))
-    if existing: return existing
+    if existing:
+        # One POS event identity may be retried, but never reused with different
+        # quantities, sale identity, disposition or lifecycle type. A silent
+        # success here would hide an upstream conflict and an incorrect stock
+        # deduction/reversal even though the immutable row was unchanged.
+        if (existing.pos_system != p.pos_system
+                or existing.external_sale_id != p.external_sale_id
+                or existing.event_type != p.event_type
+                or existing.payload != p.model_dump(mode='json')):
+            fail(409, 'POS external event ID was already used for a different event')
+        return existing
     original=None
     if p.event_type=='sale_completed':
         prior_sale=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed'))

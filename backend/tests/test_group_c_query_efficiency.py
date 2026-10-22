@@ -68,6 +68,8 @@ def test_dashboard_recent_po_totals_are_correct_with_one_batched_lines_query(cli
     recent = response.json()["recent_purchase_orders"]
     assert len(recent) == 5
     assert all(Decimal(row["total"]) == Decimal("57.00") for row in recent)
+    assert response.json()["metrics"]["pending_purchase_orders"] == 35
+    assert response.json()["metrics"]["overdue_purchase_orders"] == 0
     assert len(statements) <= 1, f"Expected one aggregate PO-lines query, got {len(statements)}"
 
 

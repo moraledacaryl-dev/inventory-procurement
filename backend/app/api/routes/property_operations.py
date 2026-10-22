@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.models.inventory import Item, Location
 from app.models.property import HotelParLine, HotelParProfile, PropertyBalance, PropertyMovement
 from app.models.user import User
 from app.services.controls import add_audit, next_document_number
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["property-operations"])
 
@@ -97,9 +98,14 @@ def list_balances(
     item_id: str | None = None,
     location_id: str | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
     stmt = select(PropertyBalance).order_by(PropertyBalance.location_id, PropertyBalance.item_id, PropertyBalance.condition_id)
+    allowed = visible_location_ids(db, user)
+    if allowed is not None:
+        stmt = stmt.where(PropertyBalance.location_id.in_(allowed))
     if item_id:
         stmt = stmt.where(PropertyBalance.item_id == item_id)
     if location_id:
@@ -112,11 +118,23 @@ def list_movements(
     item_id: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
-    stmt = select(PropertyMovement).order_by(PropertyMovement.created_at.desc()).limit(limit)
+    stmt = select(PropertyMovement).order_by(PropertyMovement.created_at.desc())
+    allowed = visible_location_ids(db, user)
+    if allowed is not None:
+        # A mixed-location circulation record is atomic: no partial
+        # disclosure of its other endpoint or assignee/reference.
+        source = PropertyMovement.source_location_id
+        destination = PropertyMovement.destination_location_id
+        stmt = stmt.where(
+            or_(source.in_(allowed), destination.in_(allowed)),
+            or_(source.is_(None), source.in_(allowed)),
+            or_(destination.is_(None), destination.in_(allowed)),
+        )
     if item_id:
         stmt = stmt.where(PropertyMovement.item_id == item_id)
+    stmt = stmt.limit(limit)
     return db.scalars(stmt).all()
 
 
@@ -140,6 +158,10 @@ def move_property(
         fail(422, "Destination location and condition must be supplied together")
     if not payload.source_location_id and not payload.destination_location_id:
         fail(422, "A source or destination bucket is required")
+    # Authorize both source and destination before touching either balance.
+    require_scoped_locations(
+        db, user, {loc for loc in (payload.source_location_id, payload.destination_location_id) if loc}
+    )
     if payload.source_location_id:
         apply_bucket(db, payload.item_id, payload.source_location_id, source_condition.id, -payload.quantity)
     if payload.destination_location_id:
@@ -164,9 +186,20 @@ def move_property(
 
 
 @router.get("/hotel/par-profiles")
-def list_par_profiles(db: Session = Depends(get_db), _: User = Depends(require_permission("inventory.read"))):
-    profiles = db.scalars(select(HotelParProfile).order_by(HotelParProfile.code)).all()
-    lines = db.scalars(select(HotelParLine).order_by(HotelParLine.profile_id, HotelParLine.item_id)).all()
+def list_par_profiles(db: Session = Depends(get_db), user: User = Depends(require_permission("inventory.read"))):
+    stmt = select(HotelParProfile).order_by(HotelParProfile.code)
+    allowed = visible_location_ids(db, user)
+    if allowed is not None:
+        # Locationless profiles are global settings and owner-only for
+        # accounts with an explicit operational restriction.
+        stmt = stmt.where(HotelParProfile.location_id.in_(allowed))
+    profiles = db.scalars(stmt).all()
+    ids = [profile.id for profile in profiles]
+    lines = db.scalars(
+        select(HotelParLine)
+        .where(HotelParLine.profile_id.in_(ids))
+        .order_by(HotelParLine.profile_id, HotelParLine.item_id)
+    ).all()
     grouped: dict[str, list[HotelParLine]] = {}
     for line in lines:
         grouped.setdefault(line.profile_id, []).append(line)
@@ -181,6 +214,11 @@ def create_par_profile(
 ):
     if payload.location_id and not db.get(Location, payload.location_id):
         fail(422, "Par-profile location not found")
+    allowed = visible_location_ids(db, user)
+    if allowed is not None and not payload.location_id:
+        fail(403, "Location-scoped users cannot create global par profiles")
+    if payload.location_id:
+        require_scoped_locations(db, user, {payload.location_id})
     item_ids = [line.item_id for line in payload.lines]
     if len(item_ids) != len(set(item_ids)):
         fail(422, "Each item may appear only once in a par profile")

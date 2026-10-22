@@ -88,6 +88,12 @@ def test_pos_event_idempotency_and_reversal(client):
     duplicate = client.post("/api/v1/integrations/pos/events", headers=integration_headers, json=event)
     assert duplicate.status_code == 201
     assert duplicate.json()["id"] == first.json()["id"]
+    numeric_equivalent = client.post(
+        "/api/v1/integrations/pos/events", headers=integration_headers,
+        json={**event, "lines": [{"external_product_id": "CAFE-001", "quantity": "2.000"}]},
+    )
+    assert numeric_equivalent.status_code == 201
+    assert numeric_equivalent.json()["id"] == first.json()["id"]
 
     # Conflicting retries must never masquerade as successful idempotent
     # delivery: the original stock effect is authoritative.

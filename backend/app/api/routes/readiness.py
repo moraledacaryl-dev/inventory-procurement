@@ -19,6 +19,7 @@ from app.models.readiness import DataImportJob, AcceptanceRun
 from app.schemas.readiness import *
 from app.services.controls import add_audit, next_document_number
 from app.services.inventory import InventoryError, post_document
+from app.services.operational_authorization import require_global_operational_access, require_scoped_locations, require_requisition_location
 
 router=APIRouter(tags=['production-readiness'])
 def now(): return datetime.now(timezone.utc)
@@ -55,6 +56,7 @@ def validate_import(import_type:str,rows:list[dict],db:Session):
 
 @router.post('/migration/imports/{import_type}/validate',response_model=ImportValidationOut,status_code=201)
 async def validate_csv(import_type:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
+    require_global_operational_access(db,user)
     if not file.filename or not file.filename.lower().endswith('.csv'): fail(422,'CSV file required')
     try: content=(await file.read()).decode('utf-8-sig')
     except UnicodeDecodeError: fail(422,'CSV must be UTF-8 encoded')
@@ -63,10 +65,13 @@ async def validate_csv(import_type:str,file:UploadFile=File(...),db:Session=Depe
     return ImportValidationOut(job_id=job.id,import_type=import_type,filename=file.filename,status=job.status,summary={'row_count':len(normalized)},errors=errors)
 
 @router.get('/migration/imports',response_model=list[ImportJobOut])
-def import_jobs(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))): return db.scalars(select(DataImportJob).order_by(DataImportJob.created_at.desc()).limit(100)).all()
+def import_jobs(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
+    return db.scalars(select(DataImportJob).order_by(DataImportJob.created_at.desc()).limit(100)).all()
 
 @router.post('/migration/imports/{job_id}/apply',response_model=ImportApplyOut)
 def apply_import(job_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
+    require_global_operational_access(db,user)
     job=db.scalar(select(DataImportJob).where(DataImportJob.id==job_id).with_for_update())
     if not job: fail(404,'Import job not found')
     if job.status!='validated': fail(409,'Only validated imports can be applied')
@@ -106,6 +111,7 @@ def apply_import(job_id:str,db:Session=Depends(get_db),user:User=Depends(require
 def cancel_requisition(document_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     row=db.get(PurchaseRequisition,document_id)
     if not row: fail(404,'Requisition not found')
+    require_requisition_location(db,user,row.location_id)
     if row.status not in {'submitted','approved'}: fail(409,'Requisition cannot be cancelled')
     if db.scalar(select(func.count()).select_from(PurchaseOrder).where(PurchaseOrder.requisition_id==row.id,PurchaseOrder.status.not_in(['cancelled'])))>0: fail(409,'Requisition has an active purchase order')
     row.status='cancelled'; add_audit(db,actor_user_id=user.id,action='requisition.cancelled',entity_type='purchase_requisition',entity_id=row.id); db.commit(); return {'id':row.id,'status':row.status}
@@ -114,24 +120,29 @@ def cancel_requisition(document_id:str,db:Session=Depends(get_db),user:User=Depe
 def cancel_po(document_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     row=db.get(PurchaseOrder,document_id)
     if not row: fail(404,'Purchase order not found')
+    require_scoped_locations(db,user,{row.delivery_location_id})
     if row.status not in {'draft','approved'}: fail(409,'Purchase order cannot be cancelled')
     if db.scalar(select(func.count()).select_from(GoodsReceipt).where(GoodsReceipt.purchase_order_id==row.id))>0: fail(409,'Purchase order already has receipts')
     row.status='cancelled'; add_audit(db,actor_user_id=user.id,action='purchase_order.cancelled',entity_type='purchase_order',entity_id=row.id); db.commit(); return {'id':row.id,'status':row.status}
 
 @router.get('/print/purchase-orders/{document_id}',response_model=PrintableDocumentOut)
-def print_po(document_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('procurement.read'))):
+def print_po(document_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.read'))):
     row=db.scalar(select(PurchaseOrder).where(PurchaseOrder.id==document_id).options(selectinload(PurchaseOrder.lines)))
     if not row: fail(404,'Purchase order not found')
+    require_scoped_locations(db,user,{row.delivery_location_id})
     supplier=db.get(Supplier,row.supplier_id); location=db.get(Location,row.delivery_location_id); lines=[]; total=Decimal('0')
     for line in row.lines:
         item=db.get(Item,line.item_id); amount=Decimal(line.ordered_quantity)*Decimal(line.unit_price); total+=amount; lines.append({'sku':item.sku,'item':item.name,'quantity':str(line.ordered_quantity),'unit_price':str(line.unit_price),'amount':str(amount)})
     return PrintableDocumentOut(document_type='purchase_order',document_number=row.purchase_order_number,status=row.status,title='PURCHASE ORDER',header={'supplier':supplier.name,'delivery_location':location.name,'expected_delivery_date':str(row.expected_delivery_date or ''),'notes':row.notes or ''},lines=lines,totals={'grand_total':str(total)})
 
 @router.get('/print/goods-receipts/{document_id}',response_model=PrintableDocumentOut)
-def print_grn(document_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('receiving.read'))):
+def print_grn(document_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('receiving.read'))):
     row=db.scalar(select(GoodsReceipt).where(GoodsReceipt.id==document_id).options(selectinload(GoodsReceipt.lines)))
     if not row: fail(404,'Goods receipt not found')
-    po=db.get(PurchaseOrder,row.purchase_order_id); lines=[]
+    po=db.get(PurchaseOrder,row.purchase_order_id)
+    if not po: fail(404,'Purchase order not found')
+    require_scoped_locations(db,user,{po.delivery_location_id})
+    lines=[]
     for line in row.lines:
         item=db.get(Item,line.item_id); lines.append({'sku':item.sku,'item':item.name,'received':str(line.received_quantity),'accepted':str(line.accepted_quantity),'rejected':str(line.rejected_quantity),'unit_cost':str(line.unit_cost)})
     return PrintableDocumentOut(document_type='goods_receipt',document_number=row.goods_receipt_number,status='posted',title='GOODS RECEIPT NOTE',header={'purchase_order':po.purchase_order_number,'delivery_reference':row.delivery_reference or '','received_at':row.received_at.isoformat(),'notes':row.notes or ''},lines=lines,totals={'accepted_quantity':str(sum((Decimal(x.accepted_quantity) for x in row.lines),Decimal('0'))),'rejected_quantity':str(sum((Decimal(x.rejected_quantity) for x in row.lines),Decimal('0')))})
@@ -154,7 +165,8 @@ def migration_state(db: Session) -> str:
 
 
 @router.get('/deployment/status',response_model=DeploymentStatusOut)
-def deployment_status(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def deployment_status(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
     db.execute(text('SELECT 1')); pending=db.scalar(select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status.in_(['pending','processing','failed']))) or 0; dead=db.scalar(select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status=='dead_letter')) or 0; backup=db.scalar(select(BackupRecord).order_by(BackupRecord.created_at.desc()))
     age=(now()-aware(backup.created_at)).total_seconds()/3600 if backup else None; migrations=migration_state(db)
     status='healthy' if migrations=='head' and dead==0 and pending<100 and age is not None and age<=settings.backup_max_age_hours else 'attention'
@@ -162,6 +174,7 @@ def deployment_status(db:Session=Depends(get_db),_:User=Depends(require_permissi
 
 @router.post('/acceptance-runs',response_model=AcceptanceRunOut,status_code=201)
 def run_acceptance(p:AcceptanceRunCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
+    require_global_operational_access(db,user)
     run=AcceptanceRun(run_number=next_document_number(db,'UAT'),environment=p.environment,notes=p.notes,created_by_user_id=user.id); db.add(run); db.flush(); checks={}
     try:
         db.execute(text('SELECT 1')); checks['database']={'passed':True}; mismatches=[]
@@ -177,4 +190,6 @@ def run_acceptance(p:AcceptanceRunCreate,db:Session=Depends(get_db),user:User=De
         run.status='failed'; run.results={**checks,'error':str(exc)}; run.completed_at=now(); db.commit(); db.refresh(run); return run
 
 @router.get('/acceptance-runs',response_model=list[AcceptanceRunOut])
-def acceptance_runs(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))): return db.scalars(select(AcceptanceRun).order_by(AcceptanceRun.created_at.desc()).limit(50)).all()
+def acceptance_runs(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
+    return db.scalars(select(AcceptanceRun).order_by(AcceptanceRun.created_at.desc()).limit(50)).all()

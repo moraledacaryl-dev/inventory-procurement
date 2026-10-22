@@ -47,21 +47,54 @@ def stock_ledger(
     if date_to:
         filters.append(StockMovement.created_at <= date_to)
 
+    # Running stock must include ALL earlier movements of this item/location,
+    # not just rows selected by document type, date range or result limit.
+    # Compute history before applying those display filters. Restrict the
+    # window to the user's authorized locations to avoid scanning other sites.
+    chronological_order = (
+        StockMovement.created_at,
+        StockDocument.document_number,
+        StockMovement.line_number,
+        StockMovement.id,
+    )
+    history = (
+        select(
+            StockMovement.id.label("movement_id"),
+            func.sum(StockMovement.quantity).over(
+                partition_by=(StockMovement.item_id, StockMovement.location_id),
+                order_by=chronological_order,
+                rows=(None, 0),
+            ).label("running_quantity"),
+        )
+        .join(StockDocument, StockDocument.id == StockMovement.document_id)
+    )
+    if allowed is not None:
+        history = history.where(StockMovement.location_id.in_(allowed))
+    # Item/location filters do not truncate history within a partition.
+    if item_id:
+        history = history.where(StockMovement.item_id == item_id)
+    if location_id:
+        history = history.where(StockMovement.location_id == location_id)
+    full_history = history.subquery()
+
     rows = db.execute(
-        select(StockMovement, StockDocument, Item, Location)
+        select(StockMovement, StockDocument, Item, Location, full_history.c.running_quantity)
         .join(StockDocument, StockDocument.id == StockMovement.document_id)
         .join(Item, Item.id == StockMovement.item_id)
         .join(Location, Location.id == StockMovement.location_id)
+        .join(full_history, full_history.c.movement_id == StockMovement.id)
         .where(*filters)
-        .order_by(StockMovement.created_at, StockDocument.document_number, StockMovement.line_number)
+        .order_by(
+            StockMovement.created_at,
+            StockDocument.document_number,
+            StockMovement.line_number,
+            StockMovement.id,
+        )
         .limit(limit)
     ).all()
 
-    running: dict[tuple[str, str], Decimal] = {}
     result = []
-    for movement, document, item, location in rows:
-        key = (movement.item_id, movement.location_id)
-        running[key] = running.get(key, Decimal("0")) + Decimal(movement.quantity)
+    for movement, document, item, location, running_quantity in rows:
         result.append({
             "id": movement.id,
             "document_id": document.id,
@@ -82,7 +115,7 @@ def stock_ledger(
             "valuation_difference": str(
                 Decimal(movement.book_value_delta) - Decimal(movement.quantity) * Decimal(movement.unit_cost)
             ) if movement.book_value_delta is not None else None,
-            "running_quantity": str(running[key]),
+            "running_quantity": str(running_quantity),
             "reason": movement.reason,
             "created_at": movement.created_at.isoformat(),
             "posted_at": document.posted_at.isoformat(),

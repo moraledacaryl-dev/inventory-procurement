@@ -15,6 +15,7 @@ from app.models.classification import ItemWorkspaceAssignment, OperationalDimens
 from app.models.inventory import Category, Item, Location
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_global_operational_access
 
 router = APIRouter(tags=["classification"])
 
@@ -241,6 +242,7 @@ def create_dimension(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("items.*")),
 ):
+    require_global_operational_access(db, user)
     if payload.dimension_type not in DIMENSION_TYPES:
         fail(422, "Unsupported classification master")
     validate_links(db, payload.parent_id, payload.workspace_id)
@@ -273,6 +275,7 @@ def update_dimension(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("items.*")),
 ):
+    require_global_operational_access(db, user)
     row = db.get(OperationalDimension, dimension_id)
     if not row:
         fail(404, "Classification record not found")
@@ -320,6 +323,7 @@ def update_item_classification(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("items.*")),
 ):
+    require_global_operational_access(db, user)
     item = db.get(Item, item_id)
     if not item:
         fail(404, "Item not found")
@@ -335,6 +339,7 @@ def bulk_assign_items(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("items.*")),
 ):
+    require_global_operational_access(db, user)
     changed = []
     for line in payload.lines:
         item = db.get(Item, line.item_id)

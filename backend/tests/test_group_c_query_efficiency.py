@@ -78,7 +78,7 @@ def test_pos_workspace_batch_loads_distinct_recipe_statuses_in_one_query(client)
         created = client.post("/api/v1/recipes", headers=headers, json={
             "code": f"GC-RECIPE-{index:03d}",
             "name": f"Group C recipe {index}",
-            "output_item_id": ingredient["id"],
+            "output_item_id": recipe["output_item_id"],
             "yield_quantity": 1,
             "lines": [{
                 "ingredient_item_id": ingredient["id"],

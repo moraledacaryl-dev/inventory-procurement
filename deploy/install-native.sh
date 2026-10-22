@@ -32,6 +32,21 @@ wait_for_url() {
 [[ -f "$FRONTEND_ENV" ]] || { echo "Missing $FRONTEND_ENV"; exit 1; }
 [[ -f "$CERT_DIR/fullchain.pem" && -f "$CERT_DIR/privkey.pem" ]] || { echo "Missing TLS certificate for inventory.hiddenoasis.app. Run certbot before deployment."; exit 1; }
 
+# A failed npm install/build or later deployment step must never leave the
+# Git-tracked Next.js declaration modified. Preserve the original exit status
+# while restoring checkout hygiene on both success and failure.
+restore_generated_frontend_declaration() {
+  local original_status=$?
+  trap - EXIT
+  if ! git -C "$APP_DIR" restore -- frontend/next-env.d.ts; then
+    echo "INVENTORY CHECKOUT HYGIENE: Could not restore next-env.d.ts" >&2
+    original_status=1
+  fi
+  exit "$original_status"
+}
+trap restore_generated_frontend_declaration EXIT
+
+
 # Fail *before backup, build or migration* if bash sourcing silently corrupts
 # the JSON destinations. Workers cannot reach Accounting without this map.
 (
@@ -98,7 +113,6 @@ rm -rf "$APP_DIR/frontend/node_modules" "$APP_DIR/frontend/.next"
 install -d -o hiddenoasis -g hiddenoasis "$APP_DIR/frontend/node_modules" "$APP_DIR/frontend/.next"
 chown hiddenoasis:hiddenoasis "$APP_DIR/frontend/next-env.d.ts"
 sudo -u hiddenoasis env HOME=/tmp NPM_CONFIG_CACHE="$NPM_CACHE" bash -c "cd '$APP_DIR/frontend' && set -a && source '$FRONTEND_ENV' && set +a && npm ci --include=dev && npm run build && mkdir -p .next/standalone/.next && rm -rf .next/standalone/.next/static && cp -a .next/static .next/standalone/.next/static && if [ -d public ]; then rm -rf .next/standalone/public && cp -a public .next/standalone/public; fi"
-git -C "$APP_DIR" restore -- frontend/next-env.d.ts
 
 # Apply schema changes before account bootstrap. The backend environment is a
 # protected root-readable production secret file, so source it while this

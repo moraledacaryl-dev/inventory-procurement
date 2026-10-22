@@ -22,6 +22,12 @@ on:
       - 'frontend/scripts/summarize-visual-artifacts.mjs'
       - 'backend/scripts/seed_visual_acceptance.py'
 
+# Preserve all exact-commit main push certifications. For PR updates, cancel
+# only superseded tests from the same PR to avoid expensive stale work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   capture:
     runs-on: ubuntu-latest

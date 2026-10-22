@@ -13,7 +13,7 @@ from app.models.inventory_operations import ItemBarcode, UnitConversion, ItemLoc
 from app.schemas.inventory_operations import *
 from app.services.controls import add_audit, add_notification, next_document_number
 from app.services.inventory import InventoryError, post_document
-from app.services.operational_authorization import require_scoped_locations, visible_location_ids
+from app.services.operational_authorization import require_global_operational_access, require_scoped_locations, visible_location_ids
 
 router=APIRouter(tags=['inventory-operations'])
 def fail(code:int,message:str): raise HTTPException(code,message)
@@ -50,6 +50,7 @@ def barcode_lookup(barcode:str,db:Session=Depends(get_db),_:User=Depends(require
 def list_barcodes(item_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('items.read'))): return db.scalars(select(ItemBarcode).where(ItemBarcode.item_id==item_id).order_by(ItemBarcode.is_primary.desc(),ItemBarcode.barcode)).all()
 @router.post('/items/{item_id}/barcodes',response_model=BarcodeOut,status_code=201)
 def add_barcode(item_id:str,p:BarcodeCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('items.*'))):
+    require_global_operational_access(db,user)
     if not db.get(Item,item_id): fail(404,'Item not found')
     if p.is_primary:
         for x in db.scalars(select(ItemBarcode).where(ItemBarcode.item_id==item_id,ItemBarcode.is_primary==True)).all(): x.is_primary=False
@@ -59,6 +60,7 @@ def add_barcode(item_id:str,p:BarcodeCreate,db:Session=Depends(get_db),user:User
 def list_conversions(item_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('items.read'))): return db.scalars(select(UnitConversion).where(UnitConversion.item_id==item_id,UnitConversion.is_active==True)).all()
 @router.post('/items/{item_id}/conversions',response_model=ConversionOut,status_code=201)
 def add_conversion(item_id:str,p:ConversionCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('items.*'))):
+    require_global_operational_access(db,user)
     if not db.get(Item,item_id) or not db.get(UnitOfMeasure,p.from_unit_id) or not db.get(UnitOfMeasure,p.to_unit_id): fail(422,'Item or unit not found')
     if p.from_unit_id==p.to_unit_id: fail(422,'Conversion units must differ')
     row=UnitConversion(item_id=item_id,**p.model_dump()); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='item.conversion_added',entity_type='item',entity_id=item_id,details={'multiplier':str(p.multiplier)}); db.commit(); db.refresh(row); return row

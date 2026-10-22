@@ -93,7 +93,9 @@ def create_supplier(p:SupplierCreate,db:Session=Depends(get_db),user:User=Depend
     require_global_operational_access(db,user)
     row=Supplier(**{**p.model_dump(),'code':p.code.upper().strip(),'name':p.name.strip()}); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='supplier.created',entity_type='supplier',entity_id=row.id,details={'code':row.code}); db.commit(); db.refresh(row); return row
 @router.get('/suppliers/{supplier_id}/items',response_model=list[SupplierItemOut])
-def supplier_items(supplier_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('suppliers.read'))): return db.scalars(select(SupplierItem).where(SupplierItem.supplier_id==supplier_id)).all()
+def supplier_items(supplier_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('suppliers.read'))):
+    require_global_operational_access(db,user)
+    return db.scalars(select(SupplierItem).where(SupplierItem.supplier_id==supplier_id)).all()
 @router.post('/suppliers/{supplier_id}/items',response_model=SupplierItemOut,status_code=201)
 def add_supplier_item(supplier_id:str,p:SupplierItemCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('suppliers.*'))):
     require_global_operational_access(db,user)

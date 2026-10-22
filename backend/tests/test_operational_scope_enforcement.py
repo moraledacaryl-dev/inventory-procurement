@@ -195,3 +195,175 @@ def test_inactive_and_dimensional_scopes_cannot_grant_global_approval(client):
         db.commit()
     # A location-limited scope cannot approve an unlocated requisition.
     assert client.post(endpoint, headers=buyer).status_code == 403
+
+
+
+def test_scoped_item_detail_aggregates_only_authorized_locations(client):
+    owner, manager, _buyer, (a, b), item, supplier, ids = setup(client)
+    scope = create_scope(client, owner, ids["scoped-manager@example.com"], location_id=a["id"])
+
+    for loc, qty, unit_cost in ((a, "4", "20"), (b, "7", "40")):
+        result = client.post("/api/v1/stock/receipts", headers=owner, json={
+            "location_id": loc["id"],
+            "lines": [{"item_id": item["id"], "quantity": qty, "unit_cost": unit_cost}],
+        })
+        assert result.status_code == 201, result.text
+        setting = client.post("/api/v1/item-location-settings", headers=owner, json={
+            "item_id": item["id"], "location_id": loc["id"],
+            "minimum_stock": "1", "reorder_quantity": "2",
+        })
+        assert setting.status_code == 201, setting.text
+
+    supplier_item = client.post(f"/api/v1/suppliers/{supplier['id']}/items",
+                                headers=owner, json={
+                                    "item_id": item["id"], "last_price": "99",
+                                })
+    assert supplier_item.status_code == 201, supplier_item.text
+
+    detail = client.get(f"/api/v1/items/{item['id']}", headers=manager)
+    assert detail.status_code == 200, detail.text
+    scoped = detail.json()
+    assert {x["location_id"] for x in scoped["balances"]} == {a["id"]}
+    assert {x["location_id"] for x in scoped["recent_movements"]} == {a["id"]}
+    assert Decimal(str(scoped["totals"]["quantity"])) == Decimal("4")
+    assert Decimal(str(scoped["totals"]["inventory_value"])) == Decimal("80")
+    assert scoped["totals"]["movement_count"] == 1
+    assert scoped["totals"]["location_count"] == 1
+
+    unrestricted = client.get(f"/api/v1/items/{item['id']}", headers=owner).json()
+    assert {x["location_id"] for x in unrestricted["balances"]} == {a["id"], b["id"]}
+    assert Decimal(str(unrestricted["totals"]["quantity"])) == Decimal("11")
+    assert Decimal(str(unrestricted["totals"]["inventory_value"])) == Decimal("360")
+    assert unrestricted["totals"]["movement_count"] == 2
+
+    configuration = client.get(
+        f"/api/v1/items/{item['id']}/configuration", headers=manager,
+    )
+    assert configuration.status_code == 200, configuration.text
+    assert {x["location_id"] for x in configuration.json()["location_settings"]} == {a["id"]}
+    assert configuration.json()["supplier_items"] == []
+    full_config = client.get(
+        f"/api/v1/items/{item['id']}/configuration", headers=owner,
+    ).json()
+    assert {x["location_id"] for x in full_config["location_settings"]} == {a["id"], b["id"]}
+    assert Decimal(full_config["supplier_items"][0]["last_price"]) == Decimal("99")
+    assert client.get(
+        f"/api/v1/suppliers/{supplier['id']}/items", headers=manager,
+    ).status_code == 403
+    assert client.get(
+        f"/api/v1/suppliers/{supplier['id']}/items", headers=owner,
+    ).status_code == 200
+
+    with SessionLocal() as db:
+        db.get(OperationalAccessScope, scope["id"]).is_active = False
+        db.commit()
+    detail = client.get(f"/api/v1/items/{item['id']}", headers=manager).json()
+    assert detail["balances"] == []
+    assert detail["recent_movements"] == []
+    assert Decimal(str(detail["totals"]["quantity"])) == 0
+    assert Decimal(str(detail["totals"]["inventory_value"])) == 0
+    assert detail["totals"]["movement_count"] == 0
+    cfg = client.get(f"/api/v1/items/{item['id']}/configuration", headers=manager).json()
+    assert cfg["location_settings"] == []
+    assert cfg["supplier_items"] == []
+
+
+def test_explicit_location_scope_rejects_global_catalogue_mutations(client):
+    owner, manager, _buyer, (a, b), item, _supplier, ids = setup(client)
+    scope = create_scope(client, owner, ids["scoped-manager@example.com"], location_id=a["id"])
+    new_item = {
+        "sku": "DENIED-NEW-ITEM", "name": "Denied Item",
+        "category_id": item["category_id"], "base_unit_id": item["base_unit_id"],
+        "standard_cost": "10",
+    }
+    expected_denied = [
+        ("post", "/api/v1/categories", {"name": "Denied category"}),
+        ("post", "/api/v1/units", {"code": "BADUNIT", "name": "Denied unit"}),
+        ("post", "/api/v1/locations", {"code": "BADLOC", "name": "Denied location"}),
+        ("post", "/api/v1/items", new_item),
+        ("patch", f"/api/v1/items/{item['id']}", {"name": "Tampered item"}),
+        ("post", "/api/v1/classification/dimensions", {
+            "dimension_type": "department", "code": "denied", "name": "Denied department",
+        }),
+        ("patch", "/api/v1/classification/dimensions/not-a-real-id", {"name": "Denied"}),
+        ("patch", f"/api/v1/classification/items/{item['id']}", {}),
+        ("post", "/api/v1/classification/items/bulk-assign", {
+            "lines": [{"item_id": item["id"]}],
+        }),
+        ("post", f"/api/v1/items/{item['id']}/barcodes", {
+            "barcode": "DENIED-BARCODE-123",
+        }),
+        ("post", f"/api/v1/items/{item['id']}/conversions", {
+            "from_unit_id": item["base_unit_id"],
+            "to_unit_id": item["base_unit_id"], "multiplier": "2",
+        }),
+    ]
+    for method, route, payload in expected_denied:
+        response = getattr(client, method)(route, headers=manager, json=payload)
+        assert response.status_code == 403, (method, route, response.text)
+
+    with SessionLocal() as db:
+        unchanged_item = db.get(__import__("app.models.inventory", fromlist=["Item"]).Item, item["id"])
+        assert unchanged_item.name == "Scoped goods"
+
+    # Role permissions still allow a legacy account without configured scope.
+    with SessionLocal() as db:
+        db.get(OperationalAccessScope, scope["id"]).is_active = False
+        db.commit()
+    assert client.post("/api/v1/categories", headers=manager, json={
+        "name": "Still denied when revoked",
+    }).status_code == 403
+    with SessionLocal() as db:
+        db.delete(db.get(OperationalAccessScope, scope["id"]))
+        db.commit()
+    assert client.post("/api/v1/categories", headers=manager, json={
+        "name": "Legacy category",
+    }).status_code == 201
+    assert client.post("/api/v1/items", headers=manager, json=new_item).status_code == 201
+    assert client.patch(f"/api/v1/items/{item['id']}", headers=manager,
+                        json={"name": "Authorized legacy edit"}).status_code == 200
+    assert client.post("/api/v1/categories", headers=owner, json={
+        "name": "Owner category",
+    }).status_code == 201
+
+
+def test_explicit_location_scope_rejects_global_menu_and_pos_rule_mutations(client):
+    owner, manager, _buyer, (a, _b), item, _supplier, ids = setup(client)
+    create_scope(client, owner, ids["scoped-manager@example.com"], location_id=a["id"])
+    menu = {"name": "Scope Latte", "category": "Coffee",
+            "variants": [{"name": "Regular", "price": "100"}]}
+    rule = {"name": "Scope combo", "qualifier_tag": "combo", "target_tag": "target"}
+    modifier = {"name": "Scope add-on", "group": {
+        "id": "addons", "label": "Add-ons", "mode": "multi",
+        "options": [{"label": "Pearl", "price_delta": 20}],
+    }}
+    item_created = client.post("/api/v1/fnb/menu", headers=owner, json=menu)
+    rule_created = client.post("/api/v1/fnb/pos-rules/pricing",
+                               headers=owner, json=rule)
+    modifier_created = client.post("/api/v1/fnb/pos-rules/modifiers",
+                                   headers=owner, json=modifier)
+    assert item_created.status_code == 201, item_created.text
+    assert rule_created.status_code == 201, rule_created.text
+    assert modifier_created.status_code == 201, modifier_created.text
+
+    blocked = [
+        ("post", "/api/v1/fnb/menu", menu),
+        ("put", f"/api/v1/fnb/menu/{item_created.json()['id']}", menu),
+        ("post", "/api/v1/fnb/pos-rules/pricing", rule),
+        ("put", f"/api/v1/fnb/pos-rules/pricing/{rule_created.json()['id']}", rule),
+        ("post", "/api/v1/fnb/pos-rules/modifiers", modifier),
+        ("put", f"/api/v1/fnb/pos-rules/modifiers/{modifier_created.json()['id']}", modifier),
+    ]
+    for method, route, payload in blocked:
+        response = getattr(client, method)(route, headers=manager, json=payload)
+        assert response.status_code == 403, (method, route, response.text)
+
+    assert client.get("/api/v1/fnb/menu", headers=manager).status_code == 200
+    assert client.get("/api/v1/fnb/pos-rules", headers=manager).status_code == 200
+    with SessionLocal() as db:
+        from app.models.menu import MenuItem
+        from app.models.pos_rules import PosModifierTemplate, PosPricingRule
+        assert db.query(MenuItem).count() == 1
+        assert db.query(PosPricingRule).count() == 1
+        assert db.query(PosModifierTemplate).count() == 1
+        assert db.query(PosPricingRule).first().name == "Scope combo"

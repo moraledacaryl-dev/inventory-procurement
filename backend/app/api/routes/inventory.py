@@ -14,7 +14,7 @@ from app.models.user import User
 from app.schemas.inventory import *
 from app.services.controls import add_audit, next_document_number
 from app.services.inventory import InventoryError, assert_count_snapshot_current, count_requires_approval, issue_entries, post_document, receipt_entries, transfer_entries
-from app.services.operational_authorization import require_scoped_locations, visible_location_ids
+from app.services.operational_authorization import require_global_operational_access, require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["inventory"])
 
@@ -80,7 +80,8 @@ def list_categories(db: Session = Depends(get_db), _: User = Depends(require_per
 
 
 @router.post("/categories", response_model=CategoryOut, status_code=201)
-def create_category(p: CategoryCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("items.*"))):
+def create_category(p: CategoryCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("items.*"))):
+    require_global_operational_access(db, user)
     if p.parent_id and not db.get(Category, p.parent_id):
         raise HTTPException(422, "Parent category not found")
     return save(db, Category(name=p.name.strip(), description=p.description, parent_id=p.parent_id, sort_order=p.sort_order))
@@ -92,7 +93,8 @@ def list_units(db: Session = Depends(get_db), _: User = Depends(require_permissi
 
 
 @router.post("/units", response_model=UnitOut, status_code=201)
-def create_unit(p: UnitCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("items.*"))):
+def create_unit(p: UnitCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("items.*"))):
+    require_global_operational_access(db, user)
     return save(db, UnitOfMeasure(code=p.code.upper().strip(), name=p.name.strip(), precision=p.precision))
 
 
@@ -106,7 +108,8 @@ def list_locations(db: Session = Depends(get_db), user: User = Depends(require_p
 
 
 @router.post("/locations", response_model=LocationOut, status_code=201)
-def create_location(p: LocationCreate, db: Session = Depends(get_db), _: User = Depends(require_permission("locations.*"))):
+def create_location(p: LocationCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("locations.*"))):
+    require_global_operational_access(db, user)
     if p.parent_id and not db.get(Location, p.parent_id):
         raise HTTPException(422, "Parent location not found")
     return save(db, Location(code=p.code.upper().strip(), name=p.name.strip(), location_type=p.location_type, parent_id=p.parent_id))
@@ -141,6 +144,7 @@ def list_items(
 
 @router.post("/items", response_model=ItemOut, status_code=201)
 def create_item(p: ItemCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("items.*"))):
+    require_global_operational_access(db, user)
     if not db.get(Category, p.category_id) or not db.get(UnitOfMeasure, p.base_unit_id):
         raise HTTPException(422, "Category or unit not found")
     data = p.model_dump()
@@ -159,13 +163,22 @@ def create_item(p: ItemCreate, db: Session = Depends(get_db), user: User = Depen
 
 
 @router.get("/items/{item_id}", response_model=ItemDetail)
-def item_detail(item_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("items.read"))):
+def item_detail(item_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("items.read"))):
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(404, "Item not found")
     category = db.get(Category, item.category_id); unit = db.get(UnitOfMeasure, item.base_unit_id)
-    balance_rows = db.execute(select(StockBalance, Location).join(Location, Location.id == StockBalance.location_id).where(StockBalance.item_id == item.id).order_by(Location.code)).all()
-    movement_rows = db.execute(select(StockMovement, StockDocument, Location).join(StockDocument, StockDocument.id == StockMovement.document_id).join(Location, Location.id == StockMovement.location_id).where(StockMovement.item_id == item.id).order_by(StockMovement.created_at.desc()).limit(25)).all()
+    allowed = visible_location_ids(db, user)
+    balances_query = select(StockBalance, Location).join(Location, Location.id == StockBalance.location_id).where(StockBalance.item_id == item.id)
+    movements_query = select(StockMovement, StockDocument, Location).join(StockDocument, StockDocument.id == StockMovement.document_id).join(Location, Location.id == StockMovement.location_id).where(StockMovement.item_id == item.id)
+    movement_count_query = select(func.count()).select_from(StockMovement).where(StockMovement.item_id == item.id)
+    # Filter before limiting movements or aggregating financial values.
+    if allowed is not None:
+        balances_query = balances_query.where(StockBalance.location_id.in_(allowed))
+        movements_query = movements_query.where(StockMovement.location_id.in_(allowed))
+        movement_count_query = movement_count_query.where(StockMovement.location_id.in_(allowed))
+    balance_rows = db.execute(balances_query.order_by(Location.code)).all()
+    movement_rows = db.execute(movements_query.order_by(StockMovement.created_at.desc()).limit(25)).all()
     total_quantity = sum((Decimal(balance.quantity) for balance, _location in balance_rows), Decimal("0"))
     total_value = sum((Decimal(balance.quantity) * Decimal(balance.average_cost) for balance, _location in balance_rows), Decimal("0"))
     average_cost = total_value / total_quantity if total_quantity else Decimal(item.standard_cost or 0)
@@ -173,7 +186,7 @@ def item_detail(item_id: str, db: Session = Depends(get_db), _: User = Depends(r
         item=item,
         category=category,
         base_unit=unit,
-        totals={"quantity": total_quantity, "inventory_value": total_value, "average_cost": average_cost, "location_count": len(balance_rows), "movement_count": db.scalar(select(func.count()).select_from(StockMovement).where(StockMovement.item_id == item.id)) or 0},
+        totals={"quantity": total_quantity, "inventory_value": total_value, "average_cost": average_cost, "location_count": len(balance_rows), "movement_count": db.scalar(movement_count_query) or 0},
         balances=[ItemBalanceDetail(location_id=balance.location_id, location_code=location.code, location_name=location.name, quantity=balance.quantity, average_cost=balance.average_cost, inventory_value=Decimal(balance.quantity) * Decimal(balance.average_cost), updated_at=balance.updated_at) for balance, location in balance_rows],
         recent_movements=[ItemMovementDetail(id=movement.id, location_id=movement.location_id, location_name=location.name, document_number=document.document_number, document_type=document.document_type, quantity=movement.quantity, unit_cost=movement.unit_cost, reason=movement.reason, created_at=movement.created_at) for movement, document, location in movement_rows],
     )
@@ -181,6 +194,7 @@ def item_detail(item_id: str, db: Session = Depends(get_db), _: User = Depends(r
 
 @router.patch("/items/{item_id}", response_model=ItemOut)
 def update_item(item_id: str, p: ItemUpdate, db: Session = Depends(get_db), user: User = Depends(require_permission("items.*"))):
+    require_global_operational_access(db, user)
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(404, "Item not found")

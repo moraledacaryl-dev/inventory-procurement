@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
-from app.services.operational_authorization import require_global_operational_access, require_scoped_locations
+from app.services.operational_authorization import require_global_operational_access, require_scoped_locations, visible_location_ids
 from app.db.session import get_db
 from app.models.inventory import Item, Location, UnitOfMeasure
 from app.models.inventory_operations import ItemBarcode, ItemLocationSetting, UnitConversion
@@ -65,7 +65,7 @@ def commit(db: Session, action: str, entity_type: str, entity_id: str, user: Use
 def item_configuration(
     item_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("items.read")),
+    user: User = Depends(require_permission("items.read")),
 ):
     item = db.get(Item, item_id)
     if not item:
@@ -77,7 +77,15 @@ def item_configuration(
     barcodes = db.scalars(select(ItemBarcode).where(ItemBarcode.item_id == item_id).order_by(ItemBarcode.is_primary.desc(), ItemBarcode.barcode)).all()
     conversions = db.scalars(select(UnitConversion).where(UnitConversion.item_id == item_id).order_by(UnitConversion.is_active.desc())).all()
     supplier_items = db.scalars(select(SupplierItem).where(SupplierItem.item_id == item_id).order_by(SupplierItem.is_preferred.desc())).all()
-    settings = db.scalars(select(ItemLocationSetting).where(ItemLocationSetting.item_id == item_id).order_by(ItemLocationSetting.is_active.desc())).all()
+    allowed = visible_location_ids(db, user)
+    settings_query = select(ItemLocationSetting).where(ItemLocationSetting.item_id == item_id)
+    if allowed is not None:
+        settings_query = settings_query.where(ItemLocationSetting.location_id.in_(allowed))
+    settings = db.scalars(settings_query.order_by(ItemLocationSetting.is_active.desc())).all()
+    # Supplier purchase prices are global master commercial data; a location
+    # assignment cannot establish authority to view them.
+    if allowed is not None:
+        supplier_items = []
 
     return {
         "barcodes": [

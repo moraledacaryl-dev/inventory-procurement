@@ -14,6 +14,7 @@ from app.models.inventory import Item
 from app.models.user import User
 from app.models.pos_rules import PosModifierTemplate,PosPricingRule
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_global_operational_access
 router=APIRouter(tags=["fnb-menu"])
 TAG_PATTERN=r"^[a-z0-9][a-z0-9_-]*$"
 class ConditionalPriceIn(BaseModel):
@@ -85,6 +86,7 @@ def variants(db,item,rows):
         if v.id not in keep:v.is_active=False
 @router.post("/fnb/menu",status_code=201)
 def create(payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    require_global_operational_access(db,user)
     validate_menu_refs(db,payload)
     item=MenuItem(name=payload.name.strip(),display_name=(payload.display_name or payload.name).strip(),category=payload.category.strip(),description=payload.description,prep_station=payload.prep_station.strip(),pricing_role=payload.pricing_role,pricing_tags_json=json.dumps(payload.pricing_tags),modifier_groups_json=json.dumps(payload.modifier_groups),modifier_template_ids_json=json.dumps(payload.modifier_template_ids),is_active=payload.is_active,pos_visible=payload.pos_visible);db.add(item)
     try:
@@ -93,6 +95,7 @@ def create(payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_p
     except IntegrityError: db.rollback();raise HTTPException(409,"Duplicate SKU/barcode or invalid menu configuration")
 @router.put("/fnb/menu/{item_id}")
 def update(item_id:str,payload:MenuIn,db:Session=Depends(get_db),user:User=Depends(require_permission("items.*"))):
+    require_global_operational_access(db,user)
     item=db.scalar(select(MenuItem).where(MenuItem.id==item_id).options(selectinload(MenuItem.variants)))
     if not item:raise HTTPException(404,"Menu item not found")
     validate_menu_refs(db,payload)

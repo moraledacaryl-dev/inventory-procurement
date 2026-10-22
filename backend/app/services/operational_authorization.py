@@ -103,3 +103,18 @@ def require_requisition_location(db: Session, user: User, location_id: str | Non
             status_code=403,
             detail="Operational access scope does not authorize this requisition location",
         )
+
+
+def require_global_operational_access(db: Session, user: User) -> None:
+    """Global records with no authoritative location require broad access.
+
+    Caller must first hold the route's role-level permission. Owners, legacy
+    unassigned users and explicitly unrestricted accounts retain that role
+    permission; users assigned only specific locations cannot inspect or
+    mutate financial/integration records without trustworthy location links.
+    """
+    if visible_location_ids(db, user) is not None:
+        raise HTTPException(
+            status_code=403,
+            detail="Global operational records require unrestricted location access",
+        )

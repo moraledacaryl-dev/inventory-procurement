@@ -50,8 +50,14 @@ def location_detail(
     if not location:
         fail(404, "Location not found")
 
+    allowed = visible_location_ids(db, user)
     parent = db.get(Location, location.parent_id) if location.parent_id else None
-    children = db.scalars(select(Location).where(Location.parent_id == location_id).order_by(Location.code)).all()
+    if parent is not None and allowed is not None and parent.id not in allowed:
+        parent = None
+    children_stmt = select(Location).where(Location.parent_id == location_id)
+    if allowed is not None:
+        children_stmt = children_stmt.where(Location.id.in_(allowed))
+    children = db.scalars(children_stmt.order_by(Location.code)).all()
     balances = db.execute(
         select(StockBalance, Item)
         .join(Item, Item.id == StockBalance.item_id)
@@ -173,6 +179,11 @@ def update_location(
     require_scoped_locations(db, user, {location_id})
     data = payload.model_dump(exclude_unset=True)
 
+    if "parent_id" in data:
+        # Reparenting (including unlinking) changes the old and new parent
+        # hierarchy; a location-only scope cannot change a foreign parent.
+        parent_ids = {pid for pid in (location.parent_id, data["parent_id"]) if pid}
+        require_scoped_locations(db, user, parent_ids)
     if "parent_id" in data and data["parent_id"]:
         if data["parent_id"] == location_id:
             fail(422, "Location cannot be its own parent")

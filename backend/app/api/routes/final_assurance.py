@@ -17,6 +17,7 @@ from app.models.production import ProductionBatch
 from app.models.property import HotelParLine, PropertyBalance
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_global_operational_access
 
 router=APIRouter(tags=['final-assurance'])
 def now(): return datetime.now(timezone.utc)
@@ -90,12 +91,16 @@ def snapshot(db:Session):
     return {'generated_at':now().isoformat(),'overall_status':'critical' if failed_checks else 'attention' if attention else 'healthy','summary':{'failed_checks':failed_checks,'attention_checks':attention,'stock_mismatches':len(mismatches),'negative_stock_violations':len(negative),'negative_property_balances':len(property_negative),'invalid_hotel_pars':len(invalid_pars),'fixed_asset_issues':len(asset_issues),'duplicate_depreciation_periods':len(duplicate_periods),'overdue_maintenance':len(overdue_maintenance),'open_maintenance_work_orders':open_work_orders,'untreated_purchase_lines':len(untreated),'unscoped_users':len(unscoped_users),'empty_posted_documents':len(empty),'unclassified_items':len(unclassified),'pending_integrations':pending,'failed_integrations':failed,'dead_letter_integrations':dead,'stale_processing_integrations':stale_processing,'unmapped_accounting_events':len(unmapped_events),'unresolved_operational_requests':unresolved,'open_count_sessions':open_counts,'open_production_batches':open_production},'checks':checks,'stock_mismatches':mismatches[:200],'negative_stock':negative[:200],'negative_property_balances':property_negative[:200],'invalid_hotel_pars':invalid_pars[:200],'fixed_asset_issues':asset_issues[:200],'overdue_maintenance':overdue_maintenance[:200],'untreated_purchase_lines':untreated[:200],'unscoped_users':unscoped_users[:200],'empty_documents':empty[:200],'unclassified_items':unclassified[:500],'latest_backup_at':backup.created_at.isoformat() if backup else None,'backup_age_hours':backup_age}
 
 @router.get('/reports/final-assurance')
-def report(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))): return snapshot(db)
+def report(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
+    return snapshot(db)
 @router.post('/reports/final-assurance/record')
 def record(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
     data=snapshot(db); add_audit(db,actor_user_id=user.id,action='assurance.snapshot_recorded',entity_type='system_assurance',entity_id=data['generated_at'],details={'overall_status':data['overall_status'],'summary':data['summary'],'checks':data['checks']}); db.commit(); return data
 @router.get('/reports/final-assurance.csv')
-def export(db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def export(db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_global_operational_access(db,user)
     data=snapshot(db); out=io.StringIO(); writer=csv.writer(out); writer.writerow(['generated_at',data['generated_at']]); writer.writerow(['overall_status',data['overall_status']]); writer.writerow([]); writer.writerow(['check','label','status','count'])
     for check in data['checks']: writer.writerow([check['key'],check['label'],check['status'],check['count']])
     writer.writerow([]); writer.writerow(['item','location','ledger_quantity','balance_quantity','difference'])

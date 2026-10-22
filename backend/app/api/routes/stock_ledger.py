@@ -90,8 +90,10 @@ def stock_ledger(
             StockMovement.line_number,
             StockMovement.id,
         )
-        .limit(limit)
+        .limit(limit + 1)
     ).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
 
     result = []
     for movement, document, item, location, running_quantity in rows:
@@ -136,6 +138,11 @@ def stock_ledger(
             "limit": limit,
         },
         "summary": {
+            # These totals intentionally describe only displayed rows. Date,
+            # document-type, and row-limit filters do not produce a full
+            # period-end valuation or a complete historical financial total.
+            "totals_scope": "displayed_rows",
+            "has_more": has_more,
             "movement_count": len(result),
             "net_quantity": str(total_quantity),
             "net_value": str(total_value),

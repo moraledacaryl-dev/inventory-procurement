@@ -9,7 +9,9 @@ def test_stock_ledger_payload(client):
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {"filters", "summary", "rows"}
-    assert set(payload["summary"]) == {"movement_count", "net_quantity", "net_value", "document_count", "book_value_change", "legacy_unverified_value_lines"}
+    assert set(payload["summary"]) == {"movement_count", "net_quantity", "net_value", "document_count", "book_value_change", "legacy_unverified_value_lines", "totals_scope", "has_more"}
+    assert payload["summary"]["totals_scope"] == "displayed_rows"
+    assert payload["summary"]["has_more"] is False
     assert isinstance(payload["rows"], list)
     if payload["rows"]:
         row = payload["rows"][0]

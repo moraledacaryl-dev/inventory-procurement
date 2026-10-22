@@ -170,6 +170,22 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
             return _verified_replay(existing, fingerprint=fingerprint, kind=kind,
                                     actor_id=actor_id, reference=reference,
                                     notes=notes, entries=entries)
+    # Acquire every balance lock in a canonical order before changing any
+    # quantity. Opposite-direction transfers and concurrent document types
+    # otherwise risk taking A->B and B->A PostgreSQL locks in reverse order.
+    # Source-cost lookups need the same lock as the destination balance.
+    locked_balances = {}
+    balance_keys = {
+        (str(entry["item_id"]), str(location_id))
+        for entry in entries
+        for location_id in (entry.get("location_id"), entry.get("cost_from_location_id"))
+        if location_id
+    }
+    for item_id, location_id in sorted(balance_keys):
+        _get_item(db, item_id)
+        _get_location(db, location_id)
+        locked_balances[(item_id, location_id)] = _balance(db, item_id, location_id)
+
     doc = StockDocument(document_number=next_document_number(db,kind), document_type=kind, posted_by_user_id=actor_id, reference=reference, notes=notes, idempotency_key=idempotency_key, request_fingerprint=fingerprint)
     db.add(doc); db.flush()
     event_lines=[]
@@ -183,7 +199,7 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         if qty == 0: raise InventoryError("Movement quantity cannot be zero at stock precision")
         if cost < 0: raise InventoryError("Movement unit cost cannot be negative")
         source_location_id = entry.get("cost_from_location_id")
-        bal = _balance(db, item.id, entry["location_id"])
+        bal = locked_balances[(item.id, entry["location_id"])]
         old_qty = Decimal(bal.quantity)
         old_cost = Decimal(bal.average_cost)
         old_book_value = old_qty * old_cost
@@ -195,7 +211,7 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
             cost = old_cost or Decimal(item.standard_cost)
         elif source_location_id:
             # Transfers carry the source's book value, never a supplied line price.
-            source_balance = _balance(db, item.id, source_location_id)
+            source_balance = locked_balances[(item.id, source_location_id)]
             cost = Decimal(source_balance.average_cost)
         cost = cost.quantize(precision, rounding=ROUND_HALF_UP)
         new_qty = old_qty + qty

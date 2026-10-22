@@ -50,7 +50,7 @@ def dashboard_summary(
     items_stmt = select(
         Item.id, Item.sku, Item.name, Item.minimum_stock, Item.is_active, Item.track_stock
     )
-    if scoped_locations is not None and allowed is not None:
+    if scoped_locations is not None:
         # A location-scoped operator only sees linked catalogue counts.
         items_stmt = items_stmt.where(or_(
             Item.default_location_id.in_(scoped_locations),

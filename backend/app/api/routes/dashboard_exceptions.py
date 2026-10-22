@@ -229,7 +229,7 @@ def dashboard_exceptions(
         .where(IntegrationEvent.status.in_(["failed", "dead_letter"]))
         .order_by(IntegrationEvent.created_at)
     ).all()
-    if failed_events and allowed is None:
+    if failed_events and scoped_locations is None:
         dead_letters = sum(1 for event in failed_events if event.status == "dead_letter")
         exceptions.append(_exception(
             key="failed_integrations",
@@ -250,7 +250,7 @@ def dashboard_exceptions(
         )
         .order_by(IntegrationEvent.created_at)
     ).all()
-    if accounting_events and allowed is None:
+    if accounting_events and scoped_locations is None:
         exceptions.append(_exception(
             key="accounting_posting_failures",
             category="integration",
@@ -303,7 +303,7 @@ def dashboard_exceptions(
     latest_backup = db.scalar(select(BackupRecord).order_by(BackupRecord.created_at.desc()).limit(1))
     backup_stale = not latest_backup or latest_backup.created_at < now - timedelta(hours=26)
     backup_failed = latest_backup and latest_backup.status != "completed"
-    if (backup_stale or backup_failed) and allowed is None:
+    if (backup_stale or backup_failed) and scoped_locations is None:
         message = "No successful backup record exists." if not latest_backup else (
             f"Latest backup status is {latest_backup.status}." if backup_failed
             else f"Latest backup is older than 26 hours: {latest_backup.filename}."

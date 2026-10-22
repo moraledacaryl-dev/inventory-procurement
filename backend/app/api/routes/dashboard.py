@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permission
@@ -11,6 +11,7 @@ from app.models.inventory import Item, Location, StockBalance, StockMovement
 from app.models.inventory_operations import ItemLocationSetting
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.user import User
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -28,7 +29,8 @@ def _percent_change(current: Decimal | int | float, previous: Decimal | int | fl
     current_value = float(current or 0)
     previous_value = float(previous or 0)
     if previous_value == 0:
-        return None if current_value == 0 else 100.0
+        # Growth from a zero denominator is undefined, not a 100% increase.
+        return None
     return round((current_value - previous_value) / abs(previous_value) * 100, 1)
 
 
@@ -37,22 +39,39 @@ def dashboard_summary(
     location_id: str | None = None,
     days: int = Query(30, ge=7, le=365),
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
+    allowed = visible_location_ids(db, user)
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
+    scoped_locations = {location_id} if location_id else allowed
     previous_start, current_start, now = _period_bounds(days)
 
-    item_rows = db.execute(
-        select(Item.id, Item.sku, Item.name, Item.minimum_stock, Item.is_active, Item.track_stock)
-        .order_by(Item.sku)
-    ).all()
+    items_stmt = select(
+        Item.id, Item.sku, Item.name, Item.minimum_stock, Item.is_active, Item.track_stock
+    )
+    if scoped_locations is not None and allowed is not None:
+        # A location-scoped operator only sees linked catalogue counts.
+        items_stmt = items_stmt.where(or_(
+            Item.default_location_id.in_(scoped_locations),
+            Item.id.in_(select(StockBalance.item_id).where(
+                StockBalance.location_id.in_(scoped_locations)
+            )),
+            Item.id.in_(select(ItemLocationSetting.item_id).where(
+                ItemLocationSetting.location_id.in_(scoped_locations)
+            )),
+        ))
+    item_rows = db.execute(items_stmt.order_by(Item.sku)).all()
 
     balance_stmt = select(
         StockBalance.item_id,
         func.coalesce(func.sum(StockBalance.quantity), 0).label("quantity"),
         func.coalesce(func.sum(StockBalance.quantity * StockBalance.average_cost), 0).label("value"),
     )
-    if location_id:
-        balance_stmt = balance_stmt.where(StockBalance.location_id == location_id)
+    if scoped_locations is not None:
+        balance_stmt = balance_stmt.where(
+            StockBalance.location_id.in_(scoped_locations)
+        )
     balance_rows = db.execute(balance_stmt.group_by(StockBalance.item_id)).all()
     balance_by_item = {row.item_id: row for row in balance_rows}
 
@@ -94,8 +113,8 @@ def dashboard_summary(
             })
 
     po_stmt = select(PurchaseOrder)
-    if location_id:
-        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id == location_id)
+    if scoped_locations is not None:
+        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(scoped_locations))
     purchase_orders = db.scalars(po_stmt).all()
     pending_purchase_orders = [po for po in purchase_orders if po.status not in CLOSED_PO_STATUSES]
     overdue_purchase_orders = [
@@ -103,11 +122,21 @@ def dashboard_summary(
         if po.expected_delivery_date and po.expected_delivery_date < date.today()
     ]
 
-    supplier_count = db.scalar(select(func.count()).select_from(Supplier).where(Supplier.is_active.is_(True))) or 0
+    if scoped_locations is not None:
+        supplier_count = db.scalar(select(func.count(func.distinct(Supplier.id))).join(
+            PurchaseOrder, PurchaseOrder.supplier_id == Supplier.id
+        ).where(
+            Supplier.is_active.is_(True),
+            PurchaseOrder.delivery_location_id.in_(scoped_locations),
+        )) or 0
+    else:
+        supplier_count = db.scalar(select(func.count()).select_from(Supplier).where(
+            Supplier.is_active.is_(True)
+        )) or 0
 
     movement_filters = []
-    if location_id:
-        movement_filters.append(StockMovement.location_id == location_id)
+    if scoped_locations is not None:
+        movement_filters.append(StockMovement.location_id.in_(scoped_locations))
     current_movements = db.scalar(
         select(func.count()).select_from(StockMovement).where(
             *movement_filters,
@@ -123,16 +152,20 @@ def dashboard_summary(
         )
     ) or 0
 
+    po_count_filters = (
+        [PurchaseOrder.delivery_location_id.in_(scoped_locations)]
+        if scoped_locations is not None else []
+    )
     current_po_count = db.scalar(
         select(func.count()).select_from(PurchaseOrder).where(
-            *( [PurchaseOrder.delivery_location_id == location_id] if location_id else [] ),
+            *po_count_filters,
             PurchaseOrder.created_at >= current_start,
             PurchaseOrder.created_at < now,
         )
     ) or 0
     previous_po_count = db.scalar(
         select(func.count()).select_from(PurchaseOrder).where(
-            *( [PurchaseOrder.delivery_location_id == location_id] if location_id else [] ),
+            *po_count_filters,
             PurchaseOrder.created_at >= previous_start,
             PurchaseOrder.created_at < current_start,
         )
@@ -144,8 +177,10 @@ def dashboard_summary(
         .order_by(PurchaseOrder.created_at.desc())
         .limit(5)
     )
-    if location_id:
-        recent_po_stmt = recent_po_stmt.where(PurchaseOrder.delivery_location_id == location_id)
+    if scoped_locations is not None:
+        recent_po_stmt = recent_po_stmt.where(
+            PurchaseOrder.delivery_location_id.in_(scoped_locations)
+        )
     recent_po_rows = db.execute(recent_po_stmt).all()
 
     po_totals = {
@@ -163,8 +198,10 @@ def dashboard_summary(
         .order_by(StockMovement.created_at.desc())
         .limit(5)
     )
-    if location_id:
-        recent_movement_stmt = recent_movement_stmt.where(StockMovement.location_id == location_id)
+    if scoped_locations is not None:
+        recent_movement_stmt = recent_movement_stmt.where(
+            StockMovement.location_id.in_(scoped_locations)
+        )
     recent_movement_rows = db.execute(recent_movement_stmt).all()
 
     return {
@@ -228,8 +265,12 @@ def valuation_history(
     location_id: str | None = None,
     days: int = Query(30, ge=7, le=365),
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("inventory.read")),
+    user: User = Depends(require_permission("inventory.read")),
 ):
+    allowed = visible_location_ids(db, user)
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
+    scoped_locations = {location_id} if location_id else allowed
     now = datetime.now(timezone.utc)
     start_date = (now - timedelta(days=days - 1)).date()
 
@@ -240,8 +281,10 @@ def valuation_history(
         ), 0).label("value_change"),
         func.sum(case((StockMovement.book_value_delta.is_(None), 1), else_=0)).label("legacy_count"),
     ).where(StockMovement.created_at >= datetime.combine(start_date, time.min, tzinfo=timezone.utc))
-    if location_id:
-        movement_stmt = movement_stmt.where(StockMovement.location_id == location_id)
+    if scoped_locations is not None:
+        movement_stmt = movement_stmt.where(
+            StockMovement.location_id.in_(scoped_locations)
+        )
     movement_rows = db.execute(movement_stmt.group_by(func.date(StockMovement.created_at))).all()
     # Legacy rows have no book-value delta. Their signed movement cost is only
     # an estimate where short stock was replenished at a different cost.
@@ -251,8 +294,10 @@ def valuation_history(
     remaining_legacy = sum(legacy_by_date.values())
 
     balance_stmt = select(func.coalesce(func.sum(StockBalance.quantity * StockBalance.average_cost), 0))
-    if location_id:
-        balance_stmt = balance_stmt.where(StockBalance.location_id == location_id)
+    if scoped_locations is not None:
+        balance_stmt = balance_stmt.where(
+            StockBalance.location_id.in_(scoped_locations)
+        )
     current_value = Decimal(db.scalar(balance_stmt) or 0)
 
     total_period_change = sum(change_by_date.values(), Decimal("0"))

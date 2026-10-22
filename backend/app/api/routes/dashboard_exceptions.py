@@ -13,6 +13,7 @@ from app.models.operations import BackupRecord, IntegrationEvent
 from app.models.procurement import PurchaseOrder, Supplier
 from app.models.production import ProductionBatch, Recipe, RecipeLine
 from app.models.user import User
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -107,6 +108,10 @@ def dashboard_exceptions(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("inventory.read")),
 ):
+    allowed = visible_location_ids(db, user)
+    if location_id:
+        require_scoped_locations(db, user, {location_id})
+    scoped_locations = {location_id} if location_id else allowed
     now = datetime.now(timezone.utc)
     today = date.today()
     exceptions: list[dict] = []
@@ -121,8 +126,10 @@ def dashboard_exceptions(
         )
         .order_by(PurchaseOrder.expected_delivery_date)
     )
-    if location_id:
-        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id == location_id)
+    if scoped_locations is not None:
+        po_stmt = po_stmt.where(
+            PurchaseOrder.delivery_location_id.in_(scoped_locations)
+        )
     overdue_pos = db.execute(po_stmt).all()
     if overdue_pos:
         oldest_po, supplier_name = overdue_pos[0]
@@ -143,8 +150,8 @@ def dashboard_exceptions(
         .where(CountSession.status.not_in(["posted", "cancelled"]))
         .order_by(CountSession.created_at)
     )
-    if location_id:
-        count_stmt = count_stmt.where(CountSession.location_id == location_id)
+    if scoped_locations is not None:
+        count_stmt = count_stmt.where(CountSession.location_id.in_(scoped_locations))
     sessions = db.scalars(count_stmt).unique().all()
     variance_sessions = []
     variance_lines = 0
@@ -169,8 +176,10 @@ def dashboard_exceptions(
         ))
 
     transfer_stmt = select(TransferOrder).where(TransferOrder.status == "dispatched").order_by(TransferOrder.dispatched_at)
-    if location_id:
-        transfer_stmt = transfer_stmt.where(TransferOrder.destination_location_id == location_id)
+    if scoped_locations is not None:
+        transfer_stmt = transfer_stmt.where(
+            TransferOrder.destination_location_id.in_(scoped_locations)
+        )
     transfers = db.scalars(transfer_stmt).all()
     if transfers:
         exceptions.append(_exception(
@@ -196,8 +205,8 @@ def dashboard_exceptions(
         )
         .order_by(InventoryLot.expiry_date)
     )
-    if location_id:
-        expiry_stmt = expiry_stmt.where(LotBalance.location_id == location_id)
+    if scoped_locations is not None:
+        expiry_stmt = expiry_stmt.where(LotBalance.location_id.in_(scoped_locations))
     expiring = db.execute(expiry_stmt).all()
     if expiring:
         expired_count = sum(1 for _balance, lot, _item in expiring if lot.expiry_date < today)
@@ -213,12 +222,14 @@ def dashboard_exceptions(
             oldest_at=first_lot.expiry_date,
         ))
 
+    # Global integrations have no trusted location dimension; their error
+    # text and aggregate counts cannot appear in a location-scoped dashboard.
     failed_events = db.scalars(
         select(IntegrationEvent)
         .where(IntegrationEvent.status.in_(["failed", "dead_letter"]))
         .order_by(IntegrationEvent.created_at)
     ).all()
-    if failed_events:
+    if failed_events and allowed is None:
         dead_letters = sum(1 for event in failed_events if event.status == "dead_letter")
         exceptions.append(_exception(
             key="failed_integrations",
@@ -239,7 +250,7 @@ def dashboard_exceptions(
         )
         .order_by(IntegrationEvent.created_at)
     ).all()
-    if accounting_events:
+    if accounting_events and allowed is None:
         exceptions.append(_exception(
             key="accounting_posting_failures",
             category="integration",
@@ -252,8 +263,10 @@ def dashboard_exceptions(
         ))
 
     batch_stmt = select(ProductionBatch).where(ProductionBatch.status == "planned").order_by(ProductionBatch.created_at)
-    if location_id:
-        batch_stmt = batch_stmt.where(ProductionBatch.location_id == location_id)
+    if scoped_locations is not None:
+        batch_stmt = batch_stmt.where(
+            ProductionBatch.location_id.in_(scoped_locations)
+        )
     batches = db.scalars(batch_stmt).all()
     shortage_batches = []
     for batch in batches:
@@ -290,7 +303,7 @@ def dashboard_exceptions(
     latest_backup = db.scalar(select(BackupRecord).order_by(BackupRecord.created_at.desc()).limit(1))
     backup_stale = not latest_backup or latest_backup.created_at < now - timedelta(hours=26)
     backup_failed = latest_backup and latest_backup.status != "completed"
-    if backup_stale or backup_failed:
+    if (backup_stale or backup_failed) and allowed is None:
         message = "No successful backup record exists." if not latest_backup else (
             f"Latest backup status is {latest_backup.status}." if backup_failed
             else f"Latest backup is older than 26 hours: {latest_backup.filename}."

@@ -192,3 +192,46 @@ test("counter inventory operations avoids forbidden supplier and reports endpoin
   await expect(page.getByText("Inventory operations unavailable")).toHaveCount(0);
   expect(restrictedCalls).toEqual([]);
 });
+
+
+test("stock ledger clearly labels truncated totals and validates filter dates", async ({ page }) => {
+  await signIn(page);
+  let ledgerRequests = 0;
+  await page.route("**/api/v1/stock/ledger?*", route => {
+    ledgerRequests += 1;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        filters: { limit: 500 },
+        summary: {
+          movement_count: 500, document_count: 500,
+          net_quantity: "500", net_value: "5000",
+          has_more: true, totals_scope: "displayed_rows",
+        },
+        rows: Array.from({ length: 500 }, (_, index) => ({
+          id: `m-${index}`, document_id: `doc-${index}`,
+          document_number: `DOC-${index}`, document_type: "receipt",
+          document_status: "posted", reference: null,
+          item_id: "item-1", sku: "TEST-ITEM", item_name: "Synthetic item",
+          location_id: "loc-1", location_code: "MAIN", location_name: "Main",
+          quantity: "1", unit_cost: "10", line_value: "10",
+          running_quantity: String(index + 1), reason: null,
+          created_at: "2026-01-01T08:00:00Z", posted_at: "2026-01-01T08:00:00Z",
+        })),
+      }),
+    });
+  });
+  await page.goto("/stock");
+  await expect(page.getByText("Partial ledger results:")).toBeVisible();
+  await expect(page.getByText(/only the first 500 matching movements are shown/i)).toBeVisible();
+  await expect(page.getByText(/Page 1 of 50/)).toBeVisible();
+
+  const dates = page.locator(".ledger-filters input[type=date]");
+  await dates.nth(0).fill("2026-02-15");
+  await dates.nth(1).fill("2026-02-01");
+  await expect(page.getByRole("alert", { name: /start date/i })).toBeVisible();
+  const requestsBefore = ledgerRequests;
+  await page.waitForTimeout(100);
+  expect(ledgerRequests).toBe(requestsBefore);
+});

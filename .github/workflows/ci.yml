@@ -105,7 +105,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: "20"}
-      - run: npm ci --include=dev --silent
+      - run: npm ci --include=dev --silent --no-audit --no-fund
+      # npm 12 removed the retired Quick Audit fallback. Use a current
+      # audit-only CLI while retaining Node 20 for app lint/typecheck/build.
+      - uses: actions/setup-node@v4
+        with: {node-version: "24"}
+      - name: Install supported npm security auditor
+        run: |
+          npm install --global npm@12.2.0 --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = "12.2.0"
       - name: Audit frontend dependencies
         run: |
           set -o pipefail
@@ -137,6 +145,8 @@ jobs:
         with:
           name: frontend-npm-audit-log
           path: frontend/npm-audit.log
+      - uses: actions/setup-node@v4
+        with: {node-version: "20"}
       - name: Lint frontend
         run: |
           set -o pipefail

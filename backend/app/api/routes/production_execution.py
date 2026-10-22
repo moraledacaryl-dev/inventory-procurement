@@ -14,6 +14,7 @@ from app.models.production import ProductionBatch, Recipe
 from app.models.user import User
 from app.services.controls import add_audit, add_notification, enqueue_event
 from app.services.inventory import InventoryError, post_document
+from app.services.operational_authorization import require_scoped_locations
 
 router = APIRouter(tags=["production-execution"])
 
@@ -109,10 +110,11 @@ def execution_snapshot(db: Session, batch: ProductionBatch) -> dict:
 
 
 @router.get("/production-batches/{batch_id}/execution-detail")
-def get_execution_detail(batch_id: str, db: Session = Depends(get_db), _: User = Depends(require_permission("inventory.read"))):
+def get_execution_detail(batch_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("inventory.read"))):
     batch = load_batch(db, batch_id)
     if not batch:
         fail(404, "Production batch not found")
+    require_scoped_locations(db, user, {batch.location_id})
     return execution_snapshot(db, batch)
 
 
@@ -121,6 +123,7 @@ def start_batch(batch_id: str, db: Session = Depends(get_db), user: User = Depen
     batch = load_batch(db, batch_id, lock=True)
     if not batch:
         fail(404, "Production batch not found")
+    require_scoped_locations(db, user, {batch.location_id})
     if batch.status != "planned":
         fail(409, "Only planned batches can be started")
     recipe = load_recipe(db, batch.recipe_id)
@@ -137,6 +140,7 @@ def execute_batch(batch_id: str, payload: ExecuteProduction, db: Session = Depen
     batch = load_batch(db, batch_id, lock=True)
     if not batch:
         fail(404, "Production batch not found")
+    require_scoped_locations(db, user, {batch.location_id})
     if batch.status != "in_progress":
         fail(409, "Only in-progress batches can be completed")
     recipe = load_recipe(db, batch.recipe_id)
@@ -238,6 +242,7 @@ def cancel_batch(batch_id: str, payload: CancelProduction, db: Session = Depends
     batch = load_batch(db, batch_id, lock=True)
     if not batch:
         fail(404, "Production batch not found")
+    require_scoped_locations(db, user, {batch.location_id})
     if batch.status not in {"planned", "in_progress"}:
         fail(409, "Only open batches can be cancelled")
     if batch.status == "in_progress" and not payload.material_disposition:

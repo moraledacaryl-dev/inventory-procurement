@@ -1,16 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 import json
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_permission
 from app.api.integration_auth import require_integration_actor
 from app.db.session import get_db
 from app.models.menu import MenuItem
+from app.models.inventory import StockMovement
 from app.models.production import PosProductMapping, PosSaleEvent, Recipe
 from app.models.pos_rules import PosModifierTemplate, PosPricingRule
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import require_scoped_locations, visible_location_ids
 
 router = APIRouter(tags=["pos-sync"])
 
@@ -75,10 +77,28 @@ def pos_catalog_feed(
 
 
 @router.get("/integrations/pos/workspace")
-def pos_workspace(db: Session = Depends(get_db), _: User = Depends(require_permission("integrations.read"))):
-    mappings = db.scalars(select(PosProductMapping).order_by(PosProductMapping.pos_system, PosProductMapping.external_product_id)).all()
-    events = db.scalars(select(PosSaleEvent).order_by(PosSaleEvent.processed_at.desc()).limit(100)).all()
-    counts = dict(db.execute(select(PosSaleEvent.status, func.count()).group_by(PosSaleEvent.status)).all())
+def pos_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("integrations.read"))):
+    allowed = visible_location_ids(db, user)
+    mapping_stmt = select(PosProductMapping).order_by(PosProductMapping.pos_system, PosProductMapping.external_product_id)
+    event_stmt = select(PosSaleEvent)
+    if allowed is not None:
+        mapping_stmt = mapping_stmt.where(PosProductMapping.location_id.in_(allowed))
+        # POS sale records lack a trusted location field. Only expose events
+        # whose posted stock document has movements entirely within scope.
+        # Unposted/failed events and cross-location events remain owner-only.
+        visible_docs = (
+            select(StockMovement.document_id)
+            .group_by(StockMovement.document_id)
+            .having(func.sum(case((StockMovement.location_id.in_(allowed), 0), else_=1)) == 0)
+        )
+        event_stmt = event_stmt.where(PosSaleEvent.stock_document_id.in_(visible_docs))
+    mappings = db.scalars(mapping_stmt).all()
+    events = db.scalars(event_stmt.order_by(PosSaleEvent.processed_at.desc()).limit(100)).all()
+    counts = dict(db.execute(
+        select(PosSaleEvent.status, func.count())
+        .where(PosSaleEvent.stock_document_id.in_(visible_docs) if allowed is not None else True)
+        .group_by(PosSaleEvent.status)
+    ).all())
     inactive = sum(1 for row in mappings if not row.is_active)
     stale = 0
     mapping_rows = []
@@ -127,6 +147,7 @@ def activate_mapping(mapping_id: str, db: Session = Depends(get_db), user: User 
     row = db.get(PosProductMapping, mapping_id)
     if not row:
         fail(404, "POS mapping not found")
+    require_scoped_locations(db, user, {row.location_id})
     recipe = db.get(Recipe, row.recipe_id)
     if not recipe or recipe.status != "approved":
         fail(409, "Only mappings to approved recipes can be activated")
@@ -141,6 +162,7 @@ def deactivate_mapping(mapping_id: str, db: Session = Depends(get_db), user: Use
     row = db.get(PosProductMapping, mapping_id)
     if not row:
         fail(404, "POS mapping not found")
+    require_scoped_locations(db, user, {row.location_id})
     row.is_active = False
     add_audit(db, actor_user_id=user.id, action="pos.mapping_deactivated", entity_type="pos_product_mapping", entity_id=row.id)
     db.commit()

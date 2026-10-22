@@ -15,6 +15,7 @@ from app.models.production import Recipe, RecipeLine, ProductionBatch, PosProduc
 from app.schemas.production import *
 from app.services.controls import add_audit, add_notification, enqueue_event, next_document_number
 from app.services.inventory import InventoryError, post_document
+from app.services.operational_authorization import visible_location_ids, require_scoped_locations
 
 router=APIRouter(tags=['production'])
 INGREDIENT_BEHAVIORS={'ingredient','recipe_output','recipe_packaging'}
@@ -106,7 +107,8 @@ def approve_recipe(recipe_id:str,db:Session=Depends(get_db),user:User=Depends(re
     for line in row.lines:require_recipe_item(db,line.ingredient_item_id,INGREDIENT_BEHAVIORS,'Ingredient')
     row.status='approved'; row.approved_by_user_id=user.id; row.approved_at=now(); add_audit(db,actor_user_id=user.id,action='recipe.approved',entity_type='recipe',entity_id=row.id); db.commit(); return load_recipe(db,row.id)
 @router.get('/recipes/{recipe_id}/cost',response_model=RecipeCostOut)
-def recipe_cost(recipe_id:str,location_id:str,db:Session=Depends(get_db),_:User=Depends(require_permission('reports.read'))):
+def recipe_cost(recipe_id:str,location_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('reports.read'))):
+    require_scoped_locations(db,user,{location_id})
     recipe=load_recipe(db,recipe_id)
     if not recipe or not db.get(Location,location_id): fail(404,'Recipe or location not found')
     total=Decimal('0'); possible=[]
@@ -116,17 +118,23 @@ def recipe_cost(recipe_id:str,location_id:str,db:Session=Depends(get_db),_:User=
     return RecipeCostOut(recipe_id=recipe.id,yield_quantity=recipe.yield_quantity,total_cost=total,cost_per_output_unit=total/Decimal(recipe.yield_quantity),available_output_quantity=min(possible) if possible else Decimal('0'))
 
 @router.get('/production-batches',response_model=list[ProductionOut])
-def batches(db:Session=Depends(get_db),_:User=Depends(require_permission('inventory.read'))): return db.scalars(select(ProductionBatch).order_by(ProductionBatch.created_at.desc())).all()
+def batches(db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.read'))):
+    stmt=select(ProductionBatch).order_by(ProductionBatch.created_at.desc())
+    allowed=visible_location_ids(db,user)
+    if allowed is not None: stmt=stmt.where(ProductionBatch.location_id.in_(allowed))
+    return db.scalars(stmt).all()
 @router.post('/production-batches',response_model=ProductionOut,status_code=201)
 def create_batch(p:ProductionCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     recipe=load_recipe(db,p.recipe_id)
     if not recipe or recipe.status!='approved': fail(409,'Production requires an approved recipe')
     if not db.get(Location,p.location_id): fail(422,'Location not found')
+    require_scoped_locations(db,user,{p.location_id})
     row=ProductionBatch(batch_number=next_document_number(db,'BATCH'),recipe_id=p.recipe_id,location_id=p.location_id,planned_quantity=p.planned_quantity,notes=p.notes,created_by_user_id=user.id); db.add(row); db.flush(); add_audit(db,actor_user_id=user.id,action='production.planned',entity_type='production_batch',entity_id=row.id); db.commit(); db.refresh(row); return row
 @router.post('/production-batches/{batch_id}/complete',response_model=ProductionOut)
 def complete_batch(batch_id:str,p:ProductionComplete,db:Session=Depends(get_db),user:User=Depends(require_permission('inventory.*'))):
     batch=db.scalar(select(ProductionBatch).where(ProductionBatch.id==batch_id).with_for_update())
     if not batch: fail(404,'Production batch not found')
+    require_scoped_locations(db,user,{batch.location_id})
     if batch.status!='planned': fail(409,'Only planned batches can be completed')
     recipe=load_recipe(db,batch.recipe_id); entries,total=recipe_entries(db,recipe,batch.location_id,p.actual_quantity)
     try:
@@ -138,11 +146,16 @@ def complete_batch(batch_id:str,p:ProductionComplete,db:Session=Depends(get_db),
     except (InventoryError,IntegrityError) as exc: db.rollback(); fail(409,str(exc))
 
 @router.get('/pos-mappings',response_model=list[PosMappingOut])
-def mappings(db:Session=Depends(get_db),_:User=Depends(require_permission('integrations.read'))): return db.scalars(select(PosProductMapping).order_by(PosProductMapping.pos_system,PosProductMapping.external_product_id)).all()
+def mappings(db:Session=Depends(get_db),user:User=Depends(require_permission('integrations.read'))):
+    stmt=select(PosProductMapping).order_by(PosProductMapping.pos_system,PosProductMapping.external_product_id)
+    allowed=visible_location_ids(db,user)
+    if allowed is not None: stmt=stmt.where(PosProductMapping.location_id.in_(allowed))
+    return db.scalars(stmt).all()
 @router.post('/pos-mappings',response_model=PosMappingOut,status_code=201)
 def create_mapping(p:PosMappingCreate,db:Session=Depends(get_db),user:User=Depends(require_permission('integrations.*'))):
     recipe=load_recipe(db,p.recipe_id)
     if not recipe or recipe.status!='approved' or not db.get(Location,p.location_id): fail(422,'Approved recipe or location not found')
+    require_scoped_locations(db,user,{p.location_id})
     row=PosProductMapping(**p.model_dump()); db.add(row)
     try: db.flush(); add_audit(db,actor_user_id=user.id,action='pos.mapping_created',entity_type='pos_product_mapping',entity_id=row.id); db.commit(); db.refresh(row); return row
     except IntegrityError: db.rollback(); fail(409,'POS product is already mapped')

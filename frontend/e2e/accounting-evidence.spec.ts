@@ -65,7 +65,7 @@ test("Accounting worklist does not format invalid source evidence as zero", asyn
   const row = page.getByRole("row").filter({ hasText: "invalid-1" });
   await expect(row).toContainText("Financial quantity or amount is not numeric");
   await expect(row).not.toContainText("₱0.00");
-  const good = page.getByRole("row").filter({ hasText: "valid-1" });
+  const good = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "stock_document: valid-1", exact: true }) });
   await expect(good).toContainText("₱30.00");
   await test.info().attach("group-f-accounting-invalid-financial-evidence", {
     body: await page.screenshot({ fullPage: true }),

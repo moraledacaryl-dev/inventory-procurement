@@ -16,12 +16,14 @@ from app.models.procurement import (
     PurchaseOrder,
     PurchaseOrderLine,
     PurchaseReturn,
+    PurchaseRequisition,
     Supplier,
     SupplierItem,
     SupplierQuotation,
 )
 from app.models.user import User
 from app.services.controls import add_audit
+from app.services.operational_authorization import visible_location_ids
 
 router = APIRouter(tags=["supplier-360"])
 
@@ -49,7 +51,7 @@ def decimal_sum(values):
 def supplier_detail(
     supplier_id: str,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("suppliers.read")),
+    user: User = Depends(require_permission("suppliers.read")),
 ):
     supplier = db.get(Supplier, supplier_id)
     if not supplier:
@@ -59,12 +61,18 @@ def supplier_detail(
     item_ids = {link.item_id for link in links}
     items = {row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()} if item_ids else {}
 
-    purchase_orders = db.scalars(
+    allowed = visible_location_ids(db, user)
+    po_stmt = (
         select(PurchaseOrder)
         .where(PurchaseOrder.supplier_id == supplier_id)
         .options(selectinload(PurchaseOrder.lines))
         .order_by(PurchaseOrder.created_at.desc())
-    ).unique().all()
+    )
+    if allowed is not None:
+        # Apply SQL authorization before financial aggregate calculations,
+        # receipt/return retrieval or delivery-rate/risk computation.
+        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
+    purchase_orders = db.scalars(po_stmt).unique().all()
     po_ids = {row.id for row in purchase_orders}
     receipts = db.scalars(
         select(GoodsReceipt)
@@ -77,12 +85,19 @@ def supplier_detail(
         .where(PurchaseReturn.purchase_order_id.in_(po_ids))
         .order_by(PurchaseReturn.created_at.desc())
     ).all() if po_ids else []
-    quotations = db.scalars(
+    quote_stmt = (
         select(SupplierQuotation)
         .where(SupplierQuotation.supplier_id == supplier_id)
         .options(selectinload(SupplierQuotation.lines))
         .order_by(SupplierQuotation.created_at.desc())
-    ).unique().all()
+    )
+    if allowed is not None:
+        # Unawarded quotations inherit location ownership from their typed PR.
+        # Historical unassigned PRs must never become visible via editable notes.
+        quote_stmt = quote_stmt.join(
+            PurchaseRequisition, SupplierQuotation.requisition_id == PurchaseRequisition.id
+        ).where(PurchaseRequisition.location_id.in_(allowed))
+    quotations = db.scalars(quote_stmt).unique().all()
 
     locations = {row.id: row for row in db.scalars(select(Location)).all()}
     receipts_by_po: dict[str, list[GoodsReceipt]] = {}

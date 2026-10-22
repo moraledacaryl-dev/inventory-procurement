@@ -27,8 +27,25 @@ def endpoint_map()->dict[str,str]:
     except json.JSONDecodeError:return {}
 
 def _money(value)->Decimal:
-    try:return Decimal(str(value or 0))
-    except (InvalidOperation,ValueError,TypeError):return Decimal('0')
+    """Financial evidence must never silently convert malformed values to zero."""
+    if value is None or isinstance(value, bool):
+        raise ValueError('Accounting financial amount is missing or invalid')
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError('Accounting financial amount is not numeric') from exc
+    if not number.is_finite():
+        raise ValueError('Accounting financial amount must be finite')
+    return number
+
+
+_ACCOUNTING_LOCAL_FIELDS = {'accounting_intake', 'accounting_reconciliation', 'accounting_receipt'}
+
+
+def _original_accounting_payload(value)->dict:
+    """Delivery and read-back state belongs locally, never in a retry envelope."""
+    payload = value if isinstance(value, dict) else {}
+    return {key: data for key, data in payload.items() if key not in _ACCOUNTING_LOCAL_FIELDS}
 
 def _join_url(base:str,path:str)->str:return f"{base.rstrip('/')}/{path.lstrip('/')}"
 
@@ -53,7 +70,7 @@ def _validate_accounting_response(response:httpx.Response)->dict:
     return payload
 
 def _accounting_payload(db:Session,event:IntegrationEvent)->dict:
-    payload=dict(event.payload) if isinstance(event.payload,dict) else {}
+    payload=_original_accounting_payload(event.payload)
     if event.event_type not in {'procurement.goods_received','procurement.purchase_return.posted'}:
         return payload
 
@@ -89,13 +106,23 @@ def _accounting_payload(db:Session,event:IntegrationEvent)->dict:
     return payload
 
 def accounting_envelope(event:IntegrationEvent,payload_override:dict|None=None)->dict:
-    payload=payload_override if isinstance(payload_override,dict) else (event.payload if isinstance(event.payload,dict) else {})
+    payload=_original_accounting_payload(payload_override if isinstance(payload_override,dict) else event.payload)
     effect='reference_only';amount=Decimal('0');links={'target_type':event.aggregate_type,'target_id':str(event.aggregate_id)}
     if event.event_type=='procurement.goods_received':
-        amount=sum((_money(line.get('accepted_quantity'))*_money(line.get('unit_cost')) for line in payload.get('lines',[])),Decimal('0'));effect='payable';links={'supplier_id':payload.get('supplier_id'),'supplier_name':str(payload.get('supplier_name') or payload.get('supplier_id') or 'Supplier'),'purchase_order_id':payload.get('purchase_order_id'),'invoice_number':payload.get('goods_receipt_number'),'category':'Inventory purchases'}
+        lines = payload.get('lines')
+        if not isinstance(lines, list) or not lines or not all(isinstance(line, dict) for line in lines):
+            raise ValueError('Accounting goods receipt requires nonempty financial lines')
+        amounts = [(_money(line.get('accepted_quantity')), _money(line.get('unit_cost'))) for line in lines]
+        if any(quantity < 0 or cost < 0 for quantity, cost in amounts):
+            raise ValueError('Accounting goods receipt quantities and costs must not be negative')
+        amount = sum((quantity * cost for quantity, cost in amounts), Decimal('0'))
+        effect='payable';links={'supplier_id':payload.get('supplier_id'),'supplier_name':str(payload.get('supplier_name') or payload.get('supplier_id') or 'Supplier'),'purchase_order_id':payload.get('purchase_order_id'),'invoice_number':payload.get('goods_receipt_number'),'category':'Inventory purchases'}
     elif event.event_type=='procurement.purchase_order.approved':links={'target_type':'purchase_order','target_id':str(payload.get('purchase_order_id') or event.aggregate_id),'purchase_order_id':payload.get('purchase_order_id'),'supplier_id':payload.get('supplier_id'),'commitment_total':payload.get('total')}
     elif event.event_type=='procurement.purchase_return.posted':
-        amount=_money(payload.get('total'));effect='payable_adjustment';links={'target_type':'purchase_return','target_id':str(payload.get('purchase_return_id') or event.aggregate_id),'purchase_return_id':payload.get('purchase_return_id'),'purchase_order_id':payload.get('purchase_order_id'),'return_number':payload.get('return_number'),'supplier_id':payload.get('supplier_id'),'supplier_name':str(payload.get('supplier_name') or payload.get('supplier_id') or 'Supplier'),'category':'Inventory purchase returns'}
+        amount=_money(payload.get('total'))
+        if amount < 0:
+            raise ValueError('Accounting purchase return amount must not be negative')
+        effect='payable_adjustment';links={'target_type':'purchase_return','target_id':str(payload.get('purchase_return_id') or event.aggregate_id),'purchase_return_id':payload.get('purchase_return_id'),'purchase_order_id':payload.get('purchase_order_id'),'return_number':payload.get('return_number'),'supplier_id':payload.get('supplier_id'),'supplier_name':str(payload.get('supplier_name') or payload.get('supplier_id') or 'Supplier'),'category':'Inventory purchase returns'}
     elif event.event_type in {'inventory.production.completed','inventory.production.executed'}:links={'target_type':'production_batch','target_id':str(payload.get('batch_id') or event.aggregate_id),'batch_id':payload.get('batch_id'),'batch_number':payload.get('batch_number'),'stock_value':payload.get('total_cost') if payload.get('total_cost') is not None else payload.get('total_actual_cost'),'category':'Inventory production'}
     elif event.event_type in {'inventory.pos_sale_consumed','inventory.pos_sale_reversed'}:links={'target_type':'pos_sale','target_id':str(payload.get('sale_id') or event.aggregate_id),'sale_id':payload.get('sale_id'),'stock_document_id':payload.get('stock_document_id'),'category':'Cost of goods sold','reversal':event.event_type.endswith('reversed')}
     return {'source_app':'inventory','source_event_id':event.id,'source_entity_type':event.aggregate_type,'source_entity_id':event.aggregate_id,'source_revision':1,'financial_effect':effect,'amount':float(amount.quantize(Decimal('0.01'))),'currency':str(payload.get('currency') or 'PHP').upper(),'proposed_account_id':payload.get('accounting_account_id'),'proposed_journal':payload.get('proposed_journal'),'proposed_links':links,'payload':{'event_type':event.event_type,'aggregate_type':event.aggregate_type,'aggregate_id':event.aggregate_id,'data':payload},'idempotency_key':event.idempotency_key,'correlation_id':str(payload.get('correlation_id') or event.aggregate_id)}
@@ -140,7 +167,11 @@ def claim_events(db:Session,worker_id:str,limit:int=25)->list[IntegrationEvent]:
     db.commit();return rows
 
 def process_event(db:Session,event_id:str,worker_id:str,endpoints:dict[str,str]|None=None,client:httpx.Client|None=None)->IntegrationEvent:
-    endpoints=endpoints or endpoint_map();event=db.get(IntegrationEvent,event_id)
+    endpoints=endpoints if endpoints is not None else endpoint_map()
+    # Keep the claimed outbox row locked until the bounded HTTP delivery and
+    # outcome update commit. SKIP LOCKED workers cannot reclaim a slow or
+    # stale-looking in-flight delivery and overwrite its final state.
+    event=db.scalar(select(IntegrationEvent).where(IntegrationEvent.id==event_id).with_for_update())
     if not event or event.locked_by!=worker_id or event.status!='processing':raise ValueError('Event is not claimed by this worker')
     event.attempts+=1;base=endpoints.get(event.destination_system)
     try:

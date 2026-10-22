@@ -77,7 +77,7 @@ def test_generic_reference_event_has_accounting_target_link():
 
 
 def test_idempotency_key_is_preserved():
-    result = accounting_envelope(event("procurement.purchase_return.posted", {"purchase_return_id": "ret-1"}))
+    result = accounting_envelope(event("procurement.purchase_return.posted", {"purchase_return_id": "ret-1", "total": "0.00"}))
     assert result["idempotency_key"] == "inventory:procurement.purchase_return.posted:42"
     assert result["proposed_links"]["target_type"] == "purchase_return"
     assert result["proposed_links"]["target_id"] == "ret-1"

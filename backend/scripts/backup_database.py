@@ -20,17 +20,54 @@ from app.db.session import SessionLocal
 from app.models.operations import BackupRecord
 
 
-def _atomic_write(target: pathlib.Path, payload: bytes) -> None:
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
-    tmp_path = pathlib.Path(tmp_name)
+def _sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while block := handle.read(1024 * 1024):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _stream_postgres_backup(target: pathlib.Path, cmd: list[str], env: dict[str, str]) -> None:
+    """Bounded-memory pg_dump -> gzip, atomic only after successful exit.
+
+    Keep stderr off the pipe so a verbose failing pg_dump cannot block while
+    stdout is drained. Never replace a valid backup with a failed dump.
+    """
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent,
+    )
+    temp_path = pathlib.Path(temp_name)
     try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, target)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
+        with tempfile.TemporaryFile(mode="w+b") as errors, os.fdopen(fd, "wb") as output:
+            process = subprocess.Popen(
+                cmd, env=env, stdout=subprocess.PIPE, stderr=errors,
+            )
+            try:
+                if process.stdout is None:
+                    raise RuntimeError("pg_dump did not provide a data stream")
+                total_bytes = 0
+                with process.stdout, gzip.GzipFile(fileobj=output, mode="wb") as compressed:
+                    while block := process.stdout.read(1024 * 1024):
+                        compressed.write(block)
+                        total_bytes += len(block)
+                return_code = process.wait()
+                if return_code != 0:
+                    errors.seek(0)
+                    diagnostic = errors.read(2000).decode("utf-8", errors="replace").strip()
+                    raise RuntimeError(f"pg_dump failed with exit code {return_code}: {diagnostic}")
+                if not total_bytes:
+                    raise RuntimeError("pg_dump produced an empty backup")
+                output.flush()
+                os.fsync(output.fileno())
+            except BaseException:
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+                raise
+        os.replace(temp_path, target)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
         raise
 
 
@@ -92,16 +129,14 @@ def main():
             "--no-owner",
             "--no-privileges",
         ]
-        raw = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True).stdout
-        if not raw:
-            raise RuntimeError("pg_dump produced an empty backup")
-        _atomic_write(target, gzip.compress(raw))
+        _stream_postgres_backup(target, cmd, env)
 
     if not target.exists() or target.stat().st_size <= 0:
         raise RuntimeError("backup artifact is empty")
 
-    digest = hashlib.sha256(target.read_bytes()).hexdigest()
-    removed = _prune_backups(backup_dir, retention_days=retention_days, keep=target)
+    digest = _sha256_file(target)
+    # The new backup must be durably catalogued before retention is touched.
+    # If database cataloguing fails, preserve all prior recovery points.
     with SessionLocal() as db:
         db.add(
             BackupRecord(
@@ -110,9 +145,13 @@ def main():
                 checksum_sha256=digest,
             )
         )
-        if removed:
-            db.execute(delete(BackupRecord).where(BackupRecord.filename.in_(removed)))
         db.commit()
+
+    removed = _prune_backups(backup_dir, retention_days=retention_days, keep=target)
+    if removed:
+        with SessionLocal() as db:
+            db.execute(delete(BackupRecord).where(BackupRecord.filename.in_(removed)))
+            db.commit()
     print(target)
     if removed:
         print(f"Pruned {len(removed)} expired backup(s).")

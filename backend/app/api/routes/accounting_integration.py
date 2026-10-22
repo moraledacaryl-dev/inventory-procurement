@@ -44,15 +44,18 @@ def money(value) -> Decimal:
 
 
 def event_amount(event: IntegrationEvent) -> Decimal:
-    payload=event.payload or {}
+    payload=event.payload if isinstance(event.payload,dict) else {}
     for key in ("total_cost","total_actual_cost","amount","inventory_value"):
         if key in payload:return money(payload[key])
     total=Decimal("0")
-    for line in payload.get("lines",[]) if isinstance(payload.get("lines"),list) else []:
-        if not isinstance(line,dict):continue
+    if "lines" in payload and not isinstance(payload["lines"],list):
+        raise ValueError("Financial lines must be a list")
+    for line in payload.get("lines",[]):
+        if not isinstance(line,dict):
+            raise ValueError("Financial line is not an object")
         if event.event_type=="inventory.stock_document.posted":
-            # The stock ledger stores signed quantities. A transfer has equal
-            # positive and negative movements and must not create GL value.
+            # Signed movement quantity; opposing transfer entries must net to
+            # zero. A missing cost is UNKNOWN, not a zero-value movement.
             total+=money(line.get("quantity"))*money(line.get("unit_cost"))
         else:
             total+=money(line.get("cost")) if "cost" in line else abs(money(line.get("quantity")))*money(line.get("unit_cost"))

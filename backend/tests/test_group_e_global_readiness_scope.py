@@ -5,6 +5,7 @@ The tests use synthetic fixtures only; no production stock or Accounting posts.
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.pass6 import OperationalAccessScope
+from app.models.inventory import Location
 from app.models.procurement import PurchaseOrder, PurchaseRequisition
 from app.models.readiness import AcceptanceRun, DataImportJob
 from app.models.stabilization import OperationalIncident, StaffFeedback
@@ -223,12 +224,20 @@ def test_location_hierarchy_cannot_disclose_or_reparent_foreign_sites(client):
                         json={"name": "Allowed Site A"})
     assert good.status_code == 200, good.text
     with SessionLocal() as db:
-        from app.models.inventory import Location
         assert db.get(Location, a).parent_id is None
         assert db.get(Location, b).parent_id == a
 
-    # Reparenting also requires permission for the OLD parent when unlinking.
+    # The cycle is forbidden even to the Owner.
     assert client.patch(f"/api/v1/locations/{a}", headers=owner,
-                        json={"parent_id": b}).status_code == 422  # cycle remains forbidden
-    assert client.patch(f"/api/v1/locations/{b}", headers=manager,
+                        json={"parent_id": b}).status_code == 422
+    assert client.patch(f"/api/v1/locations/{b}", headers=owner,
+                        json={"parent_id": None}).status_code == 200
+    assert client.patch(f"/api/v1/locations/{a}", headers=owner,
+                        json={"parent_id": b}).status_code == 200
+
+    # Unlinking A would mutate the hierarchy of its unauthorized old parent B.
+    assert client.patch(f"/api/v1/locations/{a}", headers=manager,
                         json={"parent_id": None}).status_code == 403
+    assert client.get(f"/api/v1/locations/{a}", headers=manager).json()["parent"] is None
+    with SessionLocal() as db:
+        assert db.get(Location, a).parent_id == b

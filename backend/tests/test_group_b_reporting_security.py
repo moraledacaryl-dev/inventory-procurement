@@ -88,6 +88,13 @@ def test_scoped_dashboard_never_leaks_other_site_value_or_details(client):
     assert owner.status_code == manager.status_code == 200
     assert Decimal(owner.json()["metrics"]["inventory_value"]) == Decimal("190")
     assert Decimal(manager.json()["metrics"]["inventory_value"]) == Decimal("50")
+    owner_site = client.get(
+        "/api/v1/dashboard/summary",
+        params={"location_id": data["a"]}, headers=data["owner"],
+    )
+    assert owner_site.status_code == 200
+    assert owner_site.json()["metrics"]["total_products"] == 1
+    assert Decimal(owner_site.json()["metrics"]["inventory_value"]) == Decimal("50")
     assert manager.json()["metrics"]["total_products"] == 1
     assert manager.json()["metrics"]["movement_count"] == 1
     assert manager.json()["stock_status"]["in_stock"] == 1

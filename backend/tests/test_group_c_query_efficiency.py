@@ -11,8 +11,60 @@ from app.db.session import SessionLocal, engine
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.production import Recipe
 from app.models.user import User
-from tests.test_inventory import login, setup_master
-from tests.test_pos_sync import seed_mapping
+def login(client):
+    response = client.post("/api/v1/auth/login", json={
+        "email": "owner@example.com", "password": "password123",
+    })
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def create(client, path, headers, payload):
+    response = client.post(path, headers=headers, json=payload)
+    assert response.status_code == 201, (path, response.text)
+    return response.json()
+
+
+def setup_master(client, headers):
+    category = create(client, "/api/v1/categories", headers, {"name": "Group C category"})
+    unit = create(client, "/api/v1/units", headers, {
+        "code": "GCU", "name": "Group C unit",
+    })
+    location = create(client, "/api/v1/locations", headers, {
+        "code": "GROUP-C-LOC", "name": "Group C test location",
+    })
+    item = create(client, "/api/v1/items", headers, {
+        "sku": "GROUP-C-ITEM", "name": "Group C item",
+        "category_id": category["id"], "base_unit_id": unit["id"],
+        "minimum_stock": "2", "standard_cost": "10",
+    })
+    return item, location, category, unit
+
+
+def seed_mapping(client, headers):
+    item, location, category, unit = setup_master(client, headers)
+    output = create(client, "/api/v1/items", headers, {
+        "sku": "GROUP-C-OUTPUT", "name": "Group C output",
+        "category_id": category["id"], "base_unit_id": unit["id"],
+        "standard_cost": "0",
+    })
+    recipe = create(client, "/api/v1/recipes", headers, {
+        "code": "GROUP-C-BASE-RECIPE", "name": "Group C base recipe",
+        "output_item_id": output["id"], "yield_quantity": 1,
+        "lines": [{
+            "ingredient_item_id": item["id"], "quantity": 1,
+            "waste_factor": 0, "optional": False,
+        }],
+    })
+    with SessionLocal() as db:
+        db.get(Recipe, recipe["id"]).status = "approved"
+        db.commit()
+    mapping = create(client, "/api/v1/pos-mappings", headers, {
+        "pos_system": "hidden-oasis-pos", "external_product_id": "GC-BASE",
+        "recipe_id": recipe["id"], "location_id": location["id"],
+    })
+    return location, item, recipe, mapping
+
 
 
 def count_matching_queries(operation, needle: str):
@@ -32,7 +84,7 @@ def count_matching_queries(operation, needle: str):
 
 def test_dashboard_recent_po_totals_are_correct_with_one_batched_lines_query(client):
     headers = login(client)
-    item, location, _ = setup_master(client, headers)
+    item, location, _category, _unit = setup_master(client, headers)
     with SessionLocal() as db:
         owner = db.scalar(select(User).where(User.email == "owner@example.com"))
         supplier = Supplier(code="C-PERF-SUP", name="Performance test supplier")

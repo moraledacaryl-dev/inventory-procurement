@@ -102,8 +102,16 @@ def pos_workspace(db: Session = Depends(get_db), user: User = Depends(require_pe
     inactive = sum(1 for row in mappings if not row.is_active)
     stale = 0
     mapping_rows = []
+    # Resolve mapped recipes in one SQL query, avoiding N+1 lookups as the
+    # catalogue grows while preserving authorization-scoped mapping rows.
+    recipe_ids = {row.recipe_id for row in mappings}
+    recipes = {
+        recipe.id: recipe for recipe in db.scalars(
+            select(Recipe).where(Recipe.id.in_(recipe_ids))
+        ).all()
+    } if recipe_ids else {}
     for row in mappings:
-        recipe = db.get(Recipe, row.recipe_id)
+        recipe = recipes.get(row.recipe_id)
         healthy = bool(row.is_active and recipe and recipe.status == "approved")
         if row.is_active and not healthy:
             stale += 1

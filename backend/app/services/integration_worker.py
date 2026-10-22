@@ -269,31 +269,43 @@ def reconcile_accounting_reviews(db: Session, endpoints: dict[str, str] | None =
     if not base or not token or limit <= 0:
         return {'checked': 0, 'confirmed': 0, 'errors': 0}
     now = utcnow()
-    # Bounded scan with a per-event cooling window to avoid flooding Accounting.
-    rows = db.scalars(
+    # Scan in bounded DB batches but consider the full Accounting outbox.
+    # A fixed "most recent 600" slice starved older unverified events forever
+    # once the app accrued enough completed deliveries. Retain only the oldest
+    # 'limit' eligible events in memory, ordered by last verification time.
+    earliest = datetime.min.replace(tzinfo=timezone.utc)
+    selected_ranked = []
+    candidates = db.scalars(
         select(IntegrationEvent).where(
             IntegrationEvent.direction == 'outbound',
             IntegrationEvent.destination_system == 'accounting',
             IntegrationEvent.status == 'completed',
-        ).order_by(IntegrationEvent.created_at.desc()).limit(600)
-    ).all()
-    eligible = []
-    for row in rows:
+        ).order_by(IntegrationEvent.created_at, IntegrationEvent.id)
+         .execution_options(yield_per=200)
+    )
+    for row in candidates:
         state = (row.payload or {}).get('accounting_reconciliation') if isinstance(row.payload, dict) else None
         checked_at = state.get('checked_at') if isinstance(state, dict) else None
+        last = earliest
         if checked_at:
             try:
                 last = datetime.fromisoformat(checked_at)
                 if last.tzinfo is None:
                     last = last.replace(tzinfo=timezone.utc)
+                last = last.astimezone(timezone.utc)
                 if now - last < timedelta(minutes=30):
                     continue
-            except (TypeError, ValueError):
-                pass
-        eligible.append(row)
-    # Oldest reconciled first; new/legacy outbox deliveries are checked first.
-    eligible.sort(key=lambda row: ((row.payload or {}).get('accounting_reconciliation') or {}).get('checked_at') or '')
-    selected = eligible[:limit]
+            except (TypeError, ValueError, OverflowError):
+                last = earliest
+        created = row.created_at or earliest
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        rank = (last, created.astimezone(timezone.utc), row.id)
+        selected_ranked.append((rank, row))
+        selected_ranked.sort(key=lambda pair: pair[0])
+        if len(selected_ranked) > limit:
+            selected_ranked.pop()
+    selected = [row for _, row in selected_ranked]
     owns_client = client is None
     client = client or httpx.Client(timeout=7)
     checked = confirmed_count = errors = 0

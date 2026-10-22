@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -23,8 +24,16 @@ from app.services.inventory import InventoryError, post_document
 
 
 def assert_postgres() -> None:
+    """Destructive stock/worker tests are forbidden outside named test DBs."""
     if engine.dialect.name != "postgresql":
         raise SystemExit(f"Resilience checks require PostgreSQL, got {engine.dialect.name}")
+    name = (engine.url.database or "").strip().lower()
+    if os.getenv("APP_ENV", "").lower() in {"production", "prod"}:
+        raise SystemExit("Destructive resilience checks are forbidden in production")
+    if os.getenv("INVENTORY_ALLOW_DESTRUCTIVE_RESILIENCE_TESTS") != "1":
+        raise SystemExit("Destructive resilience checks require explicit opt-in")
+    if not (name.endswith("_resilience") or name.endswith("_test")):
+        raise SystemExit("Destructive resilience checks require a named isolated test database")
 
 
 def scalar_ids() -> tuple[str, str, str]:

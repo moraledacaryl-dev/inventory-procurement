@@ -179,3 +179,27 @@ def test_percentage_growth_from_zero_is_not_falsely_reported_as_100():
     assert _percent_change(0, 0) is None
     assert _percent_change(15, 10) == 50.0
     assert _percent_change(5, 10) == -50.0
+
+
+def test_stock_ledger_marks_partial_summaries_without_falsifying_running_balance(client):
+    data = seed(client)
+    owner = client.get(
+        "/api/v1/stock/ledger", headers=data["owner"],
+        params={"limit": 1},
+    )
+    assert owner.status_code == 200
+    payload = owner.json()
+    assert payload["summary"]["has_more"] is True
+    assert payload["summary"]["totals_scope"] == "displayed_rows"
+    assert payload["summary"]["movement_count"] == 1
+    assert Decimal(payload["summary"]["net_quantity"]) == Decimal("10")
+    assert Decimal(payload["rows"][0]["running_quantity"]) == Decimal("10")
+
+    restricted = client.get(
+        "/api/v1/stock/ledger", headers=data["manager"],
+        params={"limit": 1},
+    )
+    assert restricted.status_code == 200
+    assert restricted.json()["summary"]["has_more"] is False
+    assert restricted.json()["summary"]["movement_count"] == 1
+    assert Decimal(restricted.json()["summary"]["net_value"]) == Decimal("50")

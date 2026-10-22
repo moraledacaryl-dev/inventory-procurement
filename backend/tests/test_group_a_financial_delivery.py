@@ -50,6 +50,7 @@ def test_accounting_retry_does_not_mutate_financial_envelope_with_local_delivery
 
     with SessionLocal() as db:
         row = IntegrationEvent(
+            id=source.id,
             direction="outbound", source_system="inventory",
             destination_system="accounting", event_type=source.event_type,
             aggregate_type=source.aggregate_type, aggregate_id=source.aggregate_id,

@@ -195,3 +195,37 @@ def test_legacy_print_and_cancel_obey_authoritative_location(client):
                       headers=buyer).status_code == 403
     assert client.get(f"/api/v1/print/goods-receipts/{receipt_id}",
                       headers=owner).status_code == 200
+
+
+def test_location_hierarchy_cannot_disclose_or_reparent_foreign_sites(client):
+    s = seed_users(client)
+    owner, manager, a, b = s["owner"], s["manager"], s["a"], s["b"]
+    # A global administrator may configure hierarchies across sites.
+    linked = client.patch(f"/api/v1/locations/{b}", headers=owner, json={"parent_id": a})
+    assert linked.status_code == 200, linked.text
+    parent_view = client.get(f"/api/v1/locations/{a}", headers=owner)
+    assert parent_view.status_code == 200
+    assert b in {child["id"] for child in parent_view.json()["children"]}
+
+    scoped_view = client.get(f"/api/v1/locations/{a}", headers=manager)
+    assert scoped_view.status_code == 200, scoped_view.text
+    assert b not in {child["id"] for child in scoped_view.json()["children"]}
+    assert client.get(f"/api/v1/locations/{b}", headers=manager).status_code == 403
+
+    # A local administrator cannot move their own location below a foreign parent.
+    denied = client.patch(f"/api/v1/locations/{a}", headers=manager,
+                          json={"parent_id": b})
+    assert denied.status_code == 403, denied.text
+    good = client.patch(f"/api/v1/locations/{a}", headers=manager,
+                        json={"name": "Allowed Site A"})
+    assert good.status_code == 200, good.text
+    with SessionLocal() as db:
+        from app.models.inventory import Location
+        assert db.get(Location, a).parent_id is None
+        assert db.get(Location, b).parent_id == a
+
+    # Reparenting also requires permission for the OLD parent when unlinking.
+    assert client.patch(f"/api/v1/locations/{a}", headers=owner,
+                        json={"parent_id": b}).status_code == 422  # cycle remains forbidden
+    assert client.patch(f"/api/v1/locations/{b}", headers=manager,
+                        json={"parent_id": None}).status_code == 403

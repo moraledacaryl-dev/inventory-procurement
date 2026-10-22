@@ -210,3 +210,22 @@ def test_stock_ledger_marks_partial_summaries_without_falsifying_running_balance
     assert restricted.json()["summary"]["has_more"] is False
     assert restricted.json()["summary"]["movement_count"] == 1
     assert Decimal(restricted.json()["summary"]["net_value"]) == Decimal("50")
+
+
+def test_operating_summary_and_access_scope_admin_require_unrestricted_role(client):
+    data = seed(client)
+    assert client.get(
+        "/api/v1/reports/operating-summary", headers=data["owner"],
+    ).status_code == 200
+    assert client.get(
+        "/api/v1/reports/operating-summary", headers=data["manager"],
+    ).status_code == 403
+    assert client.get(
+        "/api/v1/access-scope-users", headers=data["owner"],
+    ).status_code == 200
+    assert client.get(
+        "/api/v1/access-scopes", headers=data["owner"],
+    ).status_code == 200
+    assert client.get(
+        "/api/v1/access-scopes", headers=data["manager"],
+    ).status_code == 403

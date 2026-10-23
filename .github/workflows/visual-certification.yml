@@ -54,6 +54,10 @@ jobs:
       TRUSTED_HOSTS: '["127.0.0.1","localhost","testserver"]'
       INTERNAL_API_URL: http://127.0.0.1:8300
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3300
+      # Production Nginx routes /api/ directly to Uvicorn on 8300, bypassing
+      # the Next.js rewrites. Match that topology during isolated visual QA:
+      # avoid intermittent Next proxy ECONNRESET after thousands of requests.
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8300/api/v1
       E2E_VISUAL_PASSWORD: visual-acceptance-password
       VISUAL_CAPTURE: "1"
     steps:

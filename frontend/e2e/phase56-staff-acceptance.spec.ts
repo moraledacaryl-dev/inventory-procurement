@@ -73,12 +73,15 @@ for(const scenario of roles){
       expect(disallowed.status()).toBe(403);
     }
 
-    if(scenario.role!=="receiver"){
+    if(scenario.role!=="receiver"&&scenario.role!=="procurement_officer"){
       await page.goto("/counts");
       await expect(page.getByRole("heading",{name:"Counts",exact:true})).toBeVisible();
       const newCount=page.getByRole("heading",{name:"Start a new count"});
       if(scenario.count)await expect(newCount).toBeVisible();
       else await expect(newCount).toHaveCount(0);
+    }else{
+      const noCountAccess=await page.request.get("/api/v1/counts");
+      expect(noCountAccess.status()).toBe(403);
     }
 
     if(scenario.role==="owner"||scenario.role==="procurement_officer"||scenario.role==="viewer"||scenario.role==="inventory_manager"){

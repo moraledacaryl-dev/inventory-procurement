@@ -9,7 +9,7 @@ import { FeedbackBanner } from "../../components/FeedbackBanner";
 import { StatusBadge } from "../../components/StatusBadge";
 import { api } from "../../lib/api";
 import { stableDraftIdempotency, type DraftIdempotencyState } from "../../lib/draftIdempotency";
-import { formatDate, formatDateTime, formatMoney, formatQuantity } from "../../lib/formatters";
+import { formatDateTime, formatMoney, formatQuantity } from "../../lib/formatters";
 
 type POLine={id:string;item_id:string;sku:string;item_name:string;ordered_quantity:string;received_quantity:string;returned_quantity:string;outstanding_quantity:string;returnable_quantity:string;unit_price:string};
 type PO={id:string;purchase_order_number:string;supplier_id:string;supplier_code:string;supplier_name:string;delivery_location_id:string;delivery_location_code:string;delivery_location_name:string;expected_delivery_date:string|null;status:string;ordered_quantity:string;received_quantity:string;outstanding_quantity:string;lines:POLine[]};

@@ -52,7 +52,14 @@ export default function CountDetailPage(){
   return <AppShell title={data.count_number} description="Count each item in this location, save your work, and send it for review.">
     <div className="count-detail-header"><div><Link href="/counts" className="back-link">← Count sessions</Link><div className="item-detail-title"><h2>{data.count_number}</h2><StatusBadge status={data.status}/></div><p>{data.location_code} — {data.location_name} · Created {formatDateTime(data.created_at)} · {data.blind_count?"Blind count":"Visible count"}</p></div>{data.posted_document_id?<Link className="secondary" href={`/stock/documents/${data.posted_document_id}`}>Open stock document</Link>:null}</div>
 
-    <section className="count-metrics"><div><span>Completion</span><strong>{data.progress.completion_percent}%</strong><small>{data.progress.counted_lines}/{data.progress.total_lines} lines</small></div><div><span>Variance lines</span><strong>{data.progress.variance_lines}</strong><small>{formatQuantity(data.progress.absolute_variance)} absolute quantity</small></div><div><span>Estimated value variance</span><strong>{formatMoney(data.progress.estimated_value_variance)}</strong><small>Using standard item costs</small></div><div><span>Live stock drift</span><strong>{data.progress.live_drift_lines}</strong><small>Lines changed after snapshot</small></div><div><span>Approval threshold</span><strong>{formatQuantity(data.approval_threshold)}</strong><small>Largest line variance</small></div></section>
+    <section className="count-metrics"><div><span>Completion</span><strong>{data.progress.completion_percent}%</strong><small>{data.progress.counted_lines}/{data.progress.total_lines} saved items</small></div>
+      {data.status==="open"&&data.blind_count?<div><span>Count mode</span><strong>Blind count</strong><small>Recorded stock stays hidden until review.</small></div>:<>
+        <div><span>Items with differences</span><strong>{data.progress.variance_lines}</strong><small>{formatQuantity(data.progress.absolute_variance)} total difference</small></div>
+        <div><span>Estimated difference value</span><strong>{formatMoney(data.progress.estimated_value_variance)}</strong><small>Based on item cost</small></div>
+        <div><span>Stock changes during count</span><strong>{data.progress.live_drift_lines}</strong><small>Ask your manager if stock moved while counting.</small></div>
+        <div><span>Review limit</span><strong>{formatQuantity(data.approval_threshold)}</strong><small>Largest item difference</small></div>
+      </>}
+    </section>
 
     {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}
     {data.progress.live_drift_lines>0&&data.status!=="posted"&&!(data.status==="open"&&data.blind_count)?<FeedbackBanner tone="warning" title="Stock changed after this count started" message="The final posting reconciles counted quantities against live balances, not only the original snapshot."/>:null}

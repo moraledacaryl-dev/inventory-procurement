@@ -66,7 +66,7 @@ export default function CountDetailPage(){
     </section>
 
     {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}
-    {data.progress.live_drift_lines>0&&data.status!=="posted"&&!(data.status==="open"&&data.blind_count)?<FeedbackBanner tone="warning" title="Stock changed after this count started" message="Posting is blocked if stock moved after this count started. Ask your supervisor to start a fresh count."/>:null}
+    {(data.progress.live_drift_lines??0)>0&&canSeeVariance&&data.status!=="posted"&&!(data.status==="open"&&data.blind_count)?<FeedbackBanner tone="warning" title="Stock changed after this count started" message="Posting is blocked if stock moved after this count started. Ask your supervisor to start a fresh count."/>:null}
 
     <section className="card section-gap"><div className="topline"><div><h2>{data.status==="open"?"Step 1: Count the items":"Step 2: Review the count"}</h2><p>{data.status==="open"?"Count the items in this location. Enter 0 if none are there. Save what you have counted before submitting.":"Check differences and request another count if needed."}</p></div></div>
       {data.status==="open"?<div className="count-guidance" data-testid="count-progress"><label htmlFor="current-count-progress"><strong>{enteredCount} of {data.lines.length} items entered</strong><span>{changed?"You have changes that are not saved yet.":"Your latest entries are saved."}</span></label><progress id="current-count-progress" value={enteredCount} max={Math.max(1,data.lines.length)}/>{!validDraft?<p className="field-error" role="alert">A count must be 0 or higher.</p>:null}</div>:null}

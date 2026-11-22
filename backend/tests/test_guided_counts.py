@@ -100,6 +100,12 @@ def test_blind_pending_approval_stays_hidden_and_counter_cannot_recount_or_cance
     owner = auth_headers(client)
     location, item = seed_count_context(client, owner)
     counter = counter_headers(client)
+    # A blind counter must not recover expected quantities from other
+    # stock/item read endpoints outside the count worksheet.
+    assert client.get("/api/v1/stock/balances", headers=counter).status_code == 403
+    assert client.get("/api/v1/stock/movements", headers=counter).status_code == 403
+    assert client.get(f"/api/v1/items/{item['id']}", headers=counter).status_code == 403
+    assert client.get("/api/v1/items", headers=counter).status_code == 403
     created = client.post(
         "/api/v1/counts",
         headers=counter,

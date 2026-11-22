@@ -108,6 +108,12 @@ def test_blind_pending_approval_stays_hidden_and_counter_cannot_recount_or_cance
     assert client.get("/api/v1/stock/movements", headers=counter).status_code == 403
     assert client.get(f"/api/v1/items/{item['id']}", headers=counter).status_code == 403
     assert client.get("/api/v1/items", headers=counter).status_code == 403
+    assert client.get("/api/v1/locations", headers=counter).status_code == 403
+    assert client.get(f"/api/v1/locations/{location['id']}", headers=counter).status_code == 403
+    safe_locations = client.get("/api/v1/counts/locations", headers=counter)
+    assert safe_locations.status_code == 200
+    assert {x["id"] for x in safe_locations.json()} == {location["id"]}
+    assert all("quantity" not in x and "inventory_value" not in x for x in safe_locations.json())
     created = client.post(
         "/api/v1/counts",
         headers=counter,

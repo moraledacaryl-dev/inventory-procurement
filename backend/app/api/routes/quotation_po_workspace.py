@@ -80,7 +80,7 @@ def quotation_workspace(
     allowed = visible_location_ids(db, user)
     po_scope = [PurchaseOrder.delivery_location_id.in_(allowed)] if allowed is not None else []
     po_stmt = select(PurchaseOrder).where(*po_scope)
-    po_total = db.scalar(select(func.count(PurchaseOrder.id)).where(*po_scope)) or 0
+    all_po_count = db.scalar(select(func.count(PurchaseOrder.id)).where(*po_scope)) or 0
     open_states = ("received", "closed", "cancelled")
     open_purchase_orders = db.scalar(
         select(func.count(PurchaseOrder.id)).where(
@@ -255,7 +255,7 @@ def quotation_workspace(
         "purchase_orders": po_rows,
         "po_pagination": {
             "page": po_page or 1, "page_size": po_page_size if po_page is not None else len(po_rows),
-            "total": matching_pos if po_page is not None else po_total,
+            "total": matching_pos if po_page is not None else all_po_count,
             "has_previous": po_page is not None and po_page > 1,
             "has_next": po_page is not None and po_page * po_page_size < matching_pos,
         },

@@ -16,13 +16,17 @@ type PO={id:string;purchase_order_number:string;supplier_id:string;supplier_code
 type Receipt={id:string;goods_receipt_number:string;purchase_order_id:string;purchase_order_number:string;supplier_id:string|null;supplier_code:string|null;supplier_name:string|null;delivery_location_id:string|null;delivery_location_code:string|null;delivery_location_name:string|null;stock_document_id:string;delivery_reference:string|null;notes:string|null;received_at:string;received_value:string;accepted_value:string;rejected_value:string;has_discrepancy:boolean;lines:{id:string;purchase_order_line_id:string;item_id:string;sku:string;item_name:string;received_quantity:string;accepted_quantity:string;rejected_quantity:string;unit_cost:string}[]};
 type ReturnRow={id:string;return_number:string;purchase_order_id:string;purchase_order_number:string;supplier_id:string|null;supplier_code:string|null;supplier_name:string|null;stock_document_id:string;reason:string;created_at:string};
 type HistoryPage={page:number;page_size:number;total:number;has_previous:boolean;has_next:boolean};
-type Workspace={pagination?:{receipts:HistoryPage;returns:HistoryPage};summary:{receivable_orders:number;partial_orders:number;receipts:number;discrepant_receipts:number;accepted_value:string;rejected_value:string;returns:number};purchase_orders:PO[];receipts:Receipt[];returns:ReturnRow[]};
+type Workspace={pagination?:{purchase_orders?:{returned:number;total:number;has_more:boolean};receipts:HistoryPage;returns:HistoryPage};summary:{receivable_orders:number;partial_orders:number;receipts:number;discrepant_receipts:number;accepted_value:string;rejected_value:string;returns:number};purchase_orders:PO[];receipts:Receipt[];returns:ReturnRow[]};
 type ReceiveLine={line_id:string;received:string;rejected:string;reason:string;lot_number:string;manufactured_date:string;expiry_date:string};
 type ReturnLine={line_id:string;quantity:string};
 
 export default function ReceivingPage(){
  const[data,setData]=useState<Workspace|null>(null);
  const[selectedPoId,setSelectedPoId]=useState("");
+ const[receiptPoCache,setReceiptPoCache]=useState<PO|null>(null);
+ const[returnPoCache,setReturnPoCache]=useState<PO|null>(null);
+ const[poSearchDraft,setPoSearchDraft]=useState("");
+ const[poSearch,setPoSearch]=useState("");
  const[receiveLines,setReceiveLines]=useState<ReceiveLine[]>([]);
  const[returnPoId,setReturnPoId]=useState("");
  const[returnLines,setReturnLines]=useState<ReturnLine[]>([]);
@@ -49,21 +53,25 @@ export default function ReceivingPage(){
    try{
      const query=new URLSearchParams({
        receipts_page:String(receiptsPage),returns_page:String(returnsPage),page_size:String(historyPageSize),
+       po_limit:"60",po_search:poSearch,
      });
      const workspace=await api<Workspace>(`/receiving/workspace?${query.toString()}`);
      if(request===latestLoad.current)setData(workspace);
    }catch(error){
      if(request===latestLoad.current)setFeedback({tone:"error",title:"Receiving workspace unavailable",message:(error as Error).message});
    }finally{if(request===latestLoad.current)setLoading(false)}
- },[receiptsPage,returnsPage,historyPageSize]);
+ },[receiptsPage,returnsPage,historyPageSize,poSearch]);
  useEffect(()=>{void load()},[load]);
- const selectedPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===selectedPoId)||null,[data,selectedPoId]);
+ const selectedPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===selectedPoId)
+   ||(receiptPoCache?.id===selectedPoId?receiptPoCache:null),[data,selectedPoId,receiptPoCache]);
  // The draft is initialized only when the user selects an order. Reloading
  // history/pages may replace the PO object but must NOT erase entered numbers.
- const selectedReturnPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===returnPoId)||null,[data,returnPoId]);
+ const selectedReturnPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===returnPoId)
+   ||(returnPoCache?.id===returnPoId?returnPoCache:null),[data,returnPoId,returnPoCache]);
  function selectReceiptPo(poId:string){
    const po=data?.purchase_orders.find(row=>row.id===poId);
    setSelectedPoId(poId);
+   setReceiptPoCache(po||null);
    setReceiveLines(po?.lines.filter(line=>Number(line.outstanding_quantity)>0).map(line=>({
      line_id:line.id,received:"",rejected:"0",reason:"",lot_number:"",manufactured_date:"",expiry_date:""
    }))||[]);
@@ -73,6 +81,7 @@ export default function ReceivingPage(){
  function selectReturnPo(poId:string){
    const po=data?.purchase_orders.find(row=>row.id===poId);
    setReturnPoId(poId);
+   setReturnPoCache(po||null);
    setReturnLines(po?.lines.filter(line=>Number(line.returnable_quantity)>0).map(line=>({line_id:line.id,quantity:"0"}))||[]);
    returnRequest.current=null;
  }
@@ -124,7 +133,7 @@ export default function ReceivingPage(){
      setFeedback({tone:result.has_discrepancy?"warning":"success",title:"Goods receipt posted",message:result.has_discrepancy?
        `${result.goods_receipt_number} includes rejected quantities requiring follow-up.`:
        `${result.goods_receipt_number} posted accepted stock to ${result.delivery_location_code}.`});
-     setPending(null);setReceiptStep(1);setSelectedPoId("");setReceiveLines([]);setDeliveryReference("");setReceiptNotes("");
+     setPending(null);setReceiptStep(1);setSelectedPoId("");setReceiptPoCache(null);setReceiveLines([]);setDeliveryReference("");setReceiptNotes("");
      await load();
    }catch(error){
      setFeedback({tone:"error",title:"Receipt not confirmed",message:
@@ -144,7 +153,7 @@ export default function ReceivingPage(){
      returnRequest.current=null;
      setFeedback({tone:"success",title:"Supplier return posted",
        message:`${result.return_number} removed the selected quantity from stock and sent the event to Accounting.`});
-     setPending(null);setReturnPoId("");setReturnLines([]);setReturnReason("");setReturnReference("");setReturnNotes("");
+     setPending(null);setReturnPoId("");setReturnPoCache(null);setReturnLines([]);setReturnReason("");setReturnReference("");setReturnNotes("");
      await load();
    }catch(error){
      setFeedback({tone:"error",title:"Return not confirmed",message:
@@ -157,7 +166,13 @@ export default function ReceivingPage(){
   <section className="receiving-metrics"><div><span>Receivable POs</span><strong>{data?.summary.receivable_orders||0}</strong></div><div><span>Partial POs</span><strong>{data?.summary.partial_orders||0}</strong></div><div><span>Goods receipts</span><strong>{data?.summary.receipts||0}</strong></div><div><span>Discrepant receipts</span><strong>{data?.summary.discrepant_receipts||0}</strong></div><div><span>Accepted value</span><strong>{formatMoney(data?.summary.accepted_value||0)}</strong></div><div><span>Rejected value</span><strong>{formatMoney(data?.summary.rejected_value||0)}</strong></div><div><span>Supplier returns</span><strong>{data?.summary.returns||0}</strong></div></section>
 
 
-  <Can permission="receiving.*"><section className="card guided-receiving" aria-label="Receive a delivery">
+  <form className="count-search-form receiving-po-search" role="search" onSubmit={event=>{event.preventDefault();setPoSearch(poSearchDraft.trim())}}>
+     <label><span>Find an order by number or supplier</span><input aria-label="Find purchase orders" value={poSearchDraft} onChange={event=>setPoSearchDraft(event.target.value)} placeholder="PO number or supplier" maxLength={120}/></label>
+     <button type="submit" className="secondary" disabled={loading}>Find orders</button>
+     {poSearch?<button type="button" className="text-button" onClick={()=>{setPoSearchDraft("");setPoSearch("")}}>Show recent orders</button>:null}
+     <span role="status">{data?.pagination?.purchase_orders?.has_more?"Showing the most recent 60 matching orders. Search to find older ones.":""}</span>
+   </form>
+   <Can permission="receiving.*"><section className="card guided-receiving" aria-label="Receive a delivery">
     <div className="topline"><div><h2>Record a delivery</h2><p>Choose the order, count what arrived, then check everything before posting.</p></div></div>
     <ol className="workflow-steps" aria-label="Delivery steps">
       <li aria-current={receiptStep===1?"step":undefined} className={receiptStep===1?"active":receiptStep>1?"done":""}>1. Choose order</li>
@@ -171,6 +186,7 @@ export default function ReceivingPage(){
       <label className="workflow-select"><span>Purchase order</span>
         <select aria-label="Purchase order" value={selectedPoId} onChange={event=>selectReceiptPo(event.target.value)}>
           <option value="">Choose a purchase order</option>
+          {selectedPo&&!data?.purchase_orders.some(row=>row.id===selectedPo.id)?<option value={selectedPo.id}>{selectedPo.purchase_order_number} — selected draft</option>:null}
           {data?.purchase_orders.filter(row=>["approved","partially_received"].includes(row.status)).map(row=>
             <option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_name} — {row.delivery_location_name}</option>)}
         </select>
@@ -239,7 +255,7 @@ export default function ReceivingPage(){
     </div>:null}
   </section></Can>
 
-  <Can permission="receiving.*"><details className="card section-gap workflow-disclosure guided-returns"><summary><div className="topline"><div><h2>Return accepted stock to supplier</h2><p>Return previously accepted items to the supplier.</p></div></div><span className="disclosure-mark" aria-hidden="true">+</span></summary><div className="workflow-disclosure-body"><div className="receiving-header-form"><label><span>Purchase order</span><select value={returnPoId} onChange={event=>selectReturnPo(event.target.value)}><option value="">Select PO with returnable stock</option>{data?.purchase_orders.filter(row=>row.lines.some(line=>Number(line.returnable_quantity)>0)).map(row=><option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_code}</option>)}</select></label><label><span>Return reason</span><input value={returnReason} onChange={event=>setReturnReason(event.target.value)} placeholder="Damage, quality issue, wrong item…"/></label><label><span>Supplier reference</span><input value={returnReference} onChange={event=>setReturnReference(event.target.value)} placeholder="RMA or supplier credit ref"/></label><label><span>Notes</span><input value={returnNotes} onChange={event=>setReturnNotes(event.target.value)}/></label></div>{selectedReturnPo?<><div className="table-wrap"><table><thead><tr><th>Item</th><th>Received</th><th>Previously returned</th><th>Returnable</th><th>Return now</th><th>Value</th></tr></thead><tbody>{selectedReturnPo.lines.map(line=>{const entry=returnLines.find(row=>row.line_id===line.id);return <tr key={line.id}><td>{line.sku} — {line.item_name}</td><td>{formatQuantity(line.received_quantity)}</td><td>{formatQuantity(line.returned_quantity)}</td><td>{formatQuantity(line.returnable_quantity)}</td><td><input aria-label={`Quantity to return for ${line.item_name}`} type="number" min="0" max={line.returnable_quantity} step="0.0001" inputMode="decimal" disabled={!entry} value={entry?.quantity||"0"} onChange={event=>setReturnLines(rows=>rows.map(row=>row.line_id===line.id?{...row,quantity:event.target.value}:row))}/></td><td>{formatMoney(Number(entry?.quantity||0)*Number(line.unit_price))}</td></tr>})}</tbody></table></div><div className="form-actions"><button className="primary" disabled={!returnValid||busy} onClick={()=>setPending("return")}>Review and post return</button></div></>:<div className="config-empty">Select a purchase order with accepted stock available to return.</div>}</div></details></Can>
+  <Can permission="receiving.*"><details className="card section-gap workflow-disclosure guided-returns"><summary><div className="topline"><div><h2>Return accepted stock to supplier</h2><p>Return previously accepted items to the supplier.</p></div></div><span className="disclosure-mark" aria-hidden="true">+</span></summary><div className="workflow-disclosure-body"><div className="receiving-header-form"><label><span>Purchase order</span><select value={returnPoId} onChange={event=>selectReturnPo(event.target.value)}><option value="">Select PO with returnable stock</option>{selectedReturnPo&&!data?.purchase_orders.some(row=>row.id===selectedReturnPo.id)?<option value={selectedReturnPo.id}>{selectedReturnPo.purchase_order_number} — selected return</option>:null}{data?.purchase_orders.filter(row=>row.lines.some(line=>Number(line.returnable_quantity)>0)).map(row=><option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_code}</option>)}</select></label><label><span>Return reason</span><input value={returnReason} onChange={event=>setReturnReason(event.target.value)} placeholder="Damage, quality issue, wrong item…"/></label><label><span>Supplier reference</span><input value={returnReference} onChange={event=>setReturnReference(event.target.value)} placeholder="RMA or supplier credit ref"/></label><label><span>Notes</span><input value={returnNotes} onChange={event=>setReturnNotes(event.target.value)}/></label></div>{selectedReturnPo?<><div className="table-wrap"><table><thead><tr><th>Item</th><th>Received</th><th>Previously returned</th><th>Returnable</th><th>Return now</th><th>Value</th></tr></thead><tbody>{selectedReturnPo.lines.map(line=>{const entry=returnLines.find(row=>row.line_id===line.id);return <tr key={line.id}><td>{line.sku} — {line.item_name}</td><td>{formatQuantity(line.received_quantity)}</td><td>{formatQuantity(line.returned_quantity)}</td><td>{formatQuantity(line.returnable_quantity)}</td><td><input aria-label={`Quantity to return for ${line.item_name}`} type="number" min="0" max={line.returnable_quantity} step="0.0001" inputMode="decimal" disabled={!entry} value={entry?.quantity||"0"} onChange={event=>setReturnLines(rows=>rows.map(row=>row.line_id===line.id?{...row,quantity:event.target.value}:row))}/></td><td>{formatMoney(Number(entry?.quantity||0)*Number(line.unit_price))}</td></tr>})}</tbody></table></div><div className="form-actions"><button className="primary" disabled={!returnValid||busy} onClick={()=>setPending("return")}>Review and post return</button></div></>:<div className="config-empty">Select a purchase order with accepted stock available to return.</div>}</div></details></Can>
 
   <section className="card section-gap receiving-history"><div className="topline"><div><h2>Goods receipt history</h2><p>Accepted and rejected value, delivery reference, discrepancy status, stock document, supplier, and destination.</p></div></div>
   <div className="history-pager" aria-label="Goods receipts pages">

@@ -219,6 +219,23 @@ def count_workspace(
         },
     }
 
+@router.get("/locations")
+def count_location_choices(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("counts.read")),
+):
+    """Only names/codes for count setup; never stock balances or valuation."""
+    allowed = visible_location_ids(db, user)
+    stmt = select(Location).where(Location.is_active.is_(True))
+    if allowed is not None:
+        stmt = stmt.where(Location.id.in_(allowed))
+    locations = db.scalars(stmt.order_by(Location.code)).all()
+    return [
+        {"id": row.id, "code": row.code, "name": row.name, "is_active": row.is_active}
+        for row in locations
+    ]
+
+
 @router.get("/{count_id}/detail")
 def count_detail(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):
     session = session_row(db, count_id)

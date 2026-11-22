@@ -422,3 +422,60 @@ def test_postgres_count_validation_waits_for_in_flight_stock_posting(client):
             StockBalance.item_id == item['id'], StockBalance.location_id == location['id']
         ))
         assert Decimal(balance.quantity) == Decimal('6')
+
+
+def test_read_only_count_access_keeps_blind_stock_private(client):
+    """Viewers can inspect assigned counts but cannot infer blind expected stock or post."""
+    from app.core.security import hash_password
+    from app.db.session import SessionLocal
+    from app.models.user import User
+
+    owner = login(client)
+    item, location, _ = setup_master(client, owner)
+    initial = client.post("/api/v1/stock/receipts", headers=owner, json={
+        "location_id": location["id"],
+        "lines": [{"item_id": item["id"], "quantity": "5", "unit_cost": "40"}],
+    })
+    assert initial.status_code == 201, initial.text
+    created = client.post("/api/v1/counts", headers=owner, json={
+        "location_id": location["id"], "blind_count": True,
+    })
+    assert created.status_code == 201, created.text
+    count_id = created.json()["id"]
+    assert created.json()["lines"][0]["system_quantity"] is None
+
+    with SessionLocal() as db:
+        db.add(User(email="count-viewer@example.com", full_name="Count Viewer",
+                    password_hash=hash_password("password123"), role="viewer"))
+        db.commit()
+    response = client.post("/api/v1/auth/login", json={
+        "email": "count-viewer@example.com", "password": "password123",
+    })
+    assert response.status_code == 200
+    viewer = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    indexed = client.get("/api/v1/counts", headers=viewer)
+    assert indexed.status_code == 200, indexed.text
+    match = next(row for row in indexed.json() if row["id"] == count_id)
+    assert match["lines"][0]["system_quantity"] is None
+    detail = client.get(f"/api/v1/counts/{count_id}/detail", headers=viewer)
+    assert detail.status_code == 200, detail.text
+    line = next(row for row in detail.json()["lines"] if row["item_id"] == item["id"])
+    assert line["snapshot_quantity"] is None
+    assert line["live_quantity"] is None
+    assert line["variance_quantity"] is None
+    assert detail.json()["progress"]["estimated_value_variance"] is None
+    worksheet = client.get(f"/api/v1/counts/{count_id}/worksheet", headers=viewer)
+    assert worksheet.status_code == 200
+    assert "system_quantity" not in worksheet.text
+
+    forbidden = client.put(f"/api/v1/counts/{count_id}/entries", headers=viewer, json={
+        "lines": [{"item_id": item["id"], "counted_quantity": "0"}],
+    })
+    assert forbidden.status_code == 403
+    assert client.post(f"/api/v1/counts/{count_id}/submit", headers=viewer).status_code == 403
+
+    visible = client.post("/api/v1/counts", headers=owner, json={
+        "location_id": location["id"], "blind_count": False,
+    })
+    assert visible.status_code == 201
+    assert visible.json()["lines"][0]["system_quantity"] == "5.0000"

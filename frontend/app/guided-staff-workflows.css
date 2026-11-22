@@ -5,7 +5,8 @@
 .workflow-steps>li.done{border-color:#bcdac7;background:#eef9f2;color:#24623e}
 .workflow-stage{display:grid;gap:14px;min-width:0}
 .workflow-stage h3{margin:0;font-size:19px;line-height:1.35;font-weight:650;color:var(--ink)}
-.workflow-hint{font-size:14px;line-height:1.55;color:#455a75;margin:8px 0 12px;max-width:78ch}
+.workflow-hint{font-size:14px;line-height:1.55;color:#344861;margin:8px 0 12px;max-width:78ch}
+.app-shell p.workflow-hint,.app-shell .purchasing-guide p.workflow-hint{color:#344861!important}
 .workflow-hint a{font-weight:700;color:var(--brand);text-decoration:underline}
 .workflow-select{display:grid;gap:6px;max-width:750px}
 .workflow-select span,.workflow-last-fields label span,.workflow-line-extra label span{font-size:13px;color:#34475f;font-weight:650}

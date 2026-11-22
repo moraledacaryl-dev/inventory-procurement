@@ -36,7 +36,7 @@ export default function CountsPage(){
       const params=new URLSearchParams({page:String(page),page_size:"25"});
       if(search)params.set("q",search);
       const[l,result]=await Promise.all([
-        api<Location[]>("/locations"),
+        api<Location[]>("/counts/locations"),
         api<{rows:Count[];pagination:{page:number;page_size:number;total:number;has_previous:boolean;has_next:boolean}}>(`/counts/workspace?${params}`),
       ]);
       if(request===latestRequest.current){

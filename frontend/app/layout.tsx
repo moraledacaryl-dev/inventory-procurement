@@ -26,6 +26,7 @@ import "./accessibility.css";
 import "./responsive-remediation.css";
 import "./mobile-ux.css";
 import "./inventory-workspace.css";
+import "./guided-staff-workflows.css";
 import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
 
 export const metadata = {

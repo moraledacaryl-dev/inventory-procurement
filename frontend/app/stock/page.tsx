@@ -66,7 +66,7 @@ export default function Page(){
     setPending({path,body,summary:`${kind} ${formatQuantity(quantity)} ${item?.sku||"item"} at ${locationName(locationId)?.code||"location"}${kind==="transfer"?` to ${locationName(destinationId)?.code||"destination"}`:""}`});
   }
 
-  async function post(){if(!pending)return;setPosting(true);try{await api(pending.path,{method:"POST",body:JSON.stringify(pending.body)});setFeedback({tone:"success",title:"Stock transaction posted",message:pending.summary});setPending(null);await load()}catch(error){setFeedback({tone:"error",title:"Transaction could not be posted",message:(error as Error).message});setPending(null)}finally{setPosting(false)}}
+  async function post(){if(!pending)return;setPosting(true);try{await api(pending.path,{method:"POST",body:JSON.stringify(pending.body)});setFeedback({tone:"success",title:"Stock transaction posted",message:pending.summary});setPending(null);await load()}catch(error){setFeedback({tone:"error",title:"Transaction not confirmed",message:`${(error as Error).message} Check the stock ledger or retry this confirmation. Retrying reuses the same transaction key.`})}finally{setPosting(false)}}
 
   return <AppShell title="Stock" description="Balances and movements across your locations.">
     <Can permission="inventory.*"><details className="card workflow-disclosure"><summary><div className="topline"><div><h2>Post stock transaction</h2><p>Receive, issue, or transfer stock.</p></div><StatusBadge status={kind}/></div><span className="disclosure-mark" aria-hidden="true">+</span></summary><div className="workflow-disclosure-body">

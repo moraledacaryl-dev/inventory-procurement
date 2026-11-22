@@ -144,7 +144,7 @@ def finalize_count(db: Session, session: CountSession, user: User):
 
 
 @router.get("/workspace")
-def count_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
+def count_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):
     allowed = visible_location_ids(db, user)
     stmt = select(CountSession).options(selectinload(CountSession.lines))
     if allowed is not None:
@@ -154,7 +154,7 @@ def count_workspace(db: Session = Depends(get_db), user: User = Depends(require_
 
 
 @router.get("/{count_id}/detail")
-def count_detail(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
+def count_detail(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):
     session = session_row(db, count_id)
     if not session:
         fail(404, "Count session not found")

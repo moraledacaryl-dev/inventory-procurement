@@ -3,9 +3,9 @@ import hashlib
 import json
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -152,12 +152,14 @@ def ensure_new_delivery_reference(db: Session, po_id: str, delivery_reference: s
         fail(409, "Delivery reference already received for this purchase order")
 
 
-def receipt_payload(db: Session, receipt: GoodsReceipt) -> dict:
-    po = load_po(db, receipt.purchase_order_id)
-    supplier = db.get(Supplier, po.supplier_id) if po else None
-    location = db.get(Location, po.delivery_location_id) if po else None
+def receipt_payload(db: Session, receipt: GoodsReceipt, *, po_lookup=None, supplier_lookup=None,
+                    location_lookup=None, item_lookup=None) -> dict:
+    """Reuse preloaded workspace references; standalone post/replay stays unchanged."""
+    po = po_lookup.get(receipt.purchase_order_id) if po_lookup is not None else load_po(db, receipt.purchase_order_id)
+    supplier = (supplier_lookup.get(po.supplier_id) if supplier_lookup is not None else db.get(Supplier, po.supplier_id)) if po else None
+    location = (location_lookup.get(po.delivery_location_id) if location_lookup is not None else db.get(Location, po.delivery_location_id)) if po else None
     item_ids = {line.item_id for line in receipt.lines}
-    items = {row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()} if item_ids else {}
+    items = item_lookup if item_lookup is not None else ({row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()} if item_ids else {})
     received_value = sum((Decimal(line.received_quantity) * Decimal(line.unit_cost) for line in receipt.lines), Decimal("0"))
     accepted_value = sum((Decimal(line.accepted_quantity) * Decimal(line.unit_cost) for line in receipt.lines), Decimal("0"))
     rejected_value = sum((Decimal(line.rejected_quantity) * Decimal(line.unit_cost) for line in receipt.lines), Decimal("0"))
@@ -197,9 +199,9 @@ def receipt_payload(db: Session, receipt: GoodsReceipt) -> dict:
     }
 
 
-def return_payload(db: Session, row: PurchaseReturn) -> dict:
-    po = load_po(db, row.purchase_order_id)
-    supplier = db.get(Supplier, po.supplier_id) if po else None
+def return_payload(db: Session, row: PurchaseReturn, *, po_lookup=None, supplier_lookup=None) -> dict:
+    po = po_lookup.get(row.purchase_order_id) if po_lookup is not None else load_po(db, row.purchase_order_id)
+    supplier = (supplier_lookup.get(po.supplier_id) if supplier_lookup is not None else db.get(Supplier, po.supplier_id)) if po else None
     return {
         "id": row.id,
         "return_number": row.return_number,
@@ -215,27 +217,107 @@ def return_payload(db: Session, row: PurchaseReturn) -> dict:
 
 
 @router.get("/receiving/workspace")
-def receiving_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("receiving.read"))):
+def receiving_workspace(
+    receipts_page: int = Query(default=1, ge=1),
+    returns_page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("receiving.read")),
+):
+    """Return current PO choices plus bounded history without N+1 detail lookups.
+
+    History summary values always cover the entire authorized scope, not only
+    the currently displayed page. Do not page out PO choices: older received
+    orders may still have accepted stock eligible for a supplier return.
+    """
     allowed = visible_location_ids(db, user)
     po_stmt = (
         select(PurchaseOrder)
         .where(PurchaseOrder.status.in_(["approved", "partially_received", "received"]))
         .options(selectinload(PurchaseOrder.lines))
-        .order_by(PurchaseOrder.created_at.desc())
+        .order_by(PurchaseOrder.created_at.desc(), PurchaseOrder.id.desc())
     )
-    receipt_stmt = select(GoodsReceipt).options(selectinload(GoodsReceipt.lines))
-    return_stmt = select(PurchaseReturn)
+    receipt_filter = []
+    return_filter = []
     if allowed is not None:
         po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
         permitted_pos = select(PurchaseOrder.id).where(PurchaseOrder.delivery_location_id.in_(allowed))
-        receipt_stmt = receipt_stmt.where(GoodsReceipt.purchase_order_id.in_(permitted_pos))
-        return_stmt = return_stmt.where(PurchaseReturn.purchase_order_id.in_(permitted_pos))
+        receipt_filter.append(GoodsReceipt.purchase_order_id.in_(permitted_pos))
+        return_filter.append(PurchaseReturn.purchase_order_id.in_(permitted_pos))
+
     pos = db.scalars(po_stmt).unique().all()
-    receipts = db.scalars(receipt_stmt.order_by(GoodsReceipt.received_at.desc())).unique().all()
-    returns = db.scalars(return_stmt.order_by(PurchaseReturn.created_at.desc())).all()
-    items = {row.id: row for row in db.scalars(select(Item)).all()}
-    suppliers = {row.id: row for row in db.scalars(select(Supplier)).all()}
-    locations = {row.id: row for row in db.scalars(select(Location)).all()}
+    receipt_count = db.scalar(select(func.count(GoodsReceipt.id)).where(*receipt_filter)) or 0
+    return_count = db.scalar(select(func.count(PurchaseReturn.id)).where(*return_filter)) or 0
+
+    receipts = db.scalars(
+        select(GoodsReceipt)
+        .where(*receipt_filter)
+        .options(selectinload(GoodsReceipt.lines))
+        .order_by(GoodsReceipt.received_at.desc(), GoodsReceipt.id.desc())
+        .offset((receipts_page - 1) * page_size).limit(page_size)
+    ).unique().all()
+    returns = db.scalars(
+        select(PurchaseReturn)
+        .where(*return_filter)
+        .order_by(PurchaseReturn.created_at.desc(), PurchaseReturn.id.desc())
+        .offset((returns_page - 1) * page_size).limit(page_size)
+    ).all()
+
+    # Batch accepted quantities across all visible purchase-order lines.
+    # The old per-line scalar query grew linearly as the catalog grew.
+    po_lines = [line for po in pos for line in po.lines]
+    line_ids = [line.id for line in po_lines]
+    accepted_by_line = {}
+    if line_ids:
+        accepted_by_line = {
+            line_id: Decimal(quantity)
+            for line_id, quantity in db.execute(
+                select(GoodsReceiptLine.purchase_order_line_id, func.sum(GoodsReceiptLine.accepted_quantity))
+                .where(GoodsReceiptLine.purchase_order_line_id.in_(line_ids))
+                .group_by(GoodsReceiptLine.purchase_order_line_id)
+            ).all()
+        }
+
+    # Batch historical PO/supplier/location/item metadata for both pages.
+    po_lookup = {po.id: po for po in pos}
+    missing_po_ids = ({row.purchase_order_id for row in receipts} |
+                      {row.purchase_order_id for row in returns}) - po_lookup.keys()
+    if missing_po_ids:
+        po_lookup.update({
+            po.id: po for po in db.scalars(
+                select(PurchaseOrder).where(PurchaseOrder.id.in_(missing_po_ids))
+            ).all()
+        })
+    supplier_ids = {po.supplier_id for po in po_lookup.values()}
+    location_ids = {po.delivery_location_id for po in po_lookup.values()}
+    item_ids = {line.item_id for line in po_lines} | {
+        line.item_id for receipt in receipts for line in receipt.lines
+    }
+    items = {row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()} if item_ids else {}
+    suppliers = {row.id: row for row in db.scalars(select(Supplier).where(Supplier.id.in_(supplier_ids))).all()} if supplier_ids else {}
+    locations = {row.id: row for row in db.scalars(select(Location).where(Location.id.in_(location_ids))).all()} if location_ids else {}
+
+    # SQL aggregates preserve all-time summary figures despite pagination.
+    value_stmt = (
+        select(
+            func.coalesce(func.sum(GoodsReceiptLine.accepted_quantity * GoodsReceiptLine.unit_cost), 0),
+            func.coalesce(func.sum(GoodsReceiptLine.rejected_quantity * GoodsReceiptLine.unit_cost), 0),
+        )
+        .select_from(GoodsReceiptLine)
+        .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptLine.goods_receipt_id)
+        .where(*receipt_filter)
+    )
+    all_accepted_value, all_rejected_value = db.execute(value_stmt).one()
+    discrepant_ids = (
+        select(GoodsReceipt.id)
+        .join(GoodsReceiptLine, GoodsReceiptLine.goods_receipt_id == GoodsReceipt.id)
+        .where(*receipt_filter)
+        .group_by(GoodsReceipt.id)
+        .having(func.sum(GoodsReceiptLine.rejected_quantity * GoodsReceiptLine.unit_cost) > 0)
+        .subquery()
+    )
+    discrepant_count = db.scalar(select(func.count()).select_from(discrepant_ids)) or 0
+
     po_rows = []
     for po in pos:
         supplier = suppliers.get(po.supplier_id)
@@ -266,29 +348,46 @@ def receiving_workspace(db: Session = Depends(get_db), user: User = Depends(requ
                     "received_quantity": str(line.received_quantity),
                     "returned_quantity": str(line.returned_quantity),
                     "outstanding_quantity": str(max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity))),
-                    "returnable_quantity": str(max(Decimal("0"), accepted_received_quantity(db, line.id) - Decimal(line.returned_quantity))),
+                    "returnable_quantity": str(max(Decimal("0"), accepted_by_line.get(line.id, Decimal("0")) - Decimal(line.returned_quantity))),
                     "unit_price": str(line.unit_price),
                 }
                 for line in po.lines
             ],
         })
-    receipt_rows = [receipt_payload(db, row) for row in receipts]
-    return_rows = [return_payload(db, row) for row in returns]
+
+    receipt_rows = [
+        receipt_payload(db, row, po_lookup=po_lookup, supplier_lookup=suppliers,
+                        location_lookup=locations, item_lookup=items)
+        for row in receipts
+    ]
+    return_rows = [
+        return_payload(db, row, po_lookup=po_lookup, supplier_lookup=suppliers)
+        for row in returns
+    ]
     return {
         "summary": {
             "receivable_orders": sum(1 for po in pos if po.status in {"approved", "partially_received"}),
             "partial_orders": sum(1 for po in pos if po.status == "partially_received"),
-            "receipts": len(receipts),
-            "discrepant_receipts": sum(1 for row in receipt_rows if row["has_discrepancy"]),
-            "accepted_value": str(sum((Decimal(row["accepted_value"]) for row in receipt_rows), Decimal("0"))),
-            "rejected_value": str(sum((Decimal(row["rejected_value"]) for row in receipt_rows), Decimal("0"))),
-            "returns": len(returns),
+            "receipts": receipt_count,
+            "discrepant_receipts": discrepant_count,
+            "accepted_value": str(Decimal(all_accepted_value)),
+            "rejected_value": str(Decimal(all_rejected_value)),
+            "returns": return_count,
+        },
+        "pagination": {
+            "receipts": {
+                "page": receipts_page, "page_size": page_size, "total": receipt_count,
+                "has_previous": receipts_page > 1, "has_next": receipts_page * page_size < receipt_count,
+            },
+            "returns": {
+                "page": returns_page, "page_size": page_size, "total": return_count,
+                "has_previous": returns_page > 1, "has_next": returns_page * page_size < return_count,
+            },
         },
         "purchase_orders": po_rows,
         "receipts": receipt_rows,
         "returns": return_rows,
     }
-
 
 @router.post("/receiving/purchase-orders/{po_id}", status_code=201)
 def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("receiving.*"))):

@@ -92,6 +92,9 @@ jobs:
       - name: Capture all roles, routes and viewports
         working-directory: frontend
         run: npx playwright test e2e/visual-capture.spec.ts
+      - name: Rehearse six staff roles without posting business transactions
+        working-directory: frontend
+        run: npx playwright test e2e/phase56-staff-acceptance.spec.ts
       - name: Classify permission states and summarize capture
         if: always()
         working-directory: frontend

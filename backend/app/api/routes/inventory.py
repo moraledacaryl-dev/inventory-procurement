@@ -307,6 +307,15 @@ def finalize_count(db: Session, session: CountSession, user: User):
     add_audit(db, actor_user_id=user.id, action="count.posted", entity_type="count_session", entity_id=session.id, details={"line_count": len(entries)})
 
 
+def serialize_count_for_read(session: CountSession) -> CountOut:
+    """Keep blind-count snapshots out of every read and creation response."""
+    result = CountOut.model_validate(session)
+    if session.blind_count and session.status in {"open", "pending_approval"}:
+        for line in result.lines:
+            line.system_quantity = None
+    return result
+
+
 @router.post("/counts", response_model=CountOut, status_code=201)
 def create_count(p: CountCreate, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
     if not db.get(Location, p.location_id): raise HTTPException(422, "Location not found")
@@ -314,20 +323,20 @@ def create_count(p: CountCreate, db: Session = Depends(get_db), user: User = Dep
     session = CountSession(count_number=next_document_number(db, "COUNT"), location_id=p.location_id, notes=p.notes, blind_count=p.blind_count, approval_threshold=p.approval_threshold, created_by_user_id=user.id); db.add(session); db.flush()
     items = db.scalars(select(Item).where(Item.is_active == True, Item.track_stock == True)).all(); balances = {b.item_id: b for b in db.scalars(select(StockBalance).where(StockBalance.location_id == p.location_id)).all()}
     for item in items: session.lines.append(CountLine(item_id=item.id, system_quantity=balances.get(item.id).quantity if balances.get(item.id) else 0))
-    add_audit(db, actor_user_id=user.id, action="count.created", entity_type="count_session", entity_id=session.id, details={"blind_count": p.blind_count, "approval_threshold": str(p.approval_threshold)}); db.commit(); db.refresh(session); return session
+    add_audit(db, actor_user_id=user.id, action="count.created", entity_type="count_session", entity_id=session.id, details={"blind_count": p.blind_count, "approval_threshold": str(p.approval_threshold)}); db.commit(); db.refresh(session); return serialize_count_for_read(session)
 
 
 @router.get("/counts", response_model=list[CountOut])
-def list_counts(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
+def list_counts(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):
     allowed = visible_location_ids(db, user)
     stmt = select(CountSession).options(selectinload(CountSession.lines))
     if allowed is not None:
         stmt = stmt.where(CountSession.location_id.in_(allowed))
-    return db.scalars(stmt.order_by(CountSession.created_at.desc())).unique().all()
+    return [serialize_count_for_read(session) for session in db.scalars(stmt.order_by(CountSession.created_at.desc())).unique().all()]
 
 
 @router.get("/counts/{count_id}/worksheet", response_model=CountWorksheet)
-def count_worksheet(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.create"))):
+def count_worksheet(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):
     session = db.scalar(select(CountSession).where(CountSession.id == count_id).options(selectinload(CountSession.lines)))
     if not session: raise HTTPException(404, "Count not found")
     require_scoped_locations(db, user, {session.location_id})

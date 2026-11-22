@@ -175,7 +175,7 @@ class CountSubmit(BaseModel): lines: list[CountEntry] = Field(min_length=1)
 
 
 class CountLineOut(ORMModel):
-    id: str; item_id: str; system_quantity: Decimal; counted_quantity: Decimal | None; note: str | None
+    id: str; item_id: str; system_quantity: Decimal | None; counted_quantity: Decimal | None; note: str | None
 
 
 class CountOut(ORMModel):

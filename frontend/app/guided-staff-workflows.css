@@ -92,3 +92,39 @@
 @media(prefers-reduced-motion:reduce){
  .workflow-steps *,.workflow-stage *,.count-guidance *{scroll-behavior:auto!important;animation-duration:0.01ms!important;transition-duration:0.01ms!important}
 }
+
+/* Receiving history and supplier returns use the same mobile card pattern. */
+@media(max-width:760px){
+ .guided-returns .table-wrap,.receiving-history .table-wrap{overflow:visible}
+ .guided-returns table,.receiving-history table{display:block;width:100%;font-size:14px}
+ .guided-returns table thead,.receiving-history table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+ .guided-returns table tbody,.receiving-history table tbody{display:grid;gap:12px}
+ .guided-returns table tr,.receiving-history table tr{display:grid;padding:12px;border:1px solid var(--line);border-radius:12px;background:#fff}
+ .guided-returns table td,.receiving-history table td{display:grid;grid-template-columns:minmax(92px,.65fr) minmax(0,1.35fr);gap:10px;padding:9px 0;min-width:0;align-items:start;border:0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+ .guided-returns table td:last-child,.receiving-history table td:last-child{border-bottom:0}
+ .guided-returns table td::before,.receiving-history table td::before{font-size:12px;font-weight:650;color:#43556e}
+ .guided-returns table td:nth-child(1)::before{content:"Item"}
+ .guided-returns table td:nth-child(2)::before{content:"Received"}
+ .guided-returns table td:nth-child(3)::before{content:"Returned before"}
+ .guided-returns table td:nth-child(4)::before{content:"Can return"}
+ .guided-returns table td:nth-child(5)::before{content:"Return now"}
+ .guided-returns table td:nth-child(6)::before{content:"Value"}
+ .guided-returns table input{width:100%;min-width:0;font-size:16px!important;min-height:46px}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(1)::before{content:"Receipt"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(2)::before{content:"PO"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(3)::before{content:"Supplier"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(4)::before{content:"Destination"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(5)::before{content:"Delivery ref"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(6)::before{content:"Accepted"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(7)::before{content:"Rejected"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(8)::before{content:"Status"}
+ .receiving-history table:has(th:nth-child(9)) td:nth-child(9)::before{content:"Received on"}
+ .receiving-history table:has(th:nth-child(6)) td:nth-child(1)::before{content:"Return"}
+ .receiving-history table:has(th:nth-child(6)) td:nth-child(2)::before{content:"PO"}
+ .receiving-history table:has(th:nth-child(6)) td:nth-child(3)::before{content:"Supplier"}
+ .receiving-history table:has(th:nth-child(6)) td:nth-child(4)::before{content:"Reason"}
+ .receiving-history table:has(th:nth-child(6)) td:nth-child(5)::before{content:"Created"}
+ .receiving-history table:has(th:nth-child(6)) td:nth-child(6)::before{content:"Stock document"}
+ .receiving-history table td[colspan]{display:block}
+ .receiving-history table td[colspan]::before{content:none}
+}

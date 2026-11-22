@@ -255,6 +255,7 @@ def dashboard_summary(
         "recent_movements": [
             {
                 "id": movement.id,
+                "document_id": movement.document_id,
                 "item_id": movement.item_id,
                 "sku": sku,
                 "item_name": item_name,

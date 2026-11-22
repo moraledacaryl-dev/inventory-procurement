@@ -230,3 +230,131 @@ def test_supplier_return_idempotency_rejects_changed_reason_or_quantity(client):
     workspace = client.get('/api/v1/receiving/workspace', headers=headers).json()
     assert workspace['summary']['returns'] == 1
     assert Decimal(workspace['purchase_orders'][0]['lines'][0]['returned_quantity']) == Decimal('2')
+
+
+def test_paginated_receiving_history_keeps_full_totals_and_returnability(client):
+    """Pagination is read-only: all-time accounting totals and old PO returns remain intact."""
+    headers = auth_headers(client)
+    location, item, supplier, po = seed_receiving(client, headers)
+    line_id = po["lines"][0]["id"]
+    endpoint = f"/api/v1/receiving/purchase-orders/{po['id']}"
+
+    receipts = []
+    for index, (arrived, accepted, rejected) in enumerate(((2, 1, 1), (2, 2, 0), (1, 1, 0)), start=1):
+        payload = {
+            "delivery_reference": f"DR-PAGED-{index}",
+            "idempotency_key": f"receipt-paged-{index}",
+            "lines": [{
+                "purchase_order_line_id": line_id,
+                "received_quantity": arrived,
+                "accepted_quantity": accepted,
+                "rejected_quantity": rejected,
+                "discrepancy_reason": "Damaged pack" if rejected else None,
+            }],
+        }
+        response = client.post(endpoint, headers=headers, json=payload)
+        assert response.status_code == 201, response.text
+        receipts.append(response.json()["id"])
+
+    returns = []
+    for index in (1, 2):
+        response = client.post(
+            f"{endpoint}/returns", headers=headers,
+            json={
+                "reason": f"Quality issue {index}",
+                "supplier_reference": f"RMA-PAGED-{index}",
+                "idempotency_key": f"return-paged-{index}",
+                "lines": [{"purchase_order_line_id": line_id, "quantity": 1}],
+            }
+        )
+        assert response.status_code == 201, response.text
+        returns.append(response.json()["id"])
+
+    pages = []
+    for page in (1, 2, 3, 4):
+        response = client.get(
+            f"/api/v1/receiving/workspace?receipts_page={page}&returns_page=1&page_size=1",
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        pages.append(data)
+        assert data["summary"]["receipts"] == 3
+        assert data["summary"]["returns"] == 2
+        assert data["summary"]["discrepant_receipts"] == 1
+        assert Decimal(data["summary"]["accepted_value"]) == Decimal("80")
+        assert Decimal(data["summary"]["rejected_value"]) == Decimal("20")
+        assert data["pagination"]["receipts"]["total"] == 3
+        assert data["pagination"]["returns"]["total"] == 2
+        assert Decimal(data["purchase_orders"][0]["lines"][0]["returnable_quantity"]) == Decimal("2")
+        assert data["purchase_orders"][0]["supplier_id"] == supplier["id"]
+        assert data["purchase_orders"][0]["delivery_location_id"] == location["id"]
+
+    assert [page["receipts"][0]["id"] for page in pages[:3]] == list(reversed(receipts))
+    assert pages[3]["receipts"] == []
+    assert pages[0]["pagination"]["receipts"]["has_next"] is True
+    assert pages[2]["pagination"]["receipts"]["has_next"] is False
+    assert pages[1]["pagination"]["receipts"]["has_previous"] is True
+    assert pages[0]["pagination"]["returns"]["page"] == 1
+
+    second_returns_page = client.get(
+        "/api/v1/receiving/workspace?receipts_page=1&returns_page=2&page_size=1",
+        headers=headers,
+    ).json()
+    assert second_returns_page["receipts"] == pages[0]["receipts"]
+    assert {pages[0]["returns"][0]["id"], second_returns_page["returns"][0]["id"]} == set(returns)
+    assert second_returns_page["pagination"]["returns"]["has_next"] is False
+
+    for query in ("page_size=0", "page_size=101", "receipts_page=0", "returns_page=-1"):
+        rejected_page = client.get(f"/api/v1/receiving/workspace?{query}", headers=headers)
+        assert rejected_page.status_code == 422, rejected_page.text
+
+    stock = client.get(f"/api/v1/stock/balances?location_id={location['id']}&item_id={item['id']}", headers=headers)
+    assert stock.status_code == 200
+    assert Decimal(stock.json()[0]["quantity"]) == Decimal("2")
+
+
+def test_received_stock_outbox_keeps_exact_accounting_source_identity(client):
+    """Post real receiving events only inside the isolated test database."""
+    from sqlalchemy import select
+
+    from app.models.operations import IntegrationEvent
+    from app.services.integration_worker import _accounting_payload, accounting_envelope
+
+    headers = auth_headers(client)
+    _location, _item, supplier, po = seed_receiving(client, headers)
+    receipt = client.post(
+        f"/api/v1/receiving/purchase-orders/{po['id']}",
+        headers=headers,
+        json={
+            "delivery_reference": "DR-INTEGRATION-VERIFY",
+            "idempotency_key": "accounting-receiving-verification",
+            "lines": [{
+                "purchase_order_line_id": po["lines"][0]["id"],
+                "received_quantity": 3,
+                "accepted_quantity": 2,
+                "rejected_quantity": 1,
+                "discrepancy_reason": "Broken seal",
+            }],
+        },
+    )
+    assert receipt.status_code == 201, receipt.text
+    grn = receipt.json()
+    with SessionLocal() as db:
+        events = db.scalars(select(IntegrationEvent).where(
+            IntegrationEvent.destination_system == "accounting",
+            IntegrationEvent.event_type == "procurement.goods_received",
+            IntegrationEvent.aggregate_id == grn["id"],
+        )).all()
+        assert len(events) == 1
+        event = events[0]
+        assert event.idempotency_key == f"goods-received:{grn['id']}"
+        enriched = _accounting_payload(db, event)
+        assert enriched["supplier_id"] == supplier["id"]
+        assert enriched["supplier_name"] == supplier["name"]
+        envelope = accounting_envelope(event, enriched)
+        assert envelope["source_event_id"] == event.id
+        assert envelope["idempotency_key"] == event.idempotency_key
+        assert Decimal(str(envelope["amount"])) == Decimal("40")
+        assert envelope["financial_effect"] == "payable"
+        assert envelope["proposed_links"]["purchase_order_id"] == po["id"]

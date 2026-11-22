@@ -10,7 +10,6 @@ import { FeedbackBanner } from "../../components/FeedbackBanner";
 import { FormField, FormSection } from "../../components/FormField";
 import { StatusBadge } from "../../components/StatusBadge";
 import { api } from "../../lib/api";
-import { formatDateTime, formatMoney, formatQuantity } from "../../lib/formatters";
 
 type Location={id:string;code:string;name:string;is_active:boolean};
 type Count={id:string;count_number:string;location_id:string;location_code:string;location_name:string;status:string;notes:string|null;blind_count:boolean;approval_threshold:string;created_at:string;posted_document_id:string|null;progress:{total_lines:number;counted_lines:number;remaining_lines:number;completion_percent:number;variance_lines:number;absolute_variance:string;estimated_value_variance:string;live_drift_lines:number}};

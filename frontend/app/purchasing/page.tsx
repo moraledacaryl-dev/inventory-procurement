@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AppShell } from "../../components/AppShell";
 import { Can } from "../../components/SessionContext";
 import { FeedbackBanner } from "../../components/FeedbackBanner";
@@ -16,7 +17,10 @@ type DraftLine={item_id:string;quantity:string;price:string};
 const blankLine=():DraftLine=>({item_id:"",quantity:"",price:""});
 
 export default function PurchasingPage(){
+ const searchParams=useSearchParams();
+ const requestedView=searchParams.get("view");
  const[items,setItems]=useState<Item[]>([]);const[suppliers,setSuppliers]=useState<Supplier[]>([]);const[locations,setLocations]=useState<Location[]>([]);const[prs,setPrs]=useState<PR[]>([]);const[poLines,setPoLines]=useState<DraftLine[]>([blankLine()]);const[feedback,setFeedback]=useState<{tone:"success"|"error"|"info";title:string;message?:string}|null>(null);const[busy,setBusy]=useState(false);const[view,setView]=useState<"plan"|"requisitions"|"source"|"manual">("plan");
+ useEffect(()=>{if(requestedView==="source"||requestedView==="manual"||requestedView==="requisitions")setView(requestedView);else setView("plan")},[requestedView]);
  const load=useCallback(async()=>{try{const[i,s,l,r]=await Promise.all([api<Item[]>("/items"),api<Supplier[]>("/suppliers"),api<Location[]>("/locations"),api<PR[]>("/requisitions")]);setItems(i);setSuppliers(s.filter(row=>row.is_active));setLocations(l.filter(row=>row.is_active));setPrs(r)}catch(error){setFeedback({tone:"error",title:"Purchasing data unavailable",message:(error as Error).message})}},[]);useEffect(()=>{void load()},[load]);
  function updateLine(index:number,key:keyof DraftLine,value:string){setPoLines(lines=>lines.map((line,i)=>i===index?{...line,[key]:value}:line))}
  async function createPO(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget;const data=new FormData(form);const lines=poLines.filter(row=>row.item_id&&Number(row.quantity)>0&&Number(row.price)>0).map(row=>({item_id:row.item_id,ordered_quantity:Number(row.quantity),unit_price:Number(row.price)}));if(!lines.length){setFeedback({tone:"error",title:"Add at least one valid purchase-order line"});return}setBusy(true);try{await api("/purchase-orders",{method:"POST",body:JSON.stringify({supplier_id:data.get("supplier_id"),requisition_id:data.get("requisition_id")||null,delivery_location_id:data.get("delivery_location_id"),expected_delivery_date:data.get("expected_delivery_date")||null,notes:data.get("notes")||null,lines})});form.reset();setPoLines([blankLine()]);setFeedback({tone:"success",title:"Purchase order created",message:"The order is in draft status and requires approval before receiving."});await load()}catch(error){setFeedback({tone:"error",title:"Purchase order could not be created",message:(error as Error).message})}finally{setBusy(false)}}

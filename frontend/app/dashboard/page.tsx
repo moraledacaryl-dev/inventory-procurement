@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { ErrorState, LoadingState } from "../../components/AsyncState";
 import { RoleWorkspace } from "../../components/RoleWorkspace";
@@ -18,7 +18,7 @@ type DashboardSummary={
   stock_status:{in_stock:number;low_stock:number;out_of_stock:number;inactive:number};
   low_stock:{id:string;sku:string;name:string;quantity:string;minimum_stock:string;shortfall:string}[];
   recent_purchase_orders:{id:string;purchase_order_number:string;supplier_name:string;status:string;created_at:string;expected_delivery_date:string|null;total:string}[];
-  recent_movements:{id:string;item_id:string;sku:string;item_name:string;location_name:string;quantity:string;reason:string|null;created_at:string}[];
+  recent_movements:{id:string;document_id:string;item_id:string;sku:string;item_name:string;location_name:string;quantity:string;reason:string|null;created_at:string}[];
 };
 type ValuationHistory={as_of:string;current_value:string;historical_values_estimated:boolean;legacy_movement_count:number;points:{date:string;value:string;estimated:boolean}[]};
 
@@ -58,8 +58,11 @@ export default function Dashboard(){
   const[historyLoading,setHistoryLoading]=useState(true);
   const[summaryError,setSummaryError]=useState("");
   const[historyError,setHistoryError]=useState("");
+  const summaryRequestId=useRef(0);
+  const historyRequestId=useRef(0);
+  const[locationError,setLocationError]=useState("");
 
-  useEffect(()=>{void api<Location[]>("/locations").then(setLocations).catch(()=>undefined)},[]);
+  useEffect(()=>{const controller=new AbortController();void api<Location[]>("/locations",{signal:controller.signal}).then(setLocations).catch(error=>{if(!controller.signal.aborted)setLocationError((error as Error).message)});return()=>controller.abort()},[]);
 
   const query=useMemo(()=>{
     const params=new URLSearchParams({days:String(days)});
@@ -68,17 +71,29 @@ export default function Dashboard(){
   },[days,locationId]);
 
   const loadSummary=useCallback(async()=>{
+    const id=++summaryRequestId.current;
     setSummaryLoading(true);setSummaryError("");
-    try{setSummary(await api<DashboardSummary>(`/dashboard/summary?${query}`))}
-    catch(error){setSummaryError((error as Error).message)}
-    finally{setSummaryLoading(false)}
+    try{
+      const result=await api<DashboardSummary>(`/dashboard/summary?${query}`);
+      if(id===summaryRequestId.current)setSummary(result);
+    }catch(error){
+      if(id===summaryRequestId.current)setSummaryError((error as Error).message);
+    }finally{
+      if(id===summaryRequestId.current)setSummaryLoading(false);
+    }
   },[query]);
 
   const loadHistory=useCallback(async()=>{
+    const id=++historyRequestId.current;
     setHistoryLoading(true);setHistoryError("");
-    try{setHistory(await api<ValuationHistory>(`/dashboard/valuation-history?${query}`))}
-    catch(error){setHistoryError((error as Error).message)}
-    finally{setHistoryLoading(false)}
+    try{
+      const result=await api<ValuationHistory>(`/dashboard/valuation-history?${query}`);
+      if(id===historyRequestId.current)setHistory(result);
+    }catch(error){
+      if(id===historyRequestId.current)setHistoryError((error as Error).message);
+    }finally{
+      if(id===historyRequestId.current)setHistoryLoading(false);
+    }
   },[query]);
 
   useEffect(()=>{void loadSummary();void loadHistory()},[loadSummary,loadHistory]);
@@ -86,8 +101,8 @@ export default function Dashboard(){
   const metrics=summary?[
     {label:"Total Products",value:String(summary.metrics.total_products),note:`${summary.metrics.active_products} active`,href:"/items",tone:"blue",icon:<StrokeIcon><path d="m21 8-9 5-9-5"/><path d="m3 8 9-5 9 5v8l-9 5-9-5Z"/><path d="M12 13v8"/></StrokeIcon>},
     {label:"Inventory Value",value:formatMoney(summary.metrics.inventory_value),note:`As of ${formatDateTime(summary.as_of)}`,href:"/reports",tone:"green",icon:<StrokeIcon><path d="M4 19V5h16v14Z"/><path d="M8 9h8M8 13h5"/></StrokeIcon>},
-    {label:"Pending POs",value:String(summary.metrics.pending_purchase_orders),note:summary.metrics.overdue_purchase_orders?`${summary.metrics.overdue_purchase_orders} overdue`:comparisonText(summary.comparisons.purchase_order_count_change_percent,"PO"),href:"/purchasing?status=open",tone:"amber",icon:<StrokeIcon><circle cx="9" cy="20" r="1"/><circle cx="19" cy="20" r="1"/><path d="M3 4h2l2.5 11h11l2-7H7"/></StrokeIcon>},
-    {label:"Low Stock Items",value:String(summary.metrics.low_stock_items+summary.metrics.out_of_stock_items),note:`${summary.metrics.out_of_stock_items} out of stock`,href:"/purchasing?view=low-stock",tone:"violet",icon:<StrokeIcon><path d="M6 3h12v18H6Z"/><path d="M9 8h6M9 12h6M9 16h3"/></StrokeIcon>},
+    {label:"Pending POs",value:String(summary.metrics.pending_purchase_orders),note:summary.metrics.overdue_purchase_orders?`${summary.metrics.overdue_purchase_orders} overdue`:comparisonText(summary.comparisons.purchase_order_count_change_percent,"PO"),href:"/purchasing?view=source",tone:"amber",icon:<StrokeIcon><circle cx="9" cy="20" r="1"/><circle cx="19" cy="20" r="1"/><path d="M3 4h2l2.5 11h11l2-7H7"/></StrokeIcon>},
+    {label:"Low Stock Items",value:String(summary.metrics.low_stock_items+summary.metrics.out_of_stock_items),note:`${summary.metrics.out_of_stock_items} out of stock`,href:"/purchasing?view=plan",tone:"violet",icon:<StrokeIcon><path d="M6 3h12v18H6Z"/><path d="M9 8h6M9 12h6M9 16h3"/></StrokeIcon>},
     {label:"Stock Movements",value:String(summary.metrics.movement_count),note:comparisonText(summary.comparisons.movement_count_change_percent,"movement"),href:`/stock?days=${days}${locationId?`&location_id=${locationId}`:""}`,tone:"cyan",icon:<StrokeIcon><path d="M4 12h16M14 6l6 6-6 6"/></StrokeIcon>},
   ]:[];
 
@@ -97,7 +112,7 @@ export default function Dashboard(){
   const donutStyle={background:summary?`conic-gradient(#42bd73 0 ${stops[0]}%,#f7b928 ${stops[0]}% ${stops[1]}%,#ef5555 ${stops[1]}% ${stops[2]}%,#aeb9c5 ${stops[2]}% 100%)`:"conic-gradient(#e5eaf0 0 100%)"};
 
   return <AppShell title="Dashboard" description="Stock, spending, and today’s priorities."><div className="dashboard-overview">
-    <section className="dashboard-welcome"><div><h2><UserGreeting/></h2><p>{summary?`Updated ${formatDateTime(summary.as_of)}`:"Loading the current operating picture."}</p></div><div className="dashboard-filters"><label><span>Location</span><select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">All locations</option>{locations.map(location=><option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}</select></label><label><span>Period</span><select value={days} onChange={event=>setDays(Number(event.target.value))}><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value={365}>365 days</option></select></label></div></section>
+    <section className="dashboard-welcome"><div><h2><UserGreeting/></h2><p>{summary?`Updated ${formatDateTime(summary.as_of)}`:"Loading the current operating picture."}</p></div><div className="dashboard-filters">{locationError?<span role="alert" className="field-error">Location filter unavailable: {locationError}</span>:null}<label><span>Location</span><select value={locationId} onChange={event=>setLocationId(event.target.value)}><option value="">All locations</option>{locations.map(location=><option key={location.id} value={location.id}>{location.code} — {location.name}</option>)}</select></label><label><span>Period</span><select value={days} onChange={event=>setDays(Number(event.target.value))}><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value={365}>365 days</option></select></label></div></section>
 
 
     {summaryError?<ErrorState title="Dashboard summary unavailable" message={summaryError} onRetry={()=>void loadSummary()}/>:summaryLoading?<LoadingState title="Loading dashboard summary" rows={3}/>:<section className="metric-grid" aria-label="Inventory summary">{metrics.map(metric=><Link className="metric-card metric-card-link" key={metric.label} href={metric.href}><div className={`metric-icon ${metric.tone}`}>{metric.icon}</div><div className="metric-copy"><div className="metric-label">{metric.label}</div><div className="metric-value">{metric.value}</div><div className="metric-note">{metric.note}</div></div></Link>)}</section>}
@@ -112,9 +127,9 @@ export default function Dashboard(){
 
     <details className="dashboard-details"><summary><span><strong>Recent activity</strong><small>Purchase orders, shortages and stock movements</small></span><span aria-hidden="true">⌄</span></summary><div className="dashboard-details__body">
     <section className="dashboard-secondary-grid">
-      <article className="dashboard-panel"><div className="panel-header"><div><h3>Recent Purchase Orders</h3><p>Latest procurement documents in the selected scope.</p></div><Link className="panel-link" href="/purchasing">View all</Link></div><table className="compact-table"><thead><tr><th>PO Number</th><th>Supplier</th><th>Status</th><th>Total</th></tr></thead><tbody>{summary?.recent_purchase_orders.length?summary.recent_purchase_orders.map(po=><tr key={po.id}><td><Link href={`/purchasing?purchase_order=${po.id}`}>{po.purchase_order_number}</Link></td><td>{po.supplier_name}</td><td><StatusBadge status={po.status}/></td><td>{formatMoney(po.total)}</td></tr>):<tr className="empty-row"><td colSpan={4}>No purchase orders in this scope.</td></tr>}</tbody></table></article>
-      <article className="dashboard-panel"><div className="panel-header"><div><h3>Low Stock Alerts</h3><p>Largest shortages against configured minimums.</p></div><Link className="panel-link" href="/purchasing?view=low-stock">View all</Link></div>{summary?.low_stock.length?<div className="alert-list">{summary.low_stock.map(item=><Link className="alert-item" href={`/items?item=${item.id}`} key={item.id}><div className="small-icon"><StrokeIcon><path d="M12 3 2 21h20Z"/><path d="M12 9v5M12 18h.01"/></StrokeIcon></div><div className="list-copy"><strong>{item.sku} — {item.name}</strong><span>Minimum {formatQuantity(item.minimum_stock)} · short {formatQuantity(item.shortfall)}</span></div><div className="list-value">{formatQuantity(item.quantity)}</div></Link>)}</div>:<div className="empty-list"><div><strong>No low-stock alerts</strong><span>All configured items are above their reorder levels.</span></div></div>}</article>
-      <article className="dashboard-panel"><div className="panel-header"><div><h3>Recent Activity</h3><p>Latest stock movements in the selected scope.</p></div><Link className="panel-link" href="/stock">View all</Link></div>{summary?.recent_movements.length?<div className="activity-list">{summary.recent_movements.map(movement=><Link className="activity-item" href={`/stock?movement=${movement.id}`} key={movement.id}><div className="small-icon"><StrokeIcon><path d="M4 12h16M14 6l6 6-6 6"/></StrokeIcon></div><div className="list-copy"><strong>{movement.sku} {Number(movement.quantity)>0?"received":"issued"}</strong><span>{formatDateTime(movement.created_at)} · {movement.location_name} · {movement.reason||"Stock movement"}</span></div><div className="list-value">{Number(movement.quantity)>0?"+":""}{formatQuantity(movement.quantity)}</div></Link>)}</div>:<div className="empty-list"><div><strong>No recent activity</strong><span>Completed stock transactions will appear here.</span></div></div>}</article>
+      <article className="dashboard-panel"><div className="panel-header"><div><h3>Recent Purchase Orders</h3><p>Latest procurement documents in the selected scope.</p></div><Link className="panel-link" href="/purchasing">View all</Link></div><table className="compact-table"><thead><tr><th>PO Number</th><th>Supplier</th><th>Status</th><th>Total</th></tr></thead><tbody>{summary?.recent_purchase_orders.length?summary.recent_purchase_orders.map(po=><tr key={po.id}><td><Link href={`/purchasing/orders/${po.id}`}>{po.purchase_order_number}</Link></td><td>{po.supplier_name}</td><td><StatusBadge status={po.status}/></td><td>{formatMoney(po.total)}</td></tr>):<tr className="empty-row"><td colSpan={4}>No purchase orders in this scope.</td></tr>}</tbody></table></article>
+      <article className="dashboard-panel"><div className="panel-header"><div><h3>Low Stock Alerts</h3><p>Largest shortages against configured minimums.</p></div><Link className="panel-link" href="/purchasing?view=low-stock">View all</Link></div>{summary?.low_stock.length?<div className="alert-list">{summary.low_stock.map(item=><Link className="alert-item" href={`/items/${item.id}`} key={item.id}><div className="small-icon"><StrokeIcon><path d="M12 3 2 21h20Z"/><path d="M12 9v5M12 18h.01"/></StrokeIcon></div><div className="list-copy"><strong>{item.sku} — {item.name}</strong><span>Minimum {formatQuantity(item.minimum_stock)} · short {formatQuantity(item.shortfall)}</span></div><div className="list-value">{formatQuantity(item.quantity)}</div></Link>)}</div>:<div className="empty-list"><div><strong>No low-stock alerts</strong><span>All configured items are above their reorder levels.</span></div></div>}</article>
+      <article className="dashboard-panel"><div className="panel-header"><div><h3>Recent Activity</h3><p>Latest stock movements in the selected scope.</p></div><Link className="panel-link" href="/stock">View all</Link></div>{summary?.recent_movements.length?<div className="activity-list">{summary.recent_movements.map(movement=><Link className="activity-item" href={`/stock/documents/${movement.document_id}`} key={movement.id}><div className="small-icon"><StrokeIcon><path d="M4 12h16M14 6l6 6-6 6"/></StrokeIcon></div><div className="list-copy"><strong>{movement.sku} {Number(movement.quantity)>0?"received":"issued"}</strong><span>{formatDateTime(movement.created_at)} · {movement.location_name} · {movement.reason||"Stock movement"}</span></div><div className="list-value">{Number(movement.quantity)>0?"+":""}{formatQuantity(movement.quantity)}</div></Link>)}</div>:<div className="empty-list"><div><strong>No recent activity</strong><span>Completed stock transactions will appear here.</span></div></div>}</article>
     </section>
     </div></details>
 

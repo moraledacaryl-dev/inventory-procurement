@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 import hashlib
 import json
@@ -6,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.core.roles import has_permission
 from app.models.inventory import CountSession, Item, Location, StockBalance, StockDocument, StockMovement
+from app.models.inventory_operations import StockReservation
 from app.models.user import User
 from app.services.operational_authorization import require_scoped_locations
 from app.services.controls import add_audit, enqueue_event, next_document_number
@@ -216,6 +218,31 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         cost = cost.quantize(precision, rounding=ROUND_HALF_UP)
         new_qty = old_qty + qty
         if new_qty < 0 and not item.allow_negative_stock: raise InventoryError(f"Insufficient stock for {item.sku} at location")
+        # Direct issues/transfers must not consume stock reserved for another
+        # operation. The balance row above is locked in the same transaction
+        # used by reservation creation, so concurrent requests serialize.
+        # Controlled stock counts and documented waste remain separate,
+        # reviewed workflows; they must not silently erase reservations.
+        if qty < 0 and kind in {"issue", "transfer"}:
+            now = datetime.now(timezone.utc)
+            reservations = db.scalars(
+                select(StockReservation).where(
+                    StockReservation.item_id == item.id,
+                    StockReservation.location_id == entry["location_id"],
+                    StockReservation.status == "active",
+                )
+            ).all()
+            reserved = sum((
+                Decimal(res.quantity) for res in reservations
+                if res.expires_at is None or (
+                    res.expires_at.replace(tzinfo=timezone.utc) if res.expires_at.tzinfo is None else res.expires_at
+                ) > now
+            ), Decimal("0"))
+            if reserved > 0 and new_qty < reserved:
+                raise InventoryError(
+                    f"Insufficient unreserved stock for {item.sku} at location "
+                    f"({reserved} reserved)"
+                )
         if qty > 0:
             incoming_value = qty * cost
             if old_qty < 0:

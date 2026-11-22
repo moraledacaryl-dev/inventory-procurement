@@ -12,6 +12,29 @@ export class ApiError extends Error {
   }
 }
 
+/** Turn FastAPI validation details into a readable message, never [object Object]. */
+export function formatApiError(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail)) {
+    const messages = detail.slice(0, 5).map((error: unknown) => {
+      if (typeof error === "string") return error;
+      if (!error || typeof error !== "object") return "";
+      const record = error as { loc?: unknown; msg?: unknown };
+      const label = Array.isArray(record.loc)
+        ? record.loc.filter(part => part !== "body").map(String).join(" > ")
+        : "";
+      const message = typeof record.msg === "string" ? record.msg : "";
+      return label && message ? `${label}: ${message}` : message;
+    }).filter(Boolean);
+    if (messages.length) return messages.join("; ");
+  }
+  if (detail && typeof detail === "object" && "message" in detail) {
+    const message = (detail as {message?: unknown}).message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return fallback;
+}
+
 function safeReturnPath() {
   if (typeof window === "undefined") return "/dashboard";
   const path = `${window.location.pathname}${window.location.search}`;
@@ -37,7 +60,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new ApiError(body.detail || `Request failed (${response.status})`, response.status, body);
+    throw new ApiError(formatApiError(body?.detail, `Request failed (${response.status})`), response.status, body);
   }
 
   if (response.status === 204) return undefined as T;

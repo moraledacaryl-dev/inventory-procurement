@@ -319,8 +319,7 @@ def test_received_stock_outbox_keeps_exact_accounting_source_identity(client):
     from sqlalchemy import select
 
     from app.models.operations import IntegrationEvent
-    from app.services.integration_worker import _accounting_payload
-    from app.api.routes.accounting_integration import accounting_envelope
+    from app.services.integration_worker import _accounting_payload, accounting_envelope
 
     headers = auth_headers(client)
     _location, _item, supplier, po = seed_receiving(client, headers)

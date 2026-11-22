@@ -31,8 +31,10 @@ export function ConfirmDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const onCancelRef = useRef(onCancel);
   const busyRef = useRef(busy);
-  onCancelRef.current = onCancel;
-  busyRef.current = busy;
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+    busyRef.current = busy;
+  }, [onCancel, busy]);
 
   useEffect(() => {
     if (!open) return;

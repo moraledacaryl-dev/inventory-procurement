@@ -365,7 +365,7 @@ def post_count(count_id: str, p: CountSubmit, db: Session = Depends(get_db), use
         if count_requires_approval(role=user.role, max_variance=max_variance, approval_threshold=session.approval_threshold):
             session.status = "pending_approval"; add_audit(db, actor_user_id=user.id, action="count.approval_requested", entity_type="count_session", entity_id=session.id, details={"max_variance": str(max_variance)})
         else: finalize_count(db, session, user)
-        db.commit(); db.refresh(session); return session
+        db.commit(); db.refresh(session); return serialize_count_for_read(session)
     except (InventoryError, IntegrityError) as exc:
         db.rollback(); conflict(exc if isinstance(exc, InventoryError) else "Count could not be posted")
 
@@ -378,6 +378,6 @@ def approve_count(count_id: str, db: Session = Depends(get_db), user: User = Dep
     if session.status != "pending_approval": conflict("Count is not pending approval")
     if session.created_by_user_id == user.id: conflict("Count creator cannot approve their own variance")
     try:
-        session.approved_by_user_id = user.id; session.approved_at = datetime.now(timezone.utc); finalize_count(db, session, user); add_audit(db, actor_user_id=user.id, action="count.approved", entity_type="count_session", entity_id=session.id); db.commit(); db.refresh(session); return session
+        session.approved_by_user_id = user.id; session.approved_at = datetime.now(timezone.utc); finalize_count(db, session, user); add_audit(db, actor_user_id=user.id, action="count.approved", entity_type="count_session", entity_id=session.id); db.commit(); db.refresh(session); return serialize_count_for_read(session)
     except (InventoryError, IntegrityError) as exc:
         db.rollback(); conflict(exc if isinstance(exc, InventoryError) else "Count approval failed")

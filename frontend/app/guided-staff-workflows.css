@@ -129,3 +129,14 @@
  .receiving-history table td[colspan]{display:block}
  .receiving-history table td[colspan]::before{content:none}
 }
+
+/* Bounded count-history search and navigation. */
+.count-search-form{display:flex;align-items:flex-end;gap:9px;margin:14px 0;flex-wrap:wrap}
+.count-search-form label{display:grid;gap:5px;min-width:210px;flex:1 1 260px}
+.count-search-form label span{font-size:13px;color:#344861;font-weight:650}
+.count-search-form input{min-height:44px;width:100%;border:1px solid var(--line-strong);border-radius:9px;padding:8px 12px}
+.count-search-form button{min-height:44px}
+.count-server-pager{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 0 0;font-size:13px;color:#344861}
+.count-server-pager>div{display:flex;gap:8px;flex-wrap:wrap}
+.count-server-pager button{min-height:44px}
+@media(max-width:620px){.count-server-pager>div{width:100%;display:grid;grid-template-columns:1fr 1fr}.count-server-pager button{width:100%}.count-search-form button{flex:1 1 auto}}

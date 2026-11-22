@@ -140,3 +140,7 @@
 .count-server-pager>div{display:flex;gap:8px;flex-wrap:wrap}
 .count-server-pager button{min-height:44px}
 @media(max-width:620px){.count-server-pager>div{width:100%;display:grid;grid-template-columns:1fr 1fr}.count-server-pager button{width:100%}.count-search-form button{flex:1 1 auto}}
+
+/* Accessible column headers on the paged item catalogue.
+   Neutral text previously failed WCAG AA at 4.32:1 against #f8fafc. */
+.app-shell .data-table-shell thead th{color:#344861!important}

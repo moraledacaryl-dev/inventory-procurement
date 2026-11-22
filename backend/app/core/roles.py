@@ -25,8 +25,7 @@ ROLE_PERMISSIONS = {
         "items.read", "locations.read", "suppliers.read",
     },
     Role.COUNTER: {
-        "counts.create", "counts.submit", "counts.read", "inventory.read",
-        "items.read", "locations.read",
+        "counts.create", "counts.submit", "counts.read", "locations.read",
     },
     Role.VIEWER: {"*.read"},
 }

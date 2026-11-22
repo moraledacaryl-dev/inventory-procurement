@@ -58,9 +58,24 @@ export default function ReceivingPage(){
  },[receiptsPage,returnsPage,historyPageSize]);
  useEffect(()=>{void load()},[load]);
  const selectedPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===selectedPoId)||null,[data,selectedPoId]);
+ // The draft is initialized only when the user selects an order. Reloading
+ // history/pages may replace the PO object but must NOT erase entered numbers.
  const selectedReturnPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===returnPoId)||null,[data,returnPoId]);
- useEffect(()=>{if(!selectedPo){setReceiveLines([]);return}setReceiveLines(selectedPo.lines.filter(line=>Number(line.outstanding_quantity)>0).map(line=>({line_id:line.id,received:"",rejected:"0",reason:"",lot_number:"",manufactured_date:"",expiry_date:""})))},[selectedPo]);
- useEffect(()=>{if(!selectedReturnPo){setReturnLines([]);return}setReturnLines(selectedReturnPo.lines.filter(line=>Number(line.returnable_quantity)>0).map(line=>({line_id:line.id,quantity:"0"})))},[selectedReturnPo]);
+ function selectReceiptPo(poId:string){
+   const po=data?.purchase_orders.find(row=>row.id===poId);
+   setSelectedPoId(poId);
+   setReceiveLines(po?.lines.filter(line=>Number(line.outstanding_quantity)>0).map(line=>({
+     line_id:line.id,received:"",rejected:"0",reason:"",lot_number:"",manufactured_date:"",expiry_date:""
+   }))||[]);
+   setDeliveryReference("");setReceiptNotes("");setReceiptStep(1);
+   receiptRequest.current=null;
+ }
+ function selectReturnPo(poId:string){
+   const po=data?.purchase_orders.find(row=>row.id===poId);
+   setReturnPoId(poId);
+   setReturnLines(po?.lines.filter(line=>Number(line.returnable_quantity)>0).map(line=>({line_id:line.id,quantity:"0"}))||[]);
+   returnRequest.current=null;
+ }
 
  const receiptPayload=useMemo(()=>receiveLines.filter(row=>Number(row.received)>0).map(row=>{const received=Number(row.received),rejected=Number(row.rejected||0);return {purchase_order_line_id:row.line_id,received_quantity:received,accepted_quantity:received-rejected,rejected_quantity:rejected,discrepancy_reason:rejected>0?row.reason||null:null,lot_number:row.lot_number||null,manufactured_date:row.manufactured_date||null,expiry_date:row.expiry_date||null}}),[receiveLines]);
  const returnPayload=useMemo(()=>returnLines.filter(row=>Number(row.quantity)>0).map(row=>({purchase_order_line_id:row.line_id,quantity:Number(row.quantity)})),[returnLines]);
@@ -109,7 +124,7 @@ export default function ReceivingPage(){
      setFeedback({tone:result.has_discrepancy?"warning":"success",title:"Goods receipt posted",message:result.has_discrepancy?
        `${result.goods_receipt_number} includes rejected quantities requiring follow-up.`:
        `${result.goods_receipt_number} posted accepted stock to ${result.delivery_location_code}.`});
-     setPending(null);setReceiptStep(1);setSelectedPoId("");setDeliveryReference("");setReceiptNotes("");
+     setPending(null);setReceiptStep(1);setSelectedPoId("");setReceiveLines([]);setDeliveryReference("");setReceiptNotes("");
      await load();
    }catch(error){
      setFeedback({tone:"error",title:"Receipt not confirmed",message:
@@ -129,7 +144,7 @@ export default function ReceivingPage(){
      returnRequest.current=null;
      setFeedback({tone:"success",title:"Supplier return posted",
        message:`${result.return_number} removed the selected quantity from stock and sent the event to Accounting.`});
-     setPending(null);setReturnPoId("");setReturnReason("");setReturnReference("");setReturnNotes("");
+     setPending(null);setReturnPoId("");setReturnLines([]);setReturnReason("");setReturnReference("");setReturnNotes("");
      await load();
    }catch(error){
      setFeedback({tone:"error",title:"Return not confirmed",message:
@@ -154,7 +169,7 @@ export default function ReceivingPage(){
       <h3>Step 1: Which order arrived?</h3>
       <p className="workflow-hint">Use the purchase order (PO) number printed on the order. Only orders that can still receive stock appear here.</p>
       <label className="workflow-select"><span>Purchase order</span>
-        <select aria-label="Purchase order" value={selectedPoId} onChange={event=>{setSelectedPoId(event.target.value);setDeliveryReference("");setReceiptNotes("")}}>
+        <select aria-label="Purchase order" value={selectedPoId} onChange={event=>selectReceiptPo(event.target.value)}>
           <option value="">Choose a purchase order</option>
           {data?.purchase_orders.filter(row=>["approved","partially_received"].includes(row.status)).map(row=>
             <option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_name} — {row.delivery_location_name}</option>)}
@@ -224,7 +239,7 @@ export default function ReceivingPage(){
     </div>:null}
   </section></Can>
 
-  <Can permission="receiving.*"><details className="card section-gap workflow-disclosure guided-returns"><summary><div className="topline"><div><h2>Return accepted stock to supplier</h2><p>Return previously accepted items to the supplier.</p></div></div><span className="disclosure-mark" aria-hidden="true">+</span></summary><div className="workflow-disclosure-body"><div className="receiving-header-form"><label><span>Purchase order</span><select value={returnPoId} onChange={event=>setReturnPoId(event.target.value)}><option value="">Select PO with returnable stock</option>{data?.purchase_orders.filter(row=>row.lines.some(line=>Number(line.returnable_quantity)>0)).map(row=><option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_code}</option>)}</select></label><label><span>Return reason</span><input value={returnReason} onChange={event=>setReturnReason(event.target.value)} placeholder="Damage, quality issue, wrong item…"/></label><label><span>Supplier reference</span><input value={returnReference} onChange={event=>setReturnReference(event.target.value)} placeholder="RMA or supplier credit ref"/></label><label><span>Notes</span><input value={returnNotes} onChange={event=>setReturnNotes(event.target.value)}/></label></div>{selectedReturnPo?<><div className="table-wrap"><table><thead><tr><th>Item</th><th>Received</th><th>Previously returned</th><th>Returnable</th><th>Return now</th><th>Value</th></tr></thead><tbody>{selectedReturnPo.lines.map(line=>{const entry=returnLines.find(row=>row.line_id===line.id);return <tr key={line.id}><td>{line.sku} — {line.item_name}</td><td>{formatQuantity(line.received_quantity)}</td><td>{formatQuantity(line.returned_quantity)}</td><td>{formatQuantity(line.returnable_quantity)}</td><td><input aria-label={`Quantity to return for ${line.item_name}`} type="number" min="0" max={line.returnable_quantity} step="0.0001" inputMode="decimal" disabled={!entry} value={entry?.quantity||"0"} onChange={event=>setReturnLines(rows=>rows.map(row=>row.line_id===line.id?{...row,quantity:event.target.value}:row))}/></td><td>{formatMoney(Number(entry?.quantity||0)*Number(line.unit_price))}</td></tr>})}</tbody></table></div><div className="form-actions"><button className="primary" disabled={!returnValid||busy} onClick={()=>setPending("return")}>Review and post return</button></div></>:<div className="config-empty">Select a purchase order with accepted stock available to return.</div>}</div></details></Can>
+  <Can permission="receiving.*"><details className="card section-gap workflow-disclosure guided-returns"><summary><div className="topline"><div><h2>Return accepted stock to supplier</h2><p>Return previously accepted items to the supplier.</p></div></div><span className="disclosure-mark" aria-hidden="true">+</span></summary><div className="workflow-disclosure-body"><div className="receiving-header-form"><label><span>Purchase order</span><select value={returnPoId} onChange={event=>selectReturnPo(event.target.value)}><option value="">Select PO with returnable stock</option>{data?.purchase_orders.filter(row=>row.lines.some(line=>Number(line.returnable_quantity)>0)).map(row=><option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_code}</option>)}</select></label><label><span>Return reason</span><input value={returnReason} onChange={event=>setReturnReason(event.target.value)} placeholder="Damage, quality issue, wrong item…"/></label><label><span>Supplier reference</span><input value={returnReference} onChange={event=>setReturnReference(event.target.value)} placeholder="RMA or supplier credit ref"/></label><label><span>Notes</span><input value={returnNotes} onChange={event=>setReturnNotes(event.target.value)}/></label></div>{selectedReturnPo?<><div className="table-wrap"><table><thead><tr><th>Item</th><th>Received</th><th>Previously returned</th><th>Returnable</th><th>Return now</th><th>Value</th></tr></thead><tbody>{selectedReturnPo.lines.map(line=>{const entry=returnLines.find(row=>row.line_id===line.id);return <tr key={line.id}><td>{line.sku} — {line.item_name}</td><td>{formatQuantity(line.received_quantity)}</td><td>{formatQuantity(line.returned_quantity)}</td><td>{formatQuantity(line.returnable_quantity)}</td><td><input aria-label={`Quantity to return for ${line.item_name}`} type="number" min="0" max={line.returnable_quantity} step="0.0001" inputMode="decimal" disabled={!entry} value={entry?.quantity||"0"} onChange={event=>setReturnLines(rows=>rows.map(row=>row.line_id===line.id?{...row,quantity:event.target.value}:row))}/></td><td>{formatMoney(Number(entry?.quantity||0)*Number(line.unit_price))}</td></tr>})}</tbody></table></div><div className="form-actions"><button className="primary" disabled={!returnValid||busy} onClick={()=>setPending("return")}>Review and post return</button></div></>:<div className="config-empty">Select a purchase order with accepted stock available to return.</div>}</div></details></Can>
 
   <section className="card section-gap receiving-history"><div className="topline"><div><h2>Goods receipt history</h2><p>Accepted and rejected value, delivery reference, discrepancy status, stock document, supplier, and destination.</p></div></div>
   <div className="history-pager" aria-label="Goods receipts pages">

@@ -1,4 +1,7 @@
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -51,6 +54,7 @@ async def request_context(request: Request, call_next):
     try:
         response = await call_next(request)
     except Exception:
+        logger.exception("Unhandled request error: request_id=%s method=%s path=%s", request_id, request.method, request.url.path)
         response = JSONResponse(status_code=500, content={"detail": "Internal server error", "request_id": request_id})
     response.headers["x-request-id"] = request_id
     response.headers["x-content-type-options"] = "nosniff"

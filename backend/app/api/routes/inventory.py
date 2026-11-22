@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -160,6 +160,59 @@ def create_item(p: ItemCreate, db: Session = Depends(get_db), user: User = Depen
         db.commit(); db.refresh(item); return item
     except IntegrityError:
         db.rollback(); conflict("Duplicate or invalid record")
+
+
+@router.get("/items/catalogue-workspace")
+def paged_item_catalogue(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=100),
+    workspace_id: str | None = None,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("items.read")),
+):
+    """Bounded item list for the staff catalogue; legacy /items stays compatible.
+
+    Summary is for the entire workspace and active-filter scope, not just the
+    current page or search result, so the dashboard counts remain accurate.
+    """
+    filters = []
+    if not include_inactive:
+        filters.append(Item.is_active.is_(True))
+    if workspace_id:
+        filters.append(Item.primary_workspace_id == workspace_id)
+    metrics = db.execute(
+        select(
+            func.count(Item.id),
+            func.coalesce(func.sum(case((Item.is_active.is_(True), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((Item.track_stock.is_(True), 1), else_=0)), 0),
+            func.coalesce(func.sum(case((
+                (Item.primary_workspace_id.is_(None)) | (Item.item_type_id.is_(None)),
+                1
+            ), else_=0)), 0),
+        ).where(*filters)
+    ).one()
+    search_filters = list(filters)
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        search_filters.append((Item.sku.ilike(term)) | (Item.name.ilike(term)))
+    total = db.scalar(select(func.count(Item.id)).where(*search_filters)) or 0
+    rows = db.scalars(
+        select(Item).where(*search_filters).order_by(Item.sku, Item.id)
+        .offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    return {
+        "summary": {
+            "catalogue_items": metrics[0], "active_items": metrics[1],
+            "tracked_items": metrics[2], "unclassified_items": metrics[3],
+        },
+        "pagination": {
+            "page": page, "page_size": page_size, "total": total,
+            "has_previous": page > 1, "has_next": page * page_size < total,
+        },
+        "items": [ItemOut.model_validate(row).model_dump(mode="json") for row in rows],
+    }
 
 
 @router.get("/items/{item_id}", response_model=ItemDetail)
@@ -365,7 +418,7 @@ def post_count(count_id: str, p: CountSubmit, db: Session = Depends(get_db), use
         if count_requires_approval(role=user.role, max_variance=max_variance, approval_threshold=session.approval_threshold):
             session.status = "pending_approval"; add_audit(db, actor_user_id=user.id, action="count.approval_requested", entity_type="count_session", entity_id=session.id, details={"max_variance": str(max_variance)})
         else: finalize_count(db, session, user)
-        db.commit(); db.refresh(session); return session
+        db.commit(); db.refresh(session); return serialize_count_for_read(session)
     except (InventoryError, IntegrityError) as exc:
         db.rollback(); conflict(exc if isinstance(exc, InventoryError) else "Count could not be posted")
 
@@ -378,6 +431,6 @@ def approve_count(count_id: str, db: Session = Depends(get_db), user: User = Dep
     if session.status != "pending_approval": conflict("Count is not pending approval")
     if session.created_by_user_id == user.id: conflict("Count creator cannot approve their own variance")
     try:
-        session.approved_by_user_id = user.id; session.approved_at = datetime.now(timezone.utc); finalize_count(db, session, user); add_audit(db, actor_user_id=user.id, action="count.approved", entity_type="count_session", entity_id=session.id); db.commit(); db.refresh(session); return session
+        session.approved_by_user_id = user.id; session.approved_at = datetime.now(timezone.utc); finalize_count(db, session, user); add_audit(db, actor_user_id=user.id, action="count.approved", entity_type="count_session", entity_id=session.id); db.commit(); db.refresh(session); return serialize_count_for_read(session)
     except (InventoryError, IntegrityError) as exc:
         db.rollback(); conflict(exc if isinstance(exc, InventoryError) else "Count approval failed")

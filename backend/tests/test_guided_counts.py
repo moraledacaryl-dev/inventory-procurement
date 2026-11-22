@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.user import User
@@ -100,6 +102,18 @@ def test_blind_pending_approval_stays_hidden_and_counter_cannot_recount_or_cance
     owner = auth_headers(client)
     location, item = seed_count_context(client, owner)
     counter = counter_headers(client)
+    # A blind counter must not recover expected quantities from other
+    # stock/item read endpoints outside the count worksheet.
+    assert client.get("/api/v1/stock/balances", headers=counter).status_code == 403
+    assert client.get("/api/v1/stock/movements", headers=counter).status_code == 403
+    assert client.get(f"/api/v1/items/{item['id']}", headers=counter).status_code == 403
+    assert client.get("/api/v1/items", headers=counter).status_code == 403
+    assert client.get("/api/v1/locations", headers=counter).status_code == 403
+    assert client.get(f"/api/v1/locations/{location['id']}", headers=counter).status_code == 403
+    safe_locations = client.get("/api/v1/counts/locations", headers=counter)
+    assert safe_locations.status_code == 200
+    assert {x["id"] for x in safe_locations.json()} == {location["id"]}
+    assert all("quantity" not in x and "inventory_value" not in x for x in safe_locations.json())
     created = client.post(
         "/api/v1/counts",
         headers=counter,
@@ -126,6 +140,26 @@ def test_blind_pending_approval_stays_hidden_and_counter_cannot_recount_or_cance
     assert line["variance_quantity"] is None
     assert line["live_drift_quantity"] is None
     assert detail.json()["progress"]["absolute_variance"] is None
+    counter_workspace = client.get("/api/v1/counts/workspace", headers=counter).json()
+    counter_row = next(row for row in counter_workspace if row["id"] == count_id)
+    assert counter_row["progress"]["variance_lines"] is None
+    assert counter_row["lines"][0]["live_quantity"] is None
+
+    # The independent owner/approver must see real quantities and variance
+    # before deciding whether to approve a stock adjustment.
+    approver_detail = client.get(f"/api/v1/counts/{count_id}/detail", headers=owner)
+    assert approver_detail.status_code == 200
+    reviewed = approver_detail.json()
+    assert Decimal(reviewed["lines"][0]["snapshot_quantity"]) == Decimal("5")
+    assert Decimal(reviewed["lines"][0]["live_quantity"]) == Decimal("5")
+    assert Decimal(reviewed["lines"][0]["counted_quantity"]) == Decimal("1")
+    assert Decimal(reviewed["lines"][0]["variance_quantity"]) == Decimal("-4")
+    assert reviewed["progress"]["variance_lines"] == 1
+    assert Decimal(reviewed["progress"]["absolute_variance"]) == Decimal("4")
+    assert Decimal(reviewed["progress"]["estimated_value_variance"]) == Decimal("-40")
+    approver_workspace = client.get("/api/v1/counts/workspace", headers=owner).json()
+    approver_row = next(row for row in approver_workspace if row["id"] == count_id)
+    assert approver_row["progress"]["variance_lines"] == 1
 
     recount = client.post(
         f"/api/v1/counts/{count_id}/recount",

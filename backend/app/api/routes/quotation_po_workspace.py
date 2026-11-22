@@ -1,9 +1,9 @@
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -70,11 +70,60 @@ def po_outstanding(po: PurchaseOrder) -> Decimal:
 
 
 @router.get("/procurement/quotation-workspace")
-def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("procurement.read"))):
+def quotation_workspace(
+    po_page: int | None = Query(default=None, ge=1),
+    po_page_size: int = Query(default=25, ge=1, le=100),
+    po_search: str | None = Query(default=None, max_length=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("procurement.read")),
+):
     allowed = visible_location_ids(db, user)
-    po_stmt = select(PurchaseOrder).options(selectinload(PurchaseOrder.lines)).order_by(PurchaseOrder.created_at.desc())
-    if allowed is not None:
-        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
+    po_scope = [PurchaseOrder.delivery_location_id.in_(allowed)] if allowed is not None else []
+    po_stmt = select(PurchaseOrder).where(*po_scope)
+    all_po_count = db.scalar(select(func.count(PurchaseOrder.id)).where(*po_scope)) or 0
+    open_states = ("received", "closed", "cancelled")
+    open_purchase_orders = db.scalar(
+        select(func.count(PurchaseOrder.id)).where(
+            *po_scope, PurchaseOrder.status.notin_(open_states)
+        )
+    ) or 0
+    open_commitment_value = db.scalar(
+        select(func.coalesce(func.sum(case(
+            (PurchaseOrderLine.ordered_quantity > PurchaseOrderLine.received_quantity,
+             (PurchaseOrderLine.ordered_quantity - PurchaseOrderLine.received_quantity) * PurchaseOrderLine.unit_price),
+            else_=0,
+        )), 0))
+        .select_from(PurchaseOrderLine)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+        .where(*po_scope, PurchaseOrder.status.notin_(open_states))
+    ) or Decimal("0")
+    # Used only for the quote-award links. Do not lose award status when
+    # purchase orders are paged out of the visible table.
+    award_rows = db.execute(
+        select(PurchaseOrder.quotation_id, PurchaseOrder.id, PurchaseOrder.purchase_order_number)
+        .where(*po_scope, PurchaseOrder.quotation_id.is_not(None))
+    ).all()
+    po_by_quote = {
+        row.quotation_id: {"id": row.id, "number": row.purchase_order_number}
+        for row in award_rows
+    }
+    if po_search and po_search.strip():
+        term = f"%{po_search.strip()}%"
+        supplier_ids = select(Supplier.id).where(
+            or_(Supplier.name.ilike(term), Supplier.code.ilike(term))
+        )
+        po_stmt = po_stmt.where(or_(
+            PurchaseOrder.purchase_order_number.ilike(term),
+            PurchaseOrder.supplier_id.in_(supplier_ids),
+        ))
+    matching_pos = db.scalar(select(func.count()).select_from(
+        po_stmt.with_only_columns(PurchaseOrder.id).order_by(None).subquery()
+    )) or 0
+    po_stmt = po_stmt.options(selectinload(PurchaseOrder.lines)).order_by(
+        PurchaseOrder.created_at.desc(), PurchaseOrder.id.desc()
+    )
+    if po_page is not None:
+        po_stmt = po_stmt.offset((po_page - 1) * po_page_size).limit(po_page_size)
     purchase_orders = db.scalars(po_stmt).unique().all()
     requisition_stmt = (
         select(PurchaseRequisition)
@@ -92,14 +141,20 @@ def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(requ
         ).where(PurchaseRequisition.location_id.in_(allowed))
     requisitions = db.scalars(requisition_stmt).unique().all()
     quotes = db.scalars(quote_stmt).unique().all()
-    items = {row.id: row for row in db.scalars(select(Item)).all()}
+    item_ids = {
+        line.item_id for req in requisitions for line in req.lines
+    } | {
+        line.item_id for quote in quotes for line in quote.lines
+    }
+    items = {
+        row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()
+    } if item_ids else {}
     suppliers = {row.id: row for row in db.scalars(select(Supplier)).all()}
     locations = {row.id: row for row in db.scalars(select(Location)).all()}
 
     quotes_by_req: dict[str, list[SupplierQuotation]] = {}
     for quote in quotes:
         quotes_by_req.setdefault(quote.requisition_id, []).append(quote)
-    po_by_quote = {po.quotation_id: po for po in purchase_orders if po.quotation_id}
 
     requisition_rows = []
     for req in requisitions:
@@ -142,8 +197,8 @@ def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(requ
                     "status": "awarded" if quote.id in po_by_quote else quote.status,
                     "total": str(quotation_total(quote)),
                     "variance_from_lowest": str(quotation_total(quote) - lowest) if lowest is not None else "0",
-                    "purchase_order_id": po_by_quote[quote.id].id if quote.id in po_by_quote else None,
-                    "purchase_order_number": po_by_quote[quote.id].purchase_order_number if quote.id in po_by_quote else None,
+                    "purchase_order_id": po_by_quote[quote.id]["id"] if quote.id in po_by_quote else None,
+                    "purchase_order_number": po_by_quote[quote.id]["number"] if quote.id in po_by_quote else None,
                     "lines": [
                         {
                             "item_id": line.item_id,
@@ -193,11 +248,17 @@ def quotation_workspace(db: Session = Depends(get_db), user: User = Depends(requ
             "approved_requisitions": len(requisition_rows),
             "requisitions_without_quotes": sum(1 for row in requisition_rows if row["quotation_count"] == 0),
             "quotations": len(quotes),
-            "open_purchase_orders": sum(1 for po in purchase_orders if po.status not in {"received", "closed", "cancelled"}),
-            "open_commitment_value": str(sum((po_outstanding(po) for po in purchase_orders if po.status not in {"received", "closed", "cancelled"}), Decimal("0"))),
+            "open_purchase_orders": open_purchase_orders,
+            "open_commitment_value": str(open_commitment_value),
         },
         "requisitions": requisition_rows,
         "purchase_orders": po_rows,
+        "po_pagination": {
+            "page": po_page or 1, "page_size": po_page_size if po_page is not None else len(po_rows),
+            "total": matching_pos if po_page is not None else all_po_count,
+            "has_previous": po_page is not None and po_page > 1,
+            "has_next": po_page is not None and po_page * po_page_size < matching_pos,
+        },
     }
 
 

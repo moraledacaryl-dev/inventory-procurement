@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -221,6 +221,8 @@ def receiving_workspace(
     receipts_page: int = Query(default=1, ge=1),
     returns_page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
+    po_search: str | None = Query(default=None, max_length=120),
+    po_limit: int | None = Query(default=None, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("receiving.read")),
 ):
@@ -231,20 +233,46 @@ def receiving_workspace(
     orders may still have accepted stock eligible for a supplier return.
     """
     allowed = visible_location_ids(db, user)
-    po_stmt = (
-        select(PurchaseOrder)
-        .where(PurchaseOrder.status.in_(["approved", "partially_received", "received"]))
-        .options(selectinload(PurchaseOrder.lines))
-        .order_by(PurchaseOrder.created_at.desc(), PurchaseOrder.id.desc())
-    )
+    # Bound the selector for new clients; the legacy default remains full
+    # while existing API clients migrate to the searchable, bounded form.
+    po_statuses = ["approved", "partially_received", "received"]
+    po_stmt = select(PurchaseOrder).where(PurchaseOrder.status.in_(po_statuses))
     receipt_filter = []
     return_filter = []
+    po_scope = []
     if allowed is not None:
-        po_stmt = po_stmt.where(PurchaseOrder.delivery_location_id.in_(allowed))
-        permitted_pos = select(PurchaseOrder.id).where(PurchaseOrder.delivery_location_id.in_(allowed))
+        po_scope.append(PurchaseOrder.delivery_location_id.in_(allowed))
+        po_stmt = po_stmt.where(*po_scope)
+        permitted_pos = select(PurchaseOrder.id).where(*po_scope)
         receipt_filter.append(GoodsReceipt.purchase_order_id.in_(permitted_pos))
         return_filter.append(PurchaseReturn.purchase_order_id.in_(permitted_pos))
-
+    receivable_orders_count = db.scalar(
+        select(func.count(PurchaseOrder.id)).where(
+            PurchaseOrder.status.in_(["approved", "partially_received"]), *po_scope
+        )
+    ) or 0
+    partial_orders_count = db.scalar(
+        select(func.count(PurchaseOrder.id)).where(
+            PurchaseOrder.status == "partially_received", *po_scope
+        )
+    ) or 0
+    if po_search and po_search.strip():
+        term = f"%{po_search.strip()}%"
+        supplier_ids = select(Supplier.id).where(
+            or_(Supplier.name.ilike(term), Supplier.code.ilike(term))
+        )
+        po_stmt = po_stmt.where(or_(
+            PurchaseOrder.purchase_order_number.ilike(term),
+            PurchaseOrder.supplier_id.in_(supplier_ids),
+        ))
+    po_total = db.scalar(select(func.count()).select_from(
+        po_stmt.with_only_columns(PurchaseOrder.id).order_by(None).subquery()
+    )) or 0
+    po_stmt = po_stmt.options(selectinload(PurchaseOrder.lines)).order_by(
+        PurchaseOrder.created_at.desc(), PurchaseOrder.id.desc()
+    )
+    if po_limit is not None:
+        po_stmt = po_stmt.limit(po_limit)
     pos = db.scalars(po_stmt).unique().all()
     receipt_count = db.scalar(select(func.count(GoodsReceipt.id)).where(*receipt_filter)) or 0
     return_count = db.scalar(select(func.count(PurchaseReturn.id)).where(*return_filter)) or 0
@@ -366,8 +394,8 @@ def receiving_workspace(
     ]
     return {
         "summary": {
-            "receivable_orders": sum(1 for po in pos if po.status in {"approved", "partially_received"}),
-            "partial_orders": sum(1 for po in pos if po.status == "partially_received"),
+            "receivable_orders": receivable_orders_count,
+            "partial_orders": partial_orders_count,
             "receipts": receipt_count,
             "discrepant_receipts": discrepant_count,
             "accepted_value": str(Decimal(all_accepted_value)),
@@ -375,6 +403,8 @@ def receiving_workspace(
             "returns": return_count,
         },
         "pagination": {
+            "purchase_orders": {"returned": len(pos), "total": po_total,
+                                "has_more": po_limit is not None and po_total > len(pos)},
             "receipts": {
                 "page": receipts_page, "page_size": page_size, "total": receipt_count,
                 "has_previous": receipts_page > 1, "has_next": receipts_page * page_size < receipt_count,

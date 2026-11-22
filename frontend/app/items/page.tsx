@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { DataTable } from "../../components/DataTable";
+import { ServerPager } from "../../components/ServerPager";
 import { FeedbackBanner, FeedbackTone } from "../../components/FeedbackBanner";
 import { FormField, FormSection } from "../../components/FormField";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -18,6 +19,7 @@ type Ref = { id: string; name: string; code?: string };
 type Dimension = { id: string; dimension_type: string; code: string; name: string; behavior_key?: string | null; parent_id?: string | null; workspace_id?: string | null; is_active: boolean };
 type Bootstrap = { dimensions: Record<string, Dimension[]> };
 type Item = { id: string; sku: string; name: string; minimum_stock: string; standard_cost: string; is_active: boolean; track_stock: boolean; allow_negative_stock: boolean; primary_workspace_id?: string | null; item_type_id?: string | null; record_class_id?: string | null };
+type CataloguePage = { items: Item[]; summary: { catalogue_items:number;active_items:number;tracked_items:number;unclassified_items:number }; pagination: {page:number;page_size:number;total:number;has_previous:boolean;has_next:boolean} };
 type ItemDraft = { sku: string; name: string; category: string; unit: string; workspace: string; itemType: string; department: string; costCenter: string; defaultLocation: string; minimum: string; cost: string };
 type Feedback = { tone: FeedbackTone; title: string; message?: string } | null;
 type FieldErrors = Partial<Record<keyof ItemDraft, string>>;
@@ -25,6 +27,12 @@ const EMPTY_DRAFT: ItemDraft = { sku: "", name: "", category: "", unit: "", work
 
 export default function Page() {
   const [items, setItems] = useState<Item[]>([]);
+  const [summary, setSummary] = useState<CataloguePage["summary"] | null>(null);
+  const [pagination, setPagination] = useState<CataloguePage["pagination"] | null>(null);
+  const [page, setPage] = useState(1);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [search, setSearch] = useState("");
+  const latestLoad = useRef(0);
   const [categories, setCategories] = useState<Ref[]>([]);
   const [units, setUnits] = useState<Ref[]>([]);
   const [locations, setLocations] = useState<Ref[]>([]);
@@ -49,18 +57,26 @@ export default function Page() {
   }, []);
 
   const load = useCallback(async () => {
-    setLoading(true); setLoadError("");
+    const request = ++latestLoad.current;
+    setLoading(true);setLoadError("");
     try {
-      const suffix = scope !== ALL_OPERATIONS ? `&workspace_id=${encodeURIComponent(scope)}` : "";
-      const itemRequest = showInactive
-        ? Promise.all([api<Item[]>(`/items?active=true${suffix}`), api<Item[]>(`/items?active=false${suffix}`)]).then(([active, inactive]) => [...active, ...inactive].sort((a, b) => a.sku.localeCompare(b.sku)))
-        : api<Item[]>(`/items?active=true${suffix}`);
-      const [itemRecords, categoryRecords, unitRecords, locationRecords, structure] = await Promise.all([itemRequest, api<Ref[]>("/categories"), api<Ref[]>("/units"), api<Ref[]>("/locations"), api<Bootstrap>("/classification/bootstrap")]);
-      setItems(itemRecords); setCategories(categoryRecords); setUnits(unitRecords); setLocations(locationRecords); setDimensions(structure.dimensions);
-      if (!draft.workspace && scope !== ALL_OPERATIONS) setDraft(current => ({ ...current, workspace: scope }));
-    } catch (error) { setLoadError((error as Error).message); }
-    finally { setLoading(false); }
-  }, [showInactive, scope, draft.workspace, setDraft]);
+      const params = new URLSearchParams({
+        page: String(page), page_size: "25", include_inactive: String(showInactive),
+      });
+      if(scope!==ALL_OPERATIONS)params.set("workspace_id",scope);
+      if(search)params.set("q",search);
+      const [catalogue, categoryRecords, unitRecords, locationRecords, structure] = await Promise.all([
+        api<CataloguePage>(`/items/catalogue-workspace?${params}`),
+        api<Ref[]>("/categories"), api<Ref[]>("/units"), api<Ref[]>("/locations"),
+        api<Bootstrap>("/classification/bootstrap")
+      ]);
+      if(request!==latestLoad.current)return;
+      setItems(catalogue.items);setSummary(catalogue.summary);setPagination(catalogue.pagination);
+      setCategories(categoryRecords);setUnits(unitRecords);setLocations(locationRecords);setDimensions(structure.dimensions);
+      if(!draft.workspace && scope!==ALL_OPERATIONS)setDraft(current=>({...current,workspace:scope}));
+    }catch(error){if(request===latestLoad.current)setLoadError((error as Error).message)}
+    finally{if(request===latestLoad.current)setLoading(false)}
+  },[showInactive,scope,search,page,draft.workspace,setDraft]);
   useEffect(() => { void load(); }, [load]);
 
   const workspaces = (dimensions.workspace || []).filter(row => row.is_active);
@@ -102,16 +118,22 @@ export default function Page() {
         default_location_id: draft.defaultLocation || null,
         minimum_stock: Number(draft.minimum || 0), standard_cost: Number(draft.cost || 0),
       }) });
-      const createdName = draft.name.trim(); clearDraft(); setFieldErrors({}); setEditorOpen(false); setFeedback({ tone: "success", title: "Item created", message: `${createdName} is classified and ready for its workspace workflows.` }); await load();
+      const createdName = draft.name.trim(); clearDraft(); setFieldErrors({}); setEditorOpen(false); setFeedback({ tone: "success", title: "Item created", message: `${createdName} is classified and ready for its workspace workflows.` });setPage(1);setSearch("");setSearchDraft("");await load();
     } catch (error) { setFeedback({ tone: "error", title: "Item could not be saved", message: (error as Error).message }); }
     finally { setSaving(false); }
   }
   function discardDraft() { clearDraft(); setFieldErrors({}); setFeedback({ tone: "info", title: "Draft cleared", message: "The unsaved item details were removed." }); setConfirmDiscard(false); setEditorOpen(false); }
 
   return <AppShell title="Inventory" description="Your catalogue, costs, and stock policies.">
-    <section className="catalogue-summary" aria-label="Catalogue summary"><div><span>Catalogue items</span><strong>{loading ? "—" : items.length}</strong></div><div><span>Active</span><strong>{loading ? "—" : items.filter(item=>item.is_active).length}</strong></div><div><span>Stock tracked</span><strong>{loading ? "—" : items.filter(item=>item.track_stock).length}</strong></div><div><span>Needs classification</span><strong>{loading ? "—" : items.filter(item=>!item.primary_workspace_id || !item.item_type_id).length}</strong></div></section>
-    {feedback ? <FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message} /> : null}    <section className="card"><div className="topline"><div><h2>Item catalogue</h2><p>{scope === ALL_OPERATIONS ? "Showing all operations." : `Scoped to ${names[scope] || "the selected workspace"}.`}</p></div><div className="menu-list-actions"><button type="button" className="primary compact" onClick={() => setEditorOpen(true)}>+ Add item</button><label className="catalogue-toggle"><input type="checkbox" checked={showInactive} onChange={event => setShowInactive(event.target.checked)} /><span>Include inactive</span></label></div></div>
-      <DataTable columns={["SKU", "Name", "Workspace", "Item type", "Minimum", "Standard cost", "Status"]} rows={items.map(item => [<Link key={item.id} className="catalogue-link" href={`/items/${item.id}`}>{item.sku}</Link>, <Link key={`${item.id}-name`} className="catalogue-link" href={`/items/${item.id}`}>{item.name}</Link>, item.primary_workspace_id ? names[item.primary_workspace_id] || "Classified" : <span key={`${item.id}-workspace`} className="badge warning">Unclassified</span>, item.item_type_id ? names[item.item_type_id] || "—" : "—", formatQuantity(item.minimum_stock), formatMoney(item.standard_cost), <StatusBadge key={`${item.id}-status`} status={item.is_active ? "active" : "inactive"} />])} rowIds={items.map(item => item.id)} loading={loading} error={loadError} onRetry={() => void load()} searchPlaceholder="Search items…" exportFileName="hidden-oasis-items" caption="Hidden Oasis item master" emptyTitle="No items found" emptyMessage={showInactive ? "No catalogue records are available in this workspace." : "Create the first item, change workspace, or include inactive records."} />
+    <section className="catalogue-summary" aria-label="Catalogue summary"><div><span>Catalogue items</span><strong>{loading ? "—" : summary?.catalogue_items ?? 0}</strong></div><div><span>Active</span><strong>{loading ? "—" : summary?.active_items ?? 0}</strong></div><div><span>Stock tracked</span><strong>{loading ? "—" : summary?.tracked_items ?? 0}</strong></div><div><span>Needs classification</span><strong>{loading ? "—" : summary?.unclassified_items ?? 0}</strong></div></section>
+    {feedback ? <FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message} /> : null}    <section className="card"><div className="topline"><div><h2>Item catalogue</h2><p>{scope === ALL_OPERATIONS ? "Showing all operations." : `Scoped to ${names[scope] || "the selected workspace"}.`}</p></div><div className="menu-list-actions"><button type="button" className="primary compact" onClick={() => setEditorOpen(true)}>+ Add item</button><label className="catalogue-toggle"><input type="checkbox" checked={showInactive} onChange={event => { setShowInactive(event.target.checked);setPage(1); }} /><span>Include inactive</span></label></div></div>
+      <form className="count-search-form" role="search" onSubmit={event=>{event.preventDefault();setPage(1);setSearch(searchDraft.trim())}}>
+        <label><span>Find item by SKU or name</span><input aria-label="Search items by name or SKU" value={searchDraft} onChange={event=>setSearchDraft(event.target.value)} maxLength={100} placeholder="Item name or code"/></label>
+        <button className="secondary" type="submit">Search</button>
+        {search?<button className="text-button" type="button" onClick={()=>{setSearchDraft("");setSearch("");setPage(1)}}>Clear search</button>:null}
+      </form>
+      <DataTable columns={["SKU", "Name", "Workspace", "Item type", "Minimum", "Standard cost", "Status"]} rows={items.map(item => [<Link key={item.id} className="catalogue-link" href={`/items/${item.id}`}>{item.sku}</Link>, <Link key={`${item.id}-name`} className="catalogue-link" href={`/items/${item.id}`}>{item.name}</Link>, item.primary_workspace_id ? names[item.primary_workspace_id] || "Classified" : <span key={`${item.id}-workspace`} className="badge warning">Unclassified</span>, item.item_type_id ? names[item.item_type_id] || "—" : "—", formatQuantity(item.minimum_stock), formatMoney(item.standard_cost), <StatusBadge key={`${item.id}-status`} status={item.is_active ? "active" : "inactive"} />])} rowIds={items.map(item => item.id)} loading={loading} error={loadError} onRetry={() => void load()} searchable={false} sortable={false} paginated={false} exportFileName="hidden-oasis-items-current-page" caption="Hidden Oasis item master" emptyTitle="No items found" emptyMessage={showInactive ? "No catalogue records are available in this workspace." : "Create the first item, change workspace, or include inactive records."} />
+      <ServerPager pagination={pagination} name="item" previousLabel="Previous items" nextLabel="Next items" busy={loading} note="CSV exports this page only." onPrevious={()=>setPage(p=>Math.max(1,p-1))} onNext={()=>setPage(p=>p+1)}/>
     </section>
     {editorOpen ? <section className="card section-gap"><div className="topline"><div><h2>Create item</h2><p>Set up the item’s identity and stock defaults.</p></div>{restored && isDirty ? <span className="badge warning">Draft saved</span> : null}</div>
       <form onSubmit={submit} noValidate>

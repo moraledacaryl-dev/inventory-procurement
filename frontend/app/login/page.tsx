@@ -46,7 +46,9 @@ export default function Login() {
         return;
       }
       const params = new URLSearchParams(window.location.search);
-      router.replace(safeNextPath(params.get("next")));
+      const next=safeNextPath(params.get("next"));
+      // Counters start at the count worksheet, not the stock dashboard.
+      router.replace(body.user?.role==="counter"&&next==="/dashboard"?"/counts":next);
       router.refresh();
     } catch {
       setError("The system could not be reached. Check your connection and try again.");

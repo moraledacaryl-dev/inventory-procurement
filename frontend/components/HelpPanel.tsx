@@ -23,12 +23,12 @@ export function HelpPanel() {
 
   useEffect(() => {
     if (!open) return;
+    closeRef.current?.focus();
     const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false); };
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpen(false); triggerRef.current?.focus(); } };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
-    closeRef.current?.focus();
   }, [open]);
 
   return (

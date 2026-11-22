@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_permission
+from app.core.roles import has_permission
 from app.db.session import get_db
 from app.models.inventory import CountLine, CountSession, Item, Location, StockBalance
 from app.models.user import User
@@ -58,7 +59,7 @@ def live_balances(db: Session, location_id: str) -> dict[str, Decimal]:
     }
 
 
-def serialize_session(db: Session, session: CountSession) -> dict:
+def serialize_session(db: Session, session: CountSession, viewer: User) -> dict:
     location = db.get(Location, session.location_id)
     item_ids = {line.item_id for line in session.lines}
     items = {row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()} if item_ids else {}
@@ -67,7 +68,12 @@ def serialize_session(db: Session, session: CountSession) -> dict:
     variance_lines = 0
     absolute_variance = Decimal("0")
     value_variance = Decimal("0")
-    hide_blind_values = session.blind_count and session.status in {"open", "pending_approval"}
+    # Always hide blind results while a count is open. During approval, only
+    # an explicitly authorized approver receives the snapshot and variances.
+    hide_blind_values = session.blind_count and (
+        session.status == "open"
+        or (session.status == "pending_approval" and not has_permission(viewer.role, "counts.approve"))
+    )
     lines = []
     for line in sorted(session.lines, key=lambda row: items.get(row.item_id).sku if items.get(row.item_id) else row.item_id):
         item = items.get(line.item_id)
@@ -144,13 +150,90 @@ def finalize_count(db: Session, session: CountSession, user: User):
 
 
 @router.get("/workspace")
-def count_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):
+def count_workspace(
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("counts.read")),
+):
+    """Paged count summaries for the new staff UI, legacy list if page omitted.
+
+    The paged variant avoids reading current stock for every historical count
+    and does not disclose hidden blind-count values to counter/viewer roles.
+    """
     allowed = visible_location_ids(db, user)
-    stmt = select(CountSession).options(selectinload(CountSession.lines))
+    stmt = select(CountSession)
     if allowed is not None:
         stmt = stmt.where(CountSession.location_id.in_(allowed))
-    sessions = db.scalars(stmt.order_by(CountSession.created_at.desc())).unique().all()
-    return [serialize_session(db, session) for session in sessions]
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        stmt = stmt.join(Location, Location.id == CountSession.location_id).where(
+            or_(CountSession.count_number.ilike(term), Location.name.ilike(term), Location.code.ilike(term))
+        )
+    if page is None:
+        sessions = db.scalars(stmt.options(selectinload(CountSession.lines)).order_by(CountSession.created_at.desc())).unique().all()
+        return [serialize_session(db, session, user) for session in sessions]
+
+    total = db.scalar(
+        select(func.count()).select_from(
+            stmt.with_only_columns(CountSession.id).order_by(None).subquery()
+        )
+    ) or 0
+    sessions = db.scalars(
+        stmt.options(selectinload(CountSession.lines))
+        .order_by(CountSession.created_at.desc(), CountSession.id.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    ).unique().all()
+    loc_ids = {session.location_id for session in sessions}
+    locations = {row.id: row for row in db.scalars(select(Location).where(Location.id.in_(loc_ids))).all()} if loc_ids else {}
+    rows = []
+    for session in sessions:
+        lines = session.lines
+        hide = session.blind_count and (
+            session.status == "open"
+            or (session.status == "pending_approval" and not has_permission(user.role, "counts.approve"))
+        )
+        loc = locations.get(session.location_id)
+        rows.append({
+            "id": session.id,
+            "count_number": session.count_number,
+            "location_code": loc.code if loc else session.location_id,
+            "location_name": loc.name if loc else "Unknown location",
+            "status": session.status,
+            "progress": {
+                "counted_lines": sum(line.counted_quantity is not None for line in lines),
+                "total_lines": len(lines),
+                "variance_lines": None if hide else sum(
+                    line.counted_quantity is not None
+                    and Decimal(line.counted_quantity) != Decimal(line.system_quantity)
+                    for line in lines
+                ),
+            },
+        })
+    return {
+        "rows": rows,
+        "pagination": {
+            "page": page, "page_size": page_size, "total": total,
+            "has_previous": page > 1, "has_next": page * page_size < total,
+        },
+    }
+
+@router.get("/locations")
+def count_location_choices(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("counts.read")),
+):
+    """Only names/codes for count setup; never stock balances or valuation."""
+    allowed = visible_location_ids(db, user)
+    stmt = select(Location).where(Location.is_active.is_(True))
+    if allowed is not None:
+        stmt = stmt.where(Location.id.in_(allowed))
+    locations = db.scalars(stmt.order_by(Location.code)).all()
+    return [
+        {"id": row.id, "code": row.code, "name": row.name, "is_active": row.is_active}
+        for row in locations
+    ]
 
 
 @router.get("/{count_id}/detail")
@@ -159,7 +242,7 @@ def count_detail(count_id: str, db: Session = Depends(get_db), user: User = Depe
     if not session:
         fail(404, "Count session not found")
     require_scoped_locations(db, user, {session.location_id})
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)
 
 
 @router.put("/{count_id}/entries")
@@ -180,7 +263,7 @@ def save_count_entries(count_id: str, payload: CountEntriesUpdate, db: Session =
         row.note = entry.note.strip() if entry.note else None
     add_audit(db, actor_user_id=user.id, action="count.entries_saved", entity_type="count_session", entity_id=session.id, details={"saved_lines": len(payload.lines)})
     db.commit()
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)
 
 
 @router.post("/{count_id}/submit")
@@ -204,7 +287,7 @@ def submit_count(count_id: str, db: Session = Depends(get_db), user: User = Depe
         else:
             finalize_count(db, session, user)
         db.commit()
-        return serialize_session(db, session)
+        return serialize_session(db, session, user)
     except (InventoryError, IntegrityError) as exc:
         db.rollback()
         fail(409, str(exc))
@@ -230,7 +313,7 @@ def request_recount(count_id: str, payload: RecountRequest, db: Session = Depend
     session.approved_at = None
     add_audit(db, actor_user_id=user.id, action="count.recount_requested", entity_type="count_session", entity_id=session.id, details={"item_ids": payload.item_ids, "reason": payload.reason})
     db.commit()
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)
 
 
 @router.post("/{count_id}/approve-guided")
@@ -249,7 +332,7 @@ def approve_guided_count(count_id: str, db: Session = Depends(get_db), user: Use
         finalize_count(db, session, user)
         add_audit(db, actor_user_id=user.id, action="count.approved", entity_type="count_session", entity_id=session.id)
         db.commit()
-        return serialize_session(db, session)
+        return serialize_session(db, session, user)
     except (InventoryError, IntegrityError) as exc:
         db.rollback()
         fail(409, str(exc))
@@ -266,4 +349,4 @@ def cancel_guided_count(count_id: str, db: Session = Depends(get_db), user: User
     session.status = "cancelled"
     add_audit(db, actor_user_id=user.id, action="count.cancelled", entity_type="count_session", entity_id=session.id)
     db.commit()
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)

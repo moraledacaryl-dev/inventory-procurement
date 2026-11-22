@@ -29,7 +29,7 @@ def test_quotation_workspace_and_award(client):
     workspace = client.get("/api/v1/procurement/quotation-workspace", headers=headers)
     assert workspace.status_code == 200
     payload = workspace.json()
-    assert set(payload) == {"summary", "requisitions", "purchase_orders"}
+    assert set(payload) == {"summary", "requisitions", "purchase_orders", "po_pagination"}
     assert "open_commitment_value" in payload["summary"]
 
 

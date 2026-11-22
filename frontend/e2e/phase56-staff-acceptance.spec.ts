@@ -19,7 +19,7 @@ async function signIn(page:import("@playwright/test").Page,email:string){
   await page.getByLabel("Email address").fill(email);
   await page.locator('input[name="password"]').fill(password);
   await page.getByRole("button",{name:"Sign in"}).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page).toHaveURL(email.includes("counter")?/\/counts$/:/\/dashboard$/);
 }
 
 for(const scenario of roles){

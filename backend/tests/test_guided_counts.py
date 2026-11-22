@@ -126,6 +126,26 @@ def test_blind_pending_approval_stays_hidden_and_counter_cannot_recount_or_cance
     assert line["variance_quantity"] is None
     assert line["live_drift_quantity"] is None
     assert detail.json()["progress"]["absolute_variance"] is None
+    counter_workspace = client.get("/api/v1/counts/workspace", headers=counter).json()
+    counter_row = next(row for row in counter_workspace if row["id"] == count_id)
+    assert counter_row["progress"]["variance_lines"] is None
+    assert counter_row["lines"][0]["live_quantity"] is None
+
+    # The independent owner/approver must see real quantities and variance
+    # before deciding whether to approve a stock adjustment.
+    approver_detail = client.get(f"/api/v1/counts/{count_id}/detail", headers=owner)
+    assert approver_detail.status_code == 200
+    reviewed = approver_detail.json()
+    assert reviewed["lines"][0]["snapshot_quantity"] == "5"
+    assert reviewed["lines"][0]["live_quantity"] == "5"
+    assert reviewed["lines"][0]["counted_quantity"] == "1"
+    assert reviewed["lines"][0]["variance_quantity"] == "-4"
+    assert reviewed["progress"]["variance_lines"] == 1
+    assert reviewed["progress"]["absolute_variance"] == "4"
+    assert reviewed["progress"]["estimated_value_variance"] == "-40"
+    approver_workspace = client.get("/api/v1/counts/workspace", headers=owner).json()
+    approver_row = next(row for row in approver_workspace if row["id"] == count_id)
+    assert approver_row["progress"]["variance_lines"] == 1
 
     recount = client.post(
         f"/api/v1/counts/{count_id}/recount",

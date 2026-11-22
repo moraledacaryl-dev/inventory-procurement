@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from app.db.session import SessionLocal
 from app.models.inventory_operations import StockReservation
-from test_inventory_operations import auth, setup
+from tests.test_inventory_operations import auth, setup
 
 
 def test_direct_issue_and_transfer_cannot_consume_reserved_stock(client):

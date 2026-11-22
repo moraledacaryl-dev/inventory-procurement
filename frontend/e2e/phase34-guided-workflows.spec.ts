@@ -44,7 +44,7 @@ test("stock modal keeps keyboard focus and restores the previous button",async({
   await signIn(page);
   await page.goto("/stock");
   await page.locator(".stock-guided-action > summary").click();
-  await expect(page.getByRole("heading",{name:"What happened to the stock?"})).toBeVisible();
+  await expect(page.getByRole("group",{name:"What happened to the stock?"})).toBeVisible();
   await page.locator('select[name="location"]').selectOption({index:1});
   await page.locator('select[name="item"]').selectOption({index:1});
   await page.locator('input[name="quantity"]').fill("1");

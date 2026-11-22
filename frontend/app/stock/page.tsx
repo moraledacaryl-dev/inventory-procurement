@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "../../components/AppShell";
 import { Can } from "../../components/SessionContext";
@@ -33,17 +33,19 @@ export default function Page(){
   const[posting,setPosting]=useState(false);
   const[feedback,setFeedback]=useState<{tone:"success"|"error"|"warning";title:string;message?:string}|null>(null);
   const[pending,setPending]=useState<PendingTransaction>(null);
+  const latestLoad=useRef(0);
 
   const load=useCallback(async()=>{
+    const request=++latestLoad.current;
     setLoading(true);
     try{
       const query=new URLSearchParams();if(locationFilter)query.set("location_id",locationFilter);if(itemFilter)query.set("item_id",itemFilter);
       const suffix=query.toString()?`?${query.toString()}`:"";
       const movementQuery=new URLSearchParams(query);movementQuery.set("limit","100");
       const[i,l,b,m]=await Promise.all([api<Item[]>("/items"),api<Location[]>("/locations"),api<Balance[]>(`/stock/balances${suffix}`),api<Movement[]>(`/stock/movements?${movementQuery.toString()}`)]);
-      setItems(i);setLocations(l.filter(row=>row.is_active));setBalances(b);setMoves(m);
-    }catch(error){setFeedback({tone:"error",title:"Stock data unavailable",message:(error as Error).message})}
-    finally{setLoading(false)}
+      if(request===latestLoad.current){setItems(i);setLocations(l.filter(row=>row.is_active));setBalances(b);setMoves(m);}
+    }catch(error){if(request===latestLoad.current)setFeedback({tone:"error",title:"Stock data unavailable",message:(error as Error).message})}
+    finally{if(request===latestLoad.current)setLoading(false)}
   },[itemFilter,locationFilter]);
   useEffect(()=>{void load()},[load]);
 

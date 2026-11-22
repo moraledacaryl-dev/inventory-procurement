@@ -56,7 +56,7 @@ jobs:
       - name: Verify backup client version
         run: |
           pg_dump --version
-          pg_dump --version | grep -E 'PostgreSQL\\) 16\\.'
+          pg_dump --version | grep -F "PostgreSQL) 16."
       - name: Install backend dependencies
         working-directory: backend
         run: pip install -q -r requirements.txt

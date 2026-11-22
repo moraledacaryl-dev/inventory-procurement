@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { Can } from "../../components/SessionContext";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { FeedbackBanner } from "../../components/FeedbackBanner";
 import { StatusBadge } from "../../components/StatusBadge";
 import { api } from "../../lib/api";
+import { stableDraftIdempotency, type DraftIdempotencyState } from "../../lib/draftIdempotency";
 import { formatDate, formatDateTime, formatMoney, formatQuantity } from "../../lib/formatters";
 
 type POLine={id:string;item_id:string;sku:string;item_name:string;ordered_quantity:string;received_quantity:string;returned_quantity:string;outstanding_quantity:string;returnable_quantity:string;unit_price:string};
@@ -33,6 +34,8 @@ export default function ReceivingPage(){
  const[busy,setBusy]=useState(false);
  const[feedback,setFeedback]=useState<{tone:"success"|"error"|"warning"|"info";title:string;message?:string}|null>(null);
  const[pending,setPending]=useState<"receive"|"return"|null>(null);
+ const receiptRequest=useRef<DraftIdempotencyState|null>(null);
+ const returnRequest=useRef<DraftIdempotencyState|null>(null);
 
  const load=useCallback(async()=>{setLoading(true);try{setData(await api<Workspace>("/receiving/workspace"))}catch(error){setFeedback({tone:"error",title:"Receiving workspace unavailable",message:(error as Error).message})}finally{setLoading(false)}},[]);
  useEffect(()=>{void load()},[load]);
@@ -43,11 +46,71 @@ export default function ReceivingPage(){
 
  const receiptPayload=useMemo(()=>receiveLines.filter(row=>Number(row.received)>0).map(row=>{const received=Number(row.received),rejected=Number(row.rejected||0);return {purchase_order_line_id:row.line_id,received_quantity:received,accepted_quantity:received-rejected,rejected_quantity:rejected,discrepancy_reason:rejected>0?row.reason||null:null,lot_number:row.lot_number||null,manufactured_date:row.manufactured_date||null,expiry_date:row.expiry_date||null}}),[receiveLines]);
  const returnPayload=useMemo(()=>returnLines.filter(row=>Number(row.quantity)>0).map(row=>({purchase_order_line_id:row.line_id,quantity:Number(row.quantity)})),[returnLines]);
- const receiptValid=Boolean(selectedPo&&deliveryReference.trim()&&receiptPayload.length&&receiptPayload.every(row=>row.accepted_quantity>=0&&(!row.rejected_quantity||row.discrepancy_reason)));
- const returnValid=Boolean(selectedReturnPo&&returnReason.trim()&&returnPayload.length);
+ const receiptValid=Boolean(
+   selectedPo && deliveryReference.trim() && receiptPayload.length &&
+   receiptPayload.every(line=>{
+     const original=selectedPo.lines.find(row=>row.id===line.purchase_order_line_id);
+     const originalInput=receiveLines.find(row=>row.line_id===line.purchase_order_line_id);
+     return Boolean(original && originalInput &&
+       Number.isFinite(line.received_quantity) && line.received_quantity>0 &&
+       line.received_quantity<=Number(original.outstanding_quantity) &&
+       Number.isFinite(line.rejected_quantity) && line.rejected_quantity>=0 &&
+       line.rejected_quantity<=line.received_quantity &&
+       (!line.rejected_quantity || Boolean(line.discrepancy_reason?.trim())) &&
+       (!originalInput.expiry_date || !originalInput.manufactured_date ||
+         originalInput.expiry_date>=originalInput.manufactured_date));
+   })
+ );
+ const returnValid=Boolean(selectedReturnPo && returnReason.trim() && returnPayload.length &&
+   returnPayload.every(line=>{
+     const original=selectedReturnPo.lines.find(row=>row.id===line.purchase_order_line_id);
+     return Boolean(original && Number.isFinite(line.quantity) && line.quantity>0 &&
+       line.quantity<=Number(original.returnable_quantity));
+   })
+ );
 
- async function postReceipt(){if(!selectedPo||!receiptValid)return;setBusy(true);try{const result=await api<Receipt>(`/receiving/purchase-orders/${selectedPo.id}`,{method:"POST",body:JSON.stringify({delivery_reference:deliveryReference.trim(),notes:receiptNotes||null,idempotency_key:crypto.randomUUID(),lines:receiptPayload})});setFeedback({tone:result.has_discrepancy?"warning":"success",title:"Goods receipt posted",message:result.has_discrepancy?`${result.goods_receipt_number} includes rejected quantities requiring follow-up.`:`${result.goods_receipt_number} posted accepted stock to ${result.delivery_location_code}.`});setPending(null);setSelectedPoId("");setDeliveryReference("");setReceiptNotes("");await load()}catch(error){setFeedback({tone:"error",title:"Goods receipt could not be posted",message:(error as Error).message});setPending(null)}finally{setBusy(false)}}
- async function postReturn(){if(!selectedReturnPo||!returnValid)return;setBusy(true);try{const result=await api<ReturnRow>(`/receiving/purchase-orders/${selectedReturnPo.id}/returns`,{method:"POST",body:JSON.stringify({reason:returnReason.trim(),supplier_reference:returnReference||null,notes:returnNotes||null,idempotency_key:crypto.randomUUID(),lines:returnPayload})});setFeedback({tone:"success",title:"Supplier return posted",message:`${result.return_number} removed the selected quantity from stock and sent the event to Accounting.`});setPending(null);setReturnPoId("");setReturnReason("");setReturnReference("");setReturnNotes("");await load()}catch(error){setFeedback({tone:"error",title:"Supplier return could not be posted",message:(error as Error).message});setPending(null)}finally{setBusy(false)}}
+ async function postReceipt(){
+   if(!selectedPo||!receiptValid||busy)return;
+   const payload={delivery_reference:deliveryReference.trim(),notes:receiptNotes||null,lines:receiptPayload};
+   // Keep the same key for a retry of the same document, even after a timeout.
+   const request=stableDraftIdempotency({kind:"receipt",po_id:selectedPo.id,...payload},receiptRequest.current);
+   receiptRequest.current=request;
+   setBusy(true);
+   try{
+     const result=await api<Receipt>(`/receiving/purchase-orders/${selectedPo.id}`,{
+       method:"POST",body:JSON.stringify({...payload,idempotency_key:request.key})
+     });
+     receiptRequest.current=null;
+     setFeedback({tone:result.has_discrepancy?"warning":"success",title:"Goods receipt posted",message:result.has_discrepancy?
+       `${result.goods_receipt_number} includes rejected quantities requiring follow-up.`:
+       `${result.goods_receipt_number} posted accepted stock to ${result.delivery_location_code}.`});
+     setPending(null);setSelectedPoId("");setDeliveryReference("");setReceiptNotes("");
+     await load();
+   }catch(error){
+     setFeedback({tone:"error",title:"Receipt not confirmed",message:
+       `${(error as Error).message} If the connection failed, check the receipt list or retry this confirmation. The same transaction key will be reused.`});
+   }finally{setBusy(false)}
+ }
+ async function postReturn(){
+   if(!selectedReturnPo||!returnValid||busy)return;
+   const payload={reason:returnReason.trim(),supplier_reference:returnReference||null,notes:returnNotes||null,lines:returnPayload};
+   const request=stableDraftIdempotency({kind:"supplier-return",po_id:selectedReturnPo.id,...payload},returnRequest.current);
+   returnRequest.current=request;
+   setBusy(true);
+   try{
+     const result=await api<ReturnRow>(`/receiving/purchase-orders/${selectedReturnPo.id}/returns`,{
+       method:"POST",body:JSON.stringify({...payload,idempotency_key:request.key})
+     });
+     returnRequest.current=null;
+     setFeedback({tone:"success",title:"Supplier return posted",
+       message:`${result.return_number} removed the selected quantity from stock and sent the event to Accounting.`});
+     setPending(null);setReturnPoId("");setReturnReason("");setReturnReference("");setReturnNotes("");
+     await load();
+   }catch(error){
+     setFeedback({tone:"error",title:"Return not confirmed",message:
+       `${(error as Error).message} If the connection failed, check the return list or retry this confirmation using the same transaction key.`});
+   }finally{setBusy(false)}
+ }
 
  return <AppShell title="Receiving" description="Deliveries, discrepancies, and supplier returns.">
   {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}

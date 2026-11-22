@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { formatDate, formatMoney, formatQuantity } from "../lib/formatters";
 import { Can } from "./SessionContext";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ServerPager } from "./ServerPager";
 import { FeedbackBanner } from "./FeedbackBanner";
 import { StatusBadge } from "./StatusBadge";
 
@@ -57,7 +58,7 @@ export function QuotationPurchaseOrderWorkspace({suppliers,locations,onChanged}:
     <button type="submit" className="secondary">Search</button>
     {poSearch?<button type="button" className="text-button" onClick={()=>{setPoSearchDraft("");setPoSearch("");setPoPage(1)}}>Clear search</button>:null}
   </form><div className="table-wrap"><table><thead><tr><th>PO</th><th>Supplier</th><th>Status</th><th>Delivery location</th><th>Expected</th><th>Total</th><th>Outstanding</th><th>Received</th></tr></thead><tbody>{data?.purchase_orders.length?data.purchase_orders.map(po=><tr key={po.id}><td><Link href={`/purchasing/orders/${po.id}`}>{po.purchase_order_number}</Link></td><td>{po.supplier_code} — {po.supplier_name}</td><td><StatusBadge status={po.status}/></td><td>{po.delivery_location_code}</td><td>{po.expected_delivery_date?formatDate(po.expected_delivery_date):"—"}</td><td>{formatMoney(po.total)}</td><td>{formatMoney(po.outstanding_value)}</td><td>{formatQuantity(po.received_percent,2)}%</td></tr>):<tr><td colSpan={8}>No purchase orders recorded.</td></tr>}</tbody></table></div>
-  <div className="count-server-pager" aria-label="Purchase order pages"><span role="status">{data?.po_pagination?`Page ${data.po_pagination.page} · ${data.po_pagination.total} matching order(s)`:""}</span><div><button type="button" className="secondary" disabled={!data?.po_pagination?.has_previous} onClick={()=>setPoPage(n=>Math.max(1,n-1))}>Previous orders</button><button type="button" className="secondary" disabled={!data?.po_pagination?.has_next} onClick={()=>setPoPage(n=>n+1)}>Next orders</button></div></div></section>
+  <ServerPager pagination={data?.po_pagination||null} name="order" previousLabel="Previous orders" nextLabel="Next orders" onPrevious={()=>setPoPage(n=>Math.max(1,n-1))} onNext={()=>setPoPage(n=>n+1)}/></section>
   <ConfirmDialog open={Boolean(award)} title="Award this quotation?" description={award?`${award.quote.quotation_number} from ${award.quote.supplier_name} for ${formatMoney(award.quote.total)} will create a draft purchase order.`:undefined} confirmLabel="Award and create draft PO" busy={busy} onConfirm={()=>void awardQuote()} onCancel={()=>setAward(null)}/>
   {award?<div className="award-options"><label><span>Delivery location</span><select value={award.delivery_location_id} onChange={event=>setAward({...award,delivery_location_id:event.target.value})}>{locations.map(row=><option key={row.id} value={row.id}>{row.code} — {row.name}</option>)}</select></label><label><span>Expected delivery</span><input type="date" value={award.expected_delivery_date} onChange={event=>setAward({...award,expected_delivery_date:event.target.value})}/></label></div>:null}
  </div>;

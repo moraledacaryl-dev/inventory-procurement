@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.user import User
@@ -142,13 +144,13 @@ def test_blind_pending_approval_stays_hidden_and_counter_cannot_recount_or_cance
     approver_detail = client.get(f"/api/v1/counts/{count_id}/detail", headers=owner)
     assert approver_detail.status_code == 200
     reviewed = approver_detail.json()
-    assert reviewed["lines"][0]["snapshot_quantity"] == "5"
-    assert reviewed["lines"][0]["live_quantity"] == "5"
-    assert reviewed["lines"][0]["counted_quantity"] == "1"
-    assert reviewed["lines"][0]["variance_quantity"] == "-4"
+    assert Decimal(reviewed["lines"][0]["snapshot_quantity"]) == Decimal("5")
+    assert Decimal(reviewed["lines"][0]["live_quantity"]) == Decimal("5")
+    assert Decimal(reviewed["lines"][0]["counted_quantity"]) == Decimal("1")
+    assert Decimal(reviewed["lines"][0]["variance_quantity"]) == Decimal("-4")
     assert reviewed["progress"]["variance_lines"] == 1
-    assert reviewed["progress"]["absolute_variance"] == "4"
-    assert reviewed["progress"]["estimated_value_variance"] == "-40"
+    assert Decimal(reviewed["progress"]["absolute_variance"]) == Decimal("4")
+    assert Decimal(reviewed["progress"]["estimated_value_variance"]) == Decimal("-40")
     approver_workspace = client.get("/api/v1/counts/workspace", headers=owner).json()
     approver_row = next(row for row in approver_workspace if row["id"] == count_id)
     assert approver_row["progress"]["variance_lines"] == 1

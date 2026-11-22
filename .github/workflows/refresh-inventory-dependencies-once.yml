@@ -38,4 +38,8 @@ jobs:
           git add frontend/package.json frontend/package-lock.json
           git diff --cached --quiet && { echo 'No dependency updates were made'; exit 1; }
           git commit -m "security: update patched Next.js and resolve npm audit advisories"
+          # Other code fixes may have landed while npm resolved dependencies.
+          # Rebase only this lockfile commit; never force-push or discard work.
+          git fetch origin "refs/heads/$GITHUB_REF_NAME:refs/remotes/origin/$GITHUB_REF_NAME"
+          git rebase "refs/remotes/origin/$GITHUB_REF_NAME"
           git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"

@@ -29,20 +29,6 @@ export default function CountsPage(){
 
   async function create(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget;const data=new FormData(form);setSaving(true);setFeedback(null);try{const count=await api<Count>("/counts",{method:"POST",body:JSON.stringify({location_id:data.get("location_id"),notes:data.get("notes")||null,blind_count:data.get("blind_count")==="on",approval_threshold:Number(data.get("approval_threshold")||0)})});form.reset();router.push(`/counts/${count.id}`)}catch(exception){setFeedback({tone:"error",title:"Count could not be created",message:(exception as Error).message})}finally{setSaving(false)}}
 
-  const rows=counts.map(count=>[
-    <Link className="catalogue-link" href={`/counts/${count.id}`} key={count.id}>{count.count_number}</Link>,
-    `${count.location_code} — ${count.location_name}`,
-    <StatusBadge status={count.status} key={`${count.id}-status`}/>,
-    count.blind_count?"Blind":"Visible",
-    `${count.progress.counted_lines}/${count.progress.total_lines}`,
-    `${count.progress.completion_percent}%`,
-    count.progress.variance_lines,
-    formatQuantity(count.progress.absolute_variance),
-    formatMoney(count.progress.estimated_value_variance),
-    count.progress.live_drift_lines,
-    formatDateTime(count.created_at),
-    count.posted_document_id?<Link className="catalogue-link" href={`/stock/documents/${count.posted_document_id}`} key={`${count.id}-doc`}>Open document</Link>:<Link className="catalogue-link" href={`/counts/${count.id}`} key={`${count.id}-action`}>{count.status==="open"?"Continue":count.status==="pending_approval"?"Review":"Open"}</Link>,
-  ]);
 
   return <AppShell title="Counts" description="Count what you can see on the shelf, then save and send it for review.">
     <Can permission="counts.create"><details className="card workflow-disclosure"><summary><div className="topline"><div><h2>Start a new count</h2><p>Pick the storage area you will count. You will enter item quantities on the next screen.</p></div></div><span className="disclosure-mark" aria-hidden="true">+</span></summary><div className="workflow-disclosure-body"><form onSubmit={create}><FormSection title="Where will you count?"><FormField label="Location" name="count-location" required><select name="location_id" required defaultValue=""><option value="">Select location</option>{locations.map(row=><option key={row.id} value={row.id}>{row.code} — {row.name}</option>)}</select></FormField><FormField label="Review limit (for managers)" name="count-threshold" required hint="Set how much difference an authorized approver may accept automatically. Leave 0 unless your supervisor tells you otherwise. Staff counts with differences can still require approval."><input name="approval_threshold" type="number" min="0" step="0.0001" defaultValue="0"/></FormField><FormField label="Notes" name="count-notes" optional><textarea name="notes"/></FormField><label className="check-control"><input type="checkbox" name="blind_count" defaultChecked/><span><strong>Count without seeing expected stock</strong><small>Recommended: the number already saved in the system stays hidden until review.</small></span></label></FormSection><div className="form-actions"><button className="primary" disabled={saving}>{saving?"Starting…":"Start counting items"}</button></div></form>{feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}</div></details></Can>

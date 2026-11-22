@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -150,14 +150,74 @@ def finalize_count(db: Session, session: CountSession, user: User):
 
 
 @router.get("/workspace")
-def count_workspace(db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):
+def count_workspace(
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("counts.read")),
+):
+    """Paged count summaries for the new staff UI, legacy list if page omitted.
+
+    The paged variant avoids reading current stock for every historical count
+    and does not disclose hidden blind-count values to counter/viewer roles.
+    """
     allowed = visible_location_ids(db, user)
-    stmt = select(CountSession).options(selectinload(CountSession.lines))
+    stmt = select(CountSession)
     if allowed is not None:
         stmt = stmt.where(CountSession.location_id.in_(allowed))
-    sessions = db.scalars(stmt.order_by(CountSession.created_at.desc())).unique().all()
-    return [serialize_session(db, session, user) for session in sessions]
+    if q and q.strip():
+        term = f"%{q.strip()}%"
+        stmt = stmt.join(Location, Location.id == CountSession.location_id).where(
+            or_(CountSession.count_number.ilike(term), Location.name.ilike(term), Location.code.ilike(term))
+        )
+    if page is None:
+        sessions = db.scalars(stmt.options(selectinload(CountSession.lines)).order_by(CountSession.created_at.desc())).unique().all()
+        return [serialize_session(db, session, user) for session in sessions]
 
+    total = db.scalar(
+        select(func.count()).select_from(
+            stmt.with_only_columns(CountSession.id).order_by(None).subquery()
+        )
+    ) or 0
+    sessions = db.scalars(
+        stmt.options(selectinload(CountSession.lines))
+        .order_by(CountSession.created_at.desc(), CountSession.id.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    ).unique().all()
+    loc_ids = {session.location_id for session in sessions}
+    locations = {row.id: row for row in db.scalars(select(Location).where(Location.id.in_(loc_ids))).all()} if loc_ids else {}
+    rows = []
+    for session in sessions:
+        lines = session.lines
+        hide = session.blind_count and (
+            session.status == "open"
+            or (session.status == "pending_approval" and not has_permission(user.role, "counts.approve"))
+        )
+        loc = locations.get(session.location_id)
+        rows.append({
+            "id": session.id,
+            "count_number": session.count_number,
+            "location_code": loc.code if loc else session.location_id,
+            "location_name": loc.name if loc else "Unknown location",
+            "status": session.status,
+            "progress": {
+                "counted_lines": sum(line.counted_quantity is not None for line in lines),
+                "total_lines": len(lines),
+                "variance_lines": None if hide else sum(
+                    line.counted_quantity is not None
+                    and Decimal(line.counted_quantity) != Decimal(line.system_quantity)
+                    for line in lines
+                ),
+            },
+        })
+    return {
+        "rows": rows,
+        "pagination": {
+            "page": page, "page_size": page_size, "total": total,
+            "has_previous": page > 1, "has_next": page * page_size < total,
+        },
+    }
 
 @router.get("/{count_id}/detail")
 def count_detail(count_id: str, db: Session = Depends(get_db), user: User = Depends(require_permission("counts.read"))):

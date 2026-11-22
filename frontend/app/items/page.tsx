@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { AppShell } from "../../components/AppShell";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { DataTable } from "../../components/DataTable";
+import { ServerPager } from "../../components/ServerPager";
 import { FeedbackBanner, FeedbackTone } from "../../components/FeedbackBanner";
 import { FormField, FormSection } from "../../components/FormField";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -132,7 +133,7 @@ export default function Page() {
         {search?<button className="text-button" type="button" onClick={()=>{setSearchDraft("");setSearch("");setPage(1)}}>Clear search</button>:null}
       </form>
       <DataTable columns={["SKU", "Name", "Workspace", "Item type", "Minimum", "Standard cost", "Status"]} rows={items.map(item => [<Link key={item.id} className="catalogue-link" href={`/items/${item.id}`}>{item.sku}</Link>, <Link key={`${item.id}-name`} className="catalogue-link" href={`/items/${item.id}`}>{item.name}</Link>, item.primary_workspace_id ? names[item.primary_workspace_id] || "Classified" : <span key={`${item.id}-workspace`} className="badge warning">Unclassified</span>, item.item_type_id ? names[item.item_type_id] || "—" : "—", formatQuantity(item.minimum_stock), formatMoney(item.standard_cost), <StatusBadge key={`${item.id}-status`} status={item.is_active ? "active" : "inactive"} />])} rowIds={items.map(item => item.id)} loading={loading} error={loadError} onRetry={() => void load()} searchable={false} sortable={false} paginated={false} exportFileName="hidden-oasis-items-current-page" caption="Hidden Oasis item master" emptyTitle="No items found" emptyMessage={showInactive ? "No catalogue records are available in this workspace." : "Create the first item, change workspace, or include inactive records."} />
-      <div className="count-server-pager" aria-label="Item catalogue pages"><span role="status">{pagination?`Page ${pagination.page} · ${pagination.total} matching item(s). CSV exports this page only.`:""}</span><div><button type="button" className="secondary" disabled={loading||!pagination?.has_previous} onClick={()=>setPage(v=>Math.max(1,v-1))}>Previous items</button><button type="button" className="secondary" disabled={loading||!pagination?.has_next} onClick={()=>setPage(v=>v+1)}>Next items</button></div></div>
+      <ServerPager pagination={pagination} name="item" previousLabel="Previous items" nextLabel="Next items" busy={loading} note="CSV exports this page only." onPrevious={()=>setPage(p=>Math.max(1,p-1))} onNext={()=>setPage(p=>p+1)}/>
     </section>
     {editorOpen ? <section className="card section-gap"><div className="topline"><div><h2>Create item</h2><p>Set up the item’s identity and stock defaults.</p></div>{restored && isDirty ? <span className="badge warning">Draft saved</span> : null}</div>
       <form onSubmit={submit} noValidate>

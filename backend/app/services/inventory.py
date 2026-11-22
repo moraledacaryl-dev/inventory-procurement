@@ -238,7 +238,7 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
                     res.expires_at.replace(tzinfo=timezone.utc) if res.expires_at.tzinfo is None else res.expires_at
                 ) > now
             ), Decimal("0"))
-            if new_qty < reserved:
+            if reserved > 0 and new_qty < reserved:
                 raise InventoryError(
                     f"Insufficient unreserved stock for {item.sku} at location "
                     f"({reserved} reserved)"

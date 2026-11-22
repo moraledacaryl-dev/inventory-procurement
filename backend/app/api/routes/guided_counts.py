@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_permission
+from app.core.roles import has_permission
 from app.db.session import get_db
 from app.models.inventory import CountLine, CountSession, Item, Location, StockBalance
 from app.models.user import User
@@ -58,7 +59,7 @@ def live_balances(db: Session, location_id: str) -> dict[str, Decimal]:
     }
 
 
-def serialize_session(db: Session, session: CountSession) -> dict:
+def serialize_session(db: Session, session: CountSession, viewer: User) -> dict:
     location = db.get(Location, session.location_id)
     item_ids = {line.item_id for line in session.lines}
     items = {row.id: row for row in db.scalars(select(Item).where(Item.id.in_(item_ids))).all()} if item_ids else {}
@@ -67,7 +68,12 @@ def serialize_session(db: Session, session: CountSession) -> dict:
     variance_lines = 0
     absolute_variance = Decimal("0")
     value_variance = Decimal("0")
-    hide_blind_values = session.blind_count and session.status in {"open", "pending_approval"}
+    # Always hide blind results while a count is open. During approval, only
+    # an explicitly authorized approver receives the snapshot and variances.
+    hide_blind_values = session.blind_count and (
+        session.status == "open"
+        or (session.status == "pending_approval" and not has_permission(viewer.role, "counts.approve"))
+    )
     lines = []
     for line in sorted(session.lines, key=lambda row: items.get(row.item_id).sku if items.get(row.item_id) else row.item_id):
         item = items.get(line.item_id)
@@ -150,7 +156,7 @@ def count_workspace(db: Session = Depends(get_db), user: User = Depends(require_
     if allowed is not None:
         stmt = stmt.where(CountSession.location_id.in_(allowed))
     sessions = db.scalars(stmt.order_by(CountSession.created_at.desc())).unique().all()
-    return [serialize_session(db, session) for session in sessions]
+    return [serialize_session(db, session, user) for session in sessions]
 
 
 @router.get("/{count_id}/detail")
@@ -159,7 +165,7 @@ def count_detail(count_id: str, db: Session = Depends(get_db), user: User = Depe
     if not session:
         fail(404, "Count session not found")
     require_scoped_locations(db, user, {session.location_id})
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)
 
 
 @router.put("/{count_id}/entries")
@@ -180,7 +186,7 @@ def save_count_entries(count_id: str, payload: CountEntriesUpdate, db: Session =
         row.note = entry.note.strip() if entry.note else None
     add_audit(db, actor_user_id=user.id, action="count.entries_saved", entity_type="count_session", entity_id=session.id, details={"saved_lines": len(payload.lines)})
     db.commit()
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)
 
 
 @router.post("/{count_id}/submit")
@@ -204,7 +210,7 @@ def submit_count(count_id: str, db: Session = Depends(get_db), user: User = Depe
         else:
             finalize_count(db, session, user)
         db.commit()
-        return serialize_session(db, session)
+        return serialize_session(db, session, user)
     except (InventoryError, IntegrityError) as exc:
         db.rollback()
         fail(409, str(exc))
@@ -230,7 +236,7 @@ def request_recount(count_id: str, payload: RecountRequest, db: Session = Depend
     session.approved_at = None
     add_audit(db, actor_user_id=user.id, action="count.recount_requested", entity_type="count_session", entity_id=session.id, details={"item_ids": payload.item_ids, "reason": payload.reason})
     db.commit()
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)
 
 
 @router.post("/{count_id}/approve-guided")
@@ -249,7 +255,7 @@ def approve_guided_count(count_id: str, db: Session = Depends(get_db), user: Use
         finalize_count(db, session, user)
         add_audit(db, actor_user_id=user.id, action="count.approved", entity_type="count_session", entity_id=session.id)
         db.commit()
-        return serialize_session(db, session)
+        return serialize_session(db, session, user)
     except (InventoryError, IntegrityError) as exc:
         db.rollback()
         fail(409, str(exc))
@@ -266,4 +272,4 @@ def cancel_guided_count(count_id: str, db: Session = Depends(get_db), user: User
     session.status = "cancelled"
     add_audit(db, actor_user_id=user.id, action="count.cancelled", entity_type="count_session", entity_id=session.id)
     db.commit()
-    return serialize_session(db, session)
+    return serialize_session(db, session, user)

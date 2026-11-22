@@ -14,6 +14,23 @@ test("receiving retains quantities, lot fields and DR across history changes and
     const original=await route.fetch();
     if(!original.ok())return route.fulfill({response:original});
     const body=await original.json();
+    // The test database may contain no approved PO. Add a mock-only eligible
+    // order to exercise editing without creating or posting real records.
+    const search=new URL(route.request().url()).searchParams.get("po_search");
+    const mockOrder={
+      id:"mock-draft-po",purchase_order_number:"PO-MOCK-DRAFT",
+      supplier_id:"mock-supplier",supplier_code:"MOCK-SUP",supplier_name:"Test supplier",
+      delivery_location_id:"mock-location",delivery_location_code:"TEST",
+      delivery_location_name:"Test storeroom",expected_delivery_date:null,
+      status:"approved",ordered_quantity:"5",received_quantity:"0",
+      outstanding_quantity:"5",lines:[{
+        id:"mock-draft-line",item_id:"mock-item",sku:"MOCK-ITEM",
+        item_name:"Test delivery item",ordered_quantity:"5",received_quantity:"0",
+        returned_quantity:"0",outstanding_quantity:"5",
+        returnable_quantity:"0",unit_price:"10",
+      }],
+    };
+    body.purchase_orders=search==="NO_MATCH_PO"?[]:[mockOrder,...body.purchase_orders];
     // Simulate a large history without posting any business transaction.
     body.pagination.receipts={page:1,page_size:25,total:51,has_previous:false,has_next:true};
     const requested=new URL(route.request().url()).searchParams.get("receipts_page");
@@ -23,8 +40,8 @@ test("receiving retains quantities, lot fields and DR across history changes and
   });
   await page.goto("/receiving");
   const selector=page.getByRole("combobox",{name:"Purchase order"});
-  await expect(selector.locator("option").nth(1)).toHaveCount(1);
-  await selector.selectOption({index:1});
+  await expect(selector.locator('option[value="mock-draft-po"]')).toHaveCount(1);
+  await selector.selectOption("mock-draft-po");
   await page.getByRole("button",{name:"Next: count the delivery"}).click();
   const quantity=page.locator('.guided-line-table input[aria-label^="Arrived today for"]').first();
   await quantity.fill("1");

@@ -1,0 +1,41 @@
+name: One-time frontend dependency lockfile refresh
+
+on:
+  push:
+    branches:
+      - fix/inventory-postaudit-security-counts-drafts-20261122
+    paths:
+      - .github/workflows/refresh-inventory-dependencies-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lockfile:
+    if: github.repository == 'moraledacaryl-dev/inventory-procurement'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Produce tested Next.js security-update lockfile
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm install --save-exact --package-lock-only --ignore-scripts next@16.4.6
+          npm audit fix --package-lock-only --ignore-scripts
+          npm audit --omit=dev --audit-level=moderate
+          npm audit --audit-level=high
+      - name: Commit lockfile only on this feature branch
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "fix/inventory-postaudit-security-counts-drafts-20261122"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package.json frontend/package-lock.json
+          git diff --cached --quiet && { echo 'No dependency updates were made'; exit 1; }
+          git commit -m "security: update patched Next.js and resolve npm audit advisories"
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"

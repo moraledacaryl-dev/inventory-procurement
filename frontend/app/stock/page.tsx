@@ -12,6 +12,7 @@ import { FormField, FormSection } from "../../components/FormField";
 import { StatusBadge } from "../../components/StatusBadge";
 import { StockLedgerPanel } from "../../components/StockLedgerPanel";
 import { api } from "../../lib/api";
+import { stableDraftIdempotency, type DraftIdempotencyState } from "../../lib/draftIdempotency";
 import { formatDateTime, formatMoney, formatQuantity } from "../../lib/formatters";
 
 type Item={id:string;sku:string;name:string;allow_negative_stock:boolean;track_stock:boolean};
@@ -34,6 +35,7 @@ export default function Page(){
   const[feedback,setFeedback]=useState<{tone:"success"|"error"|"warning";title:string;message?:string}|null>(null);
   const[pending,setPending]=useState<PendingTransaction>(null);
   const latestLoad=useRef(0);
+  const transactionRequest=useRef<DraftIdempotencyState|null>(null);
 
   const load=useCallback(async()=>{
     const request=++latestLoad.current;
@@ -61,14 +63,16 @@ export default function Page(){
     if(kind==="transfer"&&locationId===destinationId){setFeedback({tone:"error",title:"Source and destination must differ"});return}
     const item=itemName(itemId);const available=currentBalance.get(`${itemId}:${locationId}`)||0;
     if((kind==="issue"||kind==="transfer")&&available<quantity&&!item?.allow_negative_stock){setFeedback({tone:"error",title:"Insufficient stock",message:`Available quantity is ${formatQuantity(available)}. This item does not allow negative stock.`});return}
-    let path="/stock/receipts";let body:Record<string,unknown>={location_id:locationId,reference:String(form.get("reference")||"")||null,notes:reason||null,idempotency_key:crypto.randomUUID(),lines:[{item_id:itemId,quantity,unit_cost:unitCost,reason:reason||null}]};
+    let path="/stock/receipts";let body:Record<string,unknown>={location_id:locationId,reference:String(form.get("reference")||"")||null,notes:reason||null,lines:[{item_id:itemId,quantity,unit_cost:unitCost,reason:reason||null}]};
     if(kind==="issue")path="/stock/issues";
-    if(kind==="adjustment"){path="/stock/adjustments";body={location_id:locationId,reference:String(form.get("reference")||"")||null,notes:reason||null,idempotency_key:crypto.randomUUID(),lines:[{item_id:itemId,quantity_delta:quantity,unit_cost:unitCost,reason:reason||"manual adjustment"}]}}
-    if(kind==="transfer"){path="/stock/transfers";body={source_location_id:locationId,destination_location_id:destinationId,reference:String(form.get("reference")||"")||null,notes:reason||null,idempotency_key:crypto.randomUUID(),lines:[{item_id:itemId,quantity,unit_cost:unitCost,reason:reason||null}]}}
-    setPending({path,body,summary:`${kind} ${formatQuantity(quantity)} ${item?.sku||"item"} at ${locationName(locationId)?.code||"location"}${kind==="transfer"?` to ${locationName(destinationId)?.code||"destination"}`:""}`});
+    if(kind==="adjustment"){path="/stock/adjustments";body={location_id:locationId,reference:String(form.get("reference")||"")||null,notes:reason||null,lines:[{item_id:itemId,quantity_delta:quantity,unit_cost:unitCost,reason:reason||"manual adjustment"}]}}
+    if(kind==="transfer"){path="/stock/transfers";body={source_location_id:locationId,destination_location_id:destinationId,reference:String(form.get("reference")||"")||null,notes:reason||null,lines:[{item_id:itemId,quantity,unit_cost:unitCost,reason:reason||null}]}}
+    const request=stableDraftIdempotency({path,body},transactionRequest.current);
+    transactionRequest.current=request;
+    setPending({path,body:{...body,idempotency_key:request.key},summary:`${kind} ${formatQuantity(quantity)} ${item?.sku||"item"} at ${locationName(locationId)?.code||"location"}${kind==="transfer"?` to ${locationName(destinationId)?.code||"destination"}`:""}`});
   }
 
-  async function post(){if(!pending)return;setPosting(true);try{await api(pending.path,{method:"POST",body:JSON.stringify(pending.body)});setFeedback({tone:"success",title:"Stock transaction posted",message:pending.summary});setPending(null);await load()}catch(error){setFeedback({tone:"error",title:"Transaction not confirmed",message:`${(error as Error).message} Check the stock ledger or retry this confirmation. Retrying reuses the same transaction key.`})}finally{setPosting(false)}}
+  async function post(){if(!pending)return;setPosting(true);try{await api(pending.path,{method:"POST",body:JSON.stringify(pending.body)});setFeedback({tone:"success",title:"Stock transaction posted",message:pending.summary});transactionRequest.current=null;setPending(null);await load()}catch(error){setFeedback({tone:"error",title:"Transaction not confirmed",message:`${(error as Error).message} Check the stock ledger or retry this confirmation. Retrying reuses the same transaction key.`})}finally{setPosting(false)}}
 
   return <AppShell title="Stock" description="Balances and movements across your locations.">
     <Can permission="inventory.*"><details className="card workflow-disclosure"><summary><div className="topline"><div><h2>Post stock transaction</h2><p>Receive, issue, or transfer stock.</p></div><StatusBadge status={kind}/></div><span className="disclosure-mark" aria-hidden="true">+</span></summary><div className="workflow-disclosure-body">
@@ -82,6 +86,6 @@ export default function Page(){
 
     <section className="card section-gap"><h2>Recent movements</h2><DataTable columns={["Date","Item","Location","Quantity","Cost","Reason"]} rows={moves.map(row=>[formatDateTime(row.created_at),itemName(row.item_id)?.sku||row.item_id,locationName(row.location_id)?.code||row.location_id,<span className={Number(row.quantity)<0?"negative":"positive"} key="movement-qty">{Number(row.quantity)>0?"+":""}{formatQuantity(row.quantity)}</span>,formatMoney(row.unit_cost),row.reason||"—"])} rowIds={moves.map(row=>row.id)} loading={loading} searchPlaceholder="Search movement history" exportFileName="hidden-oasis-stock-movements" emptyTitle="No movements found" emptyMessage="No stock movements match the selected filters."/></section>
 
-    <ConfirmDialog open={Boolean(pending)} title="Post this stock transaction?" description={pending?.summary} confirmLabel="Post transaction" busy={posting} onConfirm={()=>void post()} onCancel={()=>setPending(null)}/>
+    <ConfirmDialog open={Boolean(pending)} title="Post this stock transaction?" description={pending?.summary} confirmLabel="Post transaction" busy={posting} onConfirm={()=>void post()} onCancel={()=>setPending(null)}>{pending&&feedback?.tone==="error"?<p role="alert" className="field-error">{feedback.message||feedback.title}</p>:null}</ConfirmDialog>
   </AppShell>
 }

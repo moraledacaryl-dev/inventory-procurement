@@ -115,7 +115,7 @@
     "frontend/app/purchasing/orders/[id]/page.tsx": "e0c11f0cae7bcb341af6c33f1ce7bd90d5fb8276e99aa4f611a7158c1c3b6631",
     "frontend/app/purchasing/page.tsx": "afdaf08e79b242d2c85e76b92d8966f644abe3a169f2da9d21c05c6e3318acb7",
     "frontend/app/readiness/page.tsx": "b2b3868b40082ffcbfdb5a7e1b49cdfc18d38a1662ff5e71eeb353de7d8ab511",
-    "frontend/app/receiving/page.tsx": "8ac12e690e828f02219372f6b2d2502a8d1bbd9b7bb68c493848c4125784532d",
+    "frontend/app/receiving/page.tsx": "e1892a9d8225f878cc1fb9cc6b32dee4b8de6940cb2ef509230e4fd49195ad2e",
     "frontend/app/reports/final-assurance/page.tsx": "ab579a4d935512485dcf220116d4a6bed118c29275d5d85492cb1e8b3b194db4",
     "frontend/app/reports/operations/page.tsx": "7907c29fb9bebac8f6602bee8960b518a27599d253dc7ac84aa6c89911b40faf",
     "frontend/app/reports/page.tsx": "5129b1c9df2144c04b2a1b8aab12e8cf5008388b817d6b179cb8d1ffe805822b",

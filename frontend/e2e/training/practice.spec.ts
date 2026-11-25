@@ -102,6 +102,26 @@ test("a reviewer inspects actual stock and answers the record question",async({p
   await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
 });
 
+test("an interrupted receiving draft restores quantities and the correct guide control",async({page})=>{
+  const{lesson}=await prepare(page,"resume-delivery","receiver");
+  await page.getByRole("combobox",{name:"Purchase order",exact:true}).selectOption("training-po");
+  await page.locator('[data-training="receive-next"]').click();
+  await page.getByRole("spinbutton",{name:"Arrived today for Chicken (kg)",exact:true}).fill("8");
+  await page.getByRole("spinbutton",{name:"Rejected quantity for Chicken (kg)",exact:true}).fill("0");
+  await page.getByRole("textbox",{name:"Delivery reference",exact:true}).fill(lesson.reference);
+  await expect.poll(()=>page.evaluate(()=>Object.entries(localStorage).some(([key,value])=>key.startsWith("inventory-training-receiving:")&&JSON.parse(value).reference?.includes("RESUME-DELIVERY")))).toBeTruthy();
+  await page.reload();
+  await expect(page.getByRole("spinbutton",{name:"Arrived today for Chicken (kg)",exact:true})).toHaveValue("8");
+  await expect(page.getByRole("textbox",{name:"Delivery reference",exact:true})).toHaveValue(lesson.reference);
+  await expect(page.locator('[data-training="receive-review"]')).toHaveAttribute("data-inventory-training-focus","true");
+  await page.locator('[data-training="receive-review"]').click();
+  await page.locator('[data-training="receive-confirm"]').click();
+  await page.locator('[data-training="confirm"]').click();
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+});
+
 for(const[id,role,answer,observation]of[
   ["find-your-work","inventory_manager","no","1"],
   ["catalogue-units","inventory_manager","1000","1000"],

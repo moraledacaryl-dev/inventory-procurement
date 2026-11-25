@@ -10,6 +10,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { api } from "../../lib/api";
 import { stableDraftIdempotency, type DraftIdempotencyState } from "../../lib/draftIdempotency";
 import { formatDateTime, formatMoney, formatQuantity } from "../../lib/formatters";
+import { readTrainingReceiptDraft, writeTrainingReceiptDraft } from "../../lib/training-receiving-draft";
 
 type POLine={id:string;item_id:string;sku:string;item_name:string;ordered_quantity:string;received_quantity:string;returned_quantity:string;outstanding_quantity:string;returnable_quantity:string;unit_price:string};
 type PO={id:string;purchase_order_number:string;supplier_id:string;supplier_code:string;supplier_name:string;delivery_location_id:string;delivery_location_code:string;delivery_location_name:string;expected_delivery_date:string|null;status:string;ordered_quantity:string;received_quantity:string;outstanding_quantity:string;lines:POLine[]};
@@ -46,6 +47,7 @@ export default function ReceivingPage(){
  const latestLoad=useRef(0);
  const receiptRequest=useRef<DraftIdempotencyState|null>(null);
  const returnRequest=useRef<DraftIdempotencyState|null>(null);
+ const[trainingDraftReady,setTrainingDraftReady]=useState(false);
 
  const load=useCallback(async()=>{
    const request=++latestLoad.current;
@@ -62,6 +64,18 @@ export default function ReceivingPage(){
    }finally{if(request===latestLoad.current)setLoading(false)}
  },[receiptsPage,returnsPage,historyPageSize,poSearch]);
  useEffect(()=>{void load()},[load]);
+ useEffect(()=>{
+   if(!data||trainingDraftReady||process.env.NEXT_PUBLIC_INVENTORY_TRAINING!=="1")return;
+   const draft=readTrainingReceiptDraft();
+   const po=draft&&data.purchase_orders.find(row=>row.id===draft.poId&&["approved","partially_received"].includes(row.status));
+   if(draft&&po&&draft.lines.every(line=>po.lines.some(original=>original.id===line.line_id))){
+     setSelectedPoId(po.id);setReceiptPoCache(po);setReceiveLines(draft.lines);setDeliveryReference(draft.reference);setReceiptNotes(draft.notes);setReceiptStep(draft.step);receiptRequest.current=draft.request;
+   }
+   setTrainingDraftReady(true);
+ },[data,trainingDraftReady]);
+ useEffect(()=>{
+   if(trainingDraftReady)writeTrainingReceiptDraft({poId:selectedPoId,lines:receiveLines,reference:deliveryReference,notes:receiptNotes,step:receiptStep,request:receiptRequest.current});
+ },[trainingDraftReady,selectedPoId,receiveLines,deliveryReference,receiptNotes,receiptStep]);
  const selectedPo=useMemo(()=>data?.purchase_orders.find(row=>row.id===selectedPoId)
    ||(receiptPoCache?.id===selectedPoId?receiptPoCache:null),[data,selectedPoId,receiptPoCache]);
  // The draft is initialized only when the user selects an order. Reloading
@@ -124,6 +138,7 @@ export default function ReceivingPage(){
    // Keep the same key for a retry of the same document, even after a timeout.
    const request=stableDraftIdempotency({kind:"receipt",po_id:selectedPo.id,...payload},receiptRequest.current);
    receiptRequest.current=request;
+   writeTrainingReceiptDraft({poId:selectedPo.id,lines:receiveLines,reference:deliveryReference,notes:receiptNotes,step:receiptStep,request});
    setBusy(true);
    try{
      const result=await api<Receipt>(`/receiving/purchase-orders/${selectedPo.id}`,{

@@ -73,6 +73,17 @@ def test_count_approval_posts_real_adjustment(learner):
     assert check(learner, "approve-count")["passed"]
 
 
+def test_saved_business_state_restores_missing_guide_acknowledgement(learner):
+    begin(learner,"blind-count","counter")
+    assert learner.put("/api/v1/counts/training-count/entries",json={"lines":[{"item_id":"training-chicken","counted_quantity":21}]}).status_code==200
+    # No guide checkpoint was sent, as when the browser closes after Save.
+    me=learner.get("/api/v1/training/me")
+    assert me.status_code==200,me.text
+    assert me.json()["attempt"]["checkpoint"]==2
+    assert learner.post("/api/v1/counts/training-count/submit").status_code==200
+    assert learner.get("/api/v1/training/me").json()["attempt"]["checkpoint"]==4
+
+
 @pytest.mark.parametrize("lesson,endpoint,body", [
     ("issue-kitchen", "/stock/issues", {"location_id": "training-store", "lines": [{"item_id": "training-chicken", "quantity": 5}]}),
     ("opening-stock", "/stock/receipts", {"location_id": "training-store", "lines": [{"item_id": "training-chicken", "quantity": 5, "unit_cost": 200}]}),

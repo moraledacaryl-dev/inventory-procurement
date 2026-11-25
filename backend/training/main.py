@@ -26,7 +26,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     from app.api.deps import SESSION_COOKIE_NAME
     from training.store import Store
     from training.curriculum import BY_ID, LESSONS, VERSION, ROLES, ROLE_NAMES, CAPSTONES
-    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, verify
+    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, recover_checkpoint, verify
 
     store = Store(root)
     app.title = "Hidden Oasis Inventory Training — isolated practice"
@@ -125,6 +125,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
 
     class Checkpoint(BaseModel):
         step: int = Field(ge=0, le=100)
+        revisit: bool = False
 
     def current_attempt(request):
         learner = identity(request)
@@ -166,6 +167,18 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         attempt = store.attempt(learner["id"])
         inspected = False
         if attempt and attempt["lesson_id"] in BY_ID:
+            path=root / f"attempt-{attempt['id']}.sqlite"
+            if path.exists():
+                engine=engine_for(path)
+                try:
+                    with Session(engine) as business:
+                        recovered=recover_checkpoint(business,BY_ID[attempt["lesson_id"]],attempt["mode"],attempt["checkpoint"])
+                    if recovered != attempt["checkpoint"]:
+                        attempt["checkpoint"]=recovered
+                        with store.connect() as db:
+                            db.execute("UPDATE attempts SET checkpoint=? WHERE id=?", (recovered,attempt["id"]))
+                finally:
+                    engine.dispose()
             with store.connect() as db:
                 inspected = bool(db.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], inspection_endpoint(BY_ID[attempt["lesson_id"]]))).fetchone())
         return {"learner": learner, "attempt": attempt,
@@ -205,7 +218,8 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         if payload.step > len(public_lesson(lesson, attempt["mode"])["steps"]):
             raise HTTPException(422, "Invalid lesson checkpoint")
         with store.connect() as db:
-            db.execute("UPDATE attempts SET checkpoint=? WHERE id=? AND status='active'", (payload.step, attempt["id"]))
+            expression="?" if payload.revisit else "MAX(checkpoint,?)"
+            db.execute(f"UPDATE attempts SET checkpoint={expression} WHERE id=? AND status='active'", (payload.step, attempt["id"]))
         return {"saved": True}
 
     @router.post("/hint")

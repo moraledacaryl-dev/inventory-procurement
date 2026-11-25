@@ -232,6 +232,27 @@ def verify(db: Session, lesson: Lesson, mode: str) -> tuple[bool, dict]:
     return bool(ok), result
 
 
+def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int) -> int:
+    """Recover a lost guide acknowledgement from committed business state.
+
+    A browser can close after Save commits but before its checkpoint request
+    arrives. Never leave the trainee pointing at a disabled Save button.
+    """
+    if lesson.workflow == "count":
+        count = db.get(CountSession, IDS["count"])
+        quantity = Decimal(values(lesson, mode)["quantity"])
+        if count and all(line.counted_quantity == quantity for line in count.lines):
+            if count.status in {"pending_approval", "posted"}: return len(lesson.steps)
+            if count.status == "open": return max(checkpoint, 2)
+    if not lesson.workflow.startswith("read_"):
+        passed, _ = verify(db, lesson, mode)
+        if passed: return len(lesson.steps)
+        # Receiving has an attempt-scoped browser draft. Other unposted forms
+        # restart their guide rather than pointing at empty/disabled controls.
+        if lesson.workflow != "receiving": return 0
+    return checkpoint
+
+
 def public_lesson(lesson: Lesson, mode="guided"):
     v = values(lesson, mode)
     row = asdict(lesson)

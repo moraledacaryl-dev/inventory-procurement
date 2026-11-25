@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { trainingEnabled, type TrainingLesson, type TrainingProfile } from "../lib/inventory-training";
+import { readTrainingReceiptDraft } from "../lib/training-receiving-draft";
 import "./inventory-training-coach.css";
 
 type Box = { top: number; left: number; width: number; height: number };
@@ -35,7 +36,24 @@ export function InventoryTrainingCoach() {
     if (!visible) return;
     try {
       const result = await api<TrainingProfile>("/training/me");
-      setProfile(result); setStep(result.attempt?.checkpoint||0);
+      setProfile(result);
+      let checkpoint=result.attempt?.checkpoint||0;
+      if(result.lesson?.workflow==="receiving"&&checkpoint<result.lesson.steps.length){
+        const draft=readTrainingReceiptDraft(),steps=result.lesson.steps;
+        const index=(target:string)=>Math.max(0,steps.findIndex(row=>row.target===target));
+        if(!draft)checkpoint=0;
+        else if(draft.step===1)checkpoint=index('[data-training="receive-next"]');
+        else if(draft.step===3)checkpoint=index('[data-training="receive-confirm"]');
+        else{
+          const line=draft.lines[0];
+          checkpoint=index('[data-training="receive-review"]');
+          if(!line||Number(line.received)!==result.lesson.quantity)checkpoint=index('[aria-label="Arrived today for Chicken (kg)"]');
+          else if(Number(line.rejected)!==result.lesson.rejected)checkpoint=index('[aria-label="Rejected quantity for Chicken (kg)"]');
+          else if(result.lesson.rejected&&!line.reason.trim())checkpoint=index('[aria-label="Reason for rejecting Chicken (kg)"]');
+          else if(draft.reference!==result.lesson.reference)checkpoint=index('[aria-label="Delivery reference"]');
+        }
+      }
+      setStep(checkpoint);
       setPassed(result.attempt?.status==="passed");
       setInspected(result.record_inspected || readPaths.current.has(result.lesson?.inspection_api_path||""));
       if(result.attempt)localStorage.setItem("inventory-training-attempt",result.attempt.id);
@@ -152,7 +170,7 @@ export function InventoryTrainingCoach() {
       {!lesson&&<Link href="/training">Open your training course</Link>}
       {lesson&&!passed&&<>
         <p className="inventory-training-situation">{lesson.situation}</p>
-        {current?<><h3>Your turn</h3><p>{current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. Progress saves after each action; the server checks the final result.</p></>:<>
+        {current?<><h3>Your turn</h3><p>{current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. Progress saves after each action; the server checks the final result.</p></>:<>
           <p>{lesson.practical_question?"Inspect the record in the application, then enter what it shows.":"Complete the task in the application, then check your saved result below."}</p>
           {lesson.practical_question&&<><Link href={lesson.inspection_route}>Open the record to inspect →</Link><label>{lesson.practical_question}<input value={observation} onChange={event=>setObservation(event.target.value)} autoComplete="off"/></label></>}
           {!lesson.practical_question&&<p>Task amount: {lesson.quantity}{lesson.workflow==="receiving"?` arrived; ${lesson.rejected} rejected`:""}. {lesson.workflow==="production"?"Use 3 kg of chicken; record the actual usable output.":""}{lesson.workflow==="purchase_order"?"Use Training Valley Foods, Training stockroom and PHP 200 per kg.":""}{lesson.workflow==="receiving"?`Delivery reference: ${lesson.reference}`:""}</p>}

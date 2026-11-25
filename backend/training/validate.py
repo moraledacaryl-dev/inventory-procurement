@@ -11,6 +11,8 @@ BASELINE = ROOT / "docs/training/source-contract.json"
 def source_hashes():
     paths = sorted(set((ROOT / "backend/app").rglob("*.py")))
     paths += sorted(path for path in (ROOT / "frontend/app").rglob("page.tsx") if "training" not in path.parts)
+    paths += sorted(path for path in (ROOT / "frontend/app").rglob("*.css") if "training" not in path.parts)
+    paths.append(ROOT / "frontend/app/layout.tsx")
     paths += sorted(path for path in (ROOT / "frontend/components").glob("*.tsx") if path.name != "InventoryTrainingCoach.tsx")
     paths.append(ROOT / "frontend/lib/api.ts")
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}

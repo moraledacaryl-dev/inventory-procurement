@@ -10,7 +10,7 @@ Status: **working implementation for review, not the complete 10/10 master brief
 - Operations reference main fetched directly from GitHub: `63a9e7c011ecfa140f7ae3e75612c2d5d6e4fa86`.
 - Work used fresh clones. Existing Desktop Operations and Inventory checkouts were not used as source authority or overwritten.
 - Actual Next screens, FastAPI endpoints, permission checks, SQLAlchemy models and posting services are reused. Training has a separate entry point, registry and database per participant/attempt. There is no second stock engine.
-- The coverage plan was written before curriculum implementation. `ENDPOINT_COVERAGE.md` inventories 234 decorated route contracts. `source-contract.json` fingerprints 150 operational backend/frontend sources. The gate stops on drift and requires explicit review.
+- The coverage plan was written before curriculum implementation. `ENDPOINT_COVERAGE.md` inventories 234 decorated route contracts. `source-contract.json` fingerprints 182 operational backend/frontend sources. The gate stops on drift and requires explicit review.
 
 ## Implemented content
 

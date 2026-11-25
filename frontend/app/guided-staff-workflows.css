@@ -76,7 +76,9 @@
  .guided-receiving .guided-line-table td:last-child,.count-table-wrap td:last-child{border-bottom:0}
  .guided-receiving .guided-line-table td::before,.count-table-wrap td::before{content:attr(data-label);font-size:12px;color:#43556e;font-weight:650;overflow-wrap:anywhere}
  .guided-receiving .guided-line-table td input,.count-table-wrap td input{min-width:0!important;width:100%;font-size:16px!important;min-height:46px}
- .guided-receiving .guided-line-table .workflow-line-extra{min-width:0}
+ .guided-receiving .guided-line-table .workflow-line-extra{min-width:0;grid-template-columns:minmax(0,1fr)}
+ .guided-receiving .guided-line-table .workflow-line-extra label,.guided-receiving .guided-line-table .workflow-optional{min-width:0;max-width:100%}
+ .guided-receiving .guided-line-table .workflow-optional summary{white-space:normal;overflow-wrap:anywhere}
  .guided-receiving .guided-line-table tr.invalid-line{background:#fff7f5}
  .guided-receiving .receiving-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
  .workflow-last-fields{grid-template-columns:minmax(0,1fr)}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, logout } from "../../lib/api";
+import {rememberTrainingAttempt} from "../../lib/training-session";
 import { mastery, trainingEnabled, type TrainingCatalogue, type TrainingLesson, type TrainingProfile } from "../../lib/inventory-training";
 import "./training.css";
 
@@ -26,7 +27,7 @@ export default function TrainingPage() {
       setCatalogue(result);
       const me = await api<TrainingProfile>("/training/me").catch(() => null);
       setProfile(me);
-      if (me) { setName(me.learner.name); setRole(me.learner.role); if (me.attempt) localStorage.setItem("inventory-training-attempt", me.attempt.id); }
+      if (me) { setName(me.learner.name); setRole(me.learner.role); if (me.attempt) rememberTrainingAttempt(me.attempt.id); }
     } catch (exception) { setError((exception as Error).message); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -45,7 +46,7 @@ export default function TrainingPage() {
     setBusy(true); setError("");
     try {
       const result = await api<{attempt_id:string;lesson:TrainingLesson}>("/training/start", {method:"POST", body:JSON.stringify({lesson_id:lesson.id, mode})});
-      localStorage.setItem("inventory-training-attempt", result.attempt_id);
+      rememberTrainingAttempt(result.attempt_id);
       window.location.assign(result.lesson.route);
     } catch (exception) { setError((exception as Error).message); setBusy(false); }
   }
@@ -74,6 +75,7 @@ export default function TrainingPage() {
       <footer className="training-footer"><p>A training pass demonstrates practice competence. Production permissions require separate authorization.</p><Link href="/training/management">Trainer progress review</Link><button disabled={busy} onClick={()=>{setBusy(true);void logout().catch(exception=>{setError((exception as Error).message);setBusy(false)})}}>Sign out for another employee</button></footer>
     </>}
     {selected&&profile&&<dialog ref={lessonDialog} onCancel={()=>setSelected(null)} className="training-lesson" aria-label="Lesson overview"><button className="training-back" onClick={()=>setSelected(null)}>← Back to your course</button><p className="training-eyebrow">Module {selected.module} · Watch and understand</p><h2>{selected.title}</h2><h3>The situation</h3><p>{selected.situation}</p><h3>What this means</h3><p>{selected.concept}</p><h3>A worked example</h3><p>{selected.example}</p><h3>Remember this</h3><p className="training-rule">{selected.rule}</p><h3>Your practice</h3><p>You will work in the actual Inventory screen. Complete the saved task and answer a short check. Clicking through instructions cannot pass a transaction task.</p>
+      {selected.global_access&&<p className="training-example">This practice includes an approved global master-data assignment. Your real work may be limited to specific locations; ask the authorized steward if global access is missing.</p>}
       <div className="training-levels">{(["guided","assisted","independent"] as const).map((mode,index)=>{const status=mastery(profile.history,selected,profile.learner.role);const disabled=busy||(mode==="assisted"&&!status.guided)||(mode==="independent"&&(!status.guided||!status.assisted));return <div key={mode}><strong>{index+2}. {mode==="guided"?"Guided practice":mode==="assisted"?"Try with help available":"Independent assessment"}</strong><p>{mode==="guided"?"Follow one highlighted action at a time.":mode==="assisted"?"Use the situation; request a hint if needed.":"A different task, without step-by-step guidance."}</p><button className={mode==="guided"?"training-primary":""} disabled={disabled} onClick={()=>void start(selected,mode)}>{status[mode]?"Repeat":"Start"} {mode} practice</button></div>})}</div>
       <details><summary>Workflow reference</summary><p>{selected.rule}</p><ul>{selected.steps.map((step,index)=><li key={index}>{step.instruction}</li>)}</ul></details>
     </dialog>}

@@ -14,13 +14,13 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /depreciation-runs` | `assets.py` | inventory.* | Further practical lesson required |
 | `POST /depreciation-runs/{run_id}/post` | `assets.py` | inventory.* | Further practical lesson required |
 | `POST /auth/login` | `auth.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
-| `POST /auth/logout` | `auth.py` | Service/session boundary | Further practical lesson required |
+| `POST /auth/logout` | `auth.py` | Service/session boundary | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /auth/me` | `auth.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /items/{item_id}/configuration` | `catalogue_configuration.py` | items.read | Supporting UI / record inspection |
 | `PATCH /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Further practical lesson required |
 | `DELETE /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Further practical lesson required |
 | `PATCH /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Further practical lesson required |
-| `DELETE /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Further practical lesson required |
+| `DELETE /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `PATCH /items/{item_id}/conversions/{conversion_id}` | `catalogue_configuration.py` | items.* | Further practical lesson required |
 | `PATCH /item-location-settings/{setting_id}` | `catalogue_configuration.py` | inventory.* | Further practical lesson required |
 | `GET /classification/dimensions` | `classification.py` | items.read | Supporting UI / record inspection |
@@ -63,10 +63,10 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /locations` | `inventory.py` | locations.read | Supporting UI / record inspection |
 | `POST /locations` | `inventory.py` | locations.* | Further practical lesson required |
 | `GET /items` | `inventory.py` | items.read | Supporting UI / record inspection |
-| `POST /items` | `inventory.py` | items.* | Further practical lesson required |
+| `POST /items` | `inventory.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /items/catalogue-workspace` | `inventory.py` | items.read | Supporting UI / record inspection |
 | `GET /items/{item_id}` | `inventory.py` | items.read | Supporting UI / record inspection |
-| `PATCH /items/{item_id}` | `inventory.py` | items.* | Further practical lesson required |
+| `PATCH /items/{item_id}` | `inventory.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /stock/balances` | `inventory.py` | inventory.read | Supporting UI / record inspection |
 | `GET /stock/movements` | `inventory.py` | inventory.read | Supporting UI / record inspection |
 | `POST /stock/receipts` | `inventory.py` | inventory.* | Assessed business outcome |
@@ -80,12 +80,12 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /counts/{count_id}/approve` | `inventory.py` | counts.approve | Further practical lesson required |
 | `GET /items/barcode/{barcode}` | `inventory_operations.py` | items.read | Supporting UI / record inspection |
 | `GET /items/{item_id}/barcodes` | `inventory_operations.py` | items.read | Supporting UI / record inspection |
-| `POST /items/{item_id}/barcodes` | `inventory_operations.py` | items.* | Further practical lesson required |
+| `POST /items/{item_id}/barcodes` | `inventory_operations.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /items/{item_id}/conversions` | `inventory_operations.py` | items.read | Supporting UI / record inspection |
-| `POST /items/{item_id}/conversions` | `inventory_operations.py` | items.* | Further practical lesson required |
+| `POST /items/{item_id}/conversions` | `inventory_operations.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /items/{item_id}/convert` | `inventory_operations.py` | items.read | Supporting UI / record inspection |
 | `GET /item-location-settings` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /item-location-settings` | `inventory_operations.py` | inventory.* | Further practical lesson required |
+| `POST /item-location-settings` | `inventory_operations.py` | inventory.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /lots` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
 | `POST /lots` | `inventory_operations.py` | inventory.* | Further practical lesson required |
 | `GET /lot-balances` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
@@ -149,9 +149,9 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /pos-mappings/{mapping_id}/activate` | `pos_sync.py` | integrations.* | Further practical lesson required |
 | `POST /pos-mappings/{mapping_id}/deactivate` | `pos_sync.py` | integrations.* | Further practical lesson required |
 | `GET /suppliers` | `procurement.py` | suppliers.read | Supporting UI / record inspection |
-| `POST /suppliers` | `procurement.py` | suppliers.* | Further practical lesson required |
+| `POST /suppliers` | `procurement.py` | suppliers.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /suppliers/{supplier_id}/items` | `procurement.py` | suppliers.read | Supporting UI / record inspection |
-| `POST /suppliers/{supplier_id}/items` | `procurement.py` | suppliers.* | Further practical lesson required |
+| `POST /suppliers/{supplier_id}/items` | `procurement.py` | suppliers.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /supplier-performance` | `procurement.py` | reports.read | Supporting UI / record inspection |
 | `GET /reorder-suggestions` | `procurement.py` | procurement.read | Supporting UI / record inspection |
 | `POST /reorder-suggestions/requisition` | `procurement.py` | procurement.* | Further practical lesson required |
@@ -237,4 +237,4 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /stock/ledger` | `stock_ledger.py` | inventory.read | Supporting UI / record inspection |
 | `GET /stock/documents/{document_id}` | `stock_ledger.py` | inventory.read | Supporting UI / record inspection |
 | `GET /suppliers/{supplier_id}/detail` | `supplier_360.py` | suppliers.read | Supporting UI / record inspection |
-| `PATCH /suppliers/{supplier_id}` | `supplier_360.py` | suppliers.* | Further practical lesson required |
+| `PATCH /suppliers/{supplier_id}` | `supplier_360.py` | suppliers.* | Assessed real outcome; relevant lifecycle refusals also exercised |

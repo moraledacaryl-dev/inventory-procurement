@@ -103,8 +103,8 @@
     "frontend/app/integrations/page.tsx": "1a4f5f479758ebf5bfc2b5c33759d598987a94c921b4cdf9140c2a3a997c08ac",
     "frontend/app/integrations/pos/page.tsx": "a350f33fbe92a9336b8beba528ffd438bbd8619709b9d3255bcb3bbd1b5a20a5",
     "frontend/app/inventory-operations/page.tsx": "3226448dbbdbb35d9946c096241b29e26cdb1b29989e2fa5d1c28d7932339b63",
-    "frontend/app/items/[id]/page.tsx": "69f7ec9b1b78efdd76b4d5fa1a1419e676fbd47e0ce69ac9fa13f4585b749ccc",
-    "frontend/app/items/page.tsx": "3bc5e6a33386e63b4b79e5dee57433ac4f9afdefff3df4713a30f068a21df5d4",
+    "frontend/app/items/[id]/page.tsx": "abfa786a0b90a9af0783534c16ee2ceafda6eb710bfb2632c4a49b4628971789",
+    "frontend/app/items/page.tsx": "402a1b764e82342d036c7c39e52e5acbd6e30339320790a7b9d6c1704d680455",
     "frontend/app/locations/[id]/page.tsx": "07704d039e2b959db50589ddbca76eb81830c6715e7c543914bb3be6e1e57885",
     "frontend/app/locations/page.tsx": "1f244eba53939078284f88d46b390d05df356f71c74ace4751e1b858a9bb410c",
     "frontend/app/login/page.tsx": "8c52579a688b01ff26f1bc2d38abd00a77fef9150de54e44007f1f46ecabc4af",
@@ -124,8 +124,8 @@
     "frontend/app/settings/classification/page.tsx": "a3d4697421bff579c36493a7ab7e74f61aaf18ad6f7c8bb188a0355cebb41931",
     "frontend/app/stock/documents/[id]/page.tsx": "6f1cf273ff7e8451dbcf55e2bce90d01092475370c0c92c76ac8249b951f2460",
     "frontend/app/stock/page.tsx": "8f1d033d09e41cd2f58626ba033b74d0a8f4387b487dccedeb42df5624e5c4b2",
-    "frontend/app/suppliers/[id]/page.tsx": "272f51c69df65785125bf67346019439e43789194c3e48030f3d17d923e6fd06",
-    "frontend/app/suppliers/page.tsx": "b86f1180d2f5be1a78207be930c097eb97be136683601b0d1341080480a02188",
+    "frontend/app/suppliers/[id]/page.tsx": "dd867dc52da0c7c2e2cafad65cf796f0e22a7a78d78099e4d2ded734e8ff65de",
+    "frontend/app/suppliers/page.tsx": "751da37b75aec7b01d253ee01d1fb4393159ee4b956e563ca5cb85441c859f63",
     "frontend/app/accessibility.css": "912657040aaec010b5259ec715f09ed5ee03cdd4a406ed515cb06fb3a00eaad0",
     "frontend/app/auth.css": "262116673c1f51c6054d7416ddfa3311bcc40b7ff4de5d4f6a35813bb92484bf",
     "frontend/app/catalogue-configuration.css": "6bf6e85c4e0f45a36f6e6c6ac715ba9b9af116419984d3dfb70a36cea5d035df",
@@ -168,7 +168,7 @@
     "frontend/components/GlobalSearch.tsx": "de827a94e2455adbde33c5b4ac875847da9fdc9e0eff05f03c0e83485437f060",
     "frontend/components/HelpPanel.tsx": "7f3f2123d4949ca81725c9c48d60cdf927987dad152964278e2fefc2eedcae49",
     "frontend/components/InventoryControlPanel.tsx": "fdc47ca4a7bfa0c2c79c136b7982c8b0aad2523da106f92cbe4c1e4e5f23b9cc",
-    "frontend/components/ItemConfigurationPanel.tsx": "d4515ca202c169d6381735a39913c2f7a6917d8a4e88c790a4b668329945351c",
+    "frontend/components/ItemConfigurationPanel.tsx": "91c4ef55fbc41e8ff581dc5dd0778118e225e9f040babd72fa91f4bb3b68b149",
     "frontend/components/ModulePage.tsx": "d6b8502428a039b8cd239fe6a599d034d5924745a427d9cffac483dd66783973",
     "frontend/components/NotificationCenter.tsx": "22c4a7c4fe315e5679aa390b6f616839ea12a2dfa74cdce6e4ae717120f1f1b0",
     "frontend/components/ProcurementPlanningPanel.tsx": "1ae0b945bb54e4623c18b64de35abde24640b37cd5a1b33da5bd0ce9fca1cab7",
@@ -183,6 +183,7 @@
     "frontend/components/SystemHealth.tsx": "b00fac1a78d7b9be340acb2fa185623fdf8d6ed544375ab6fb289491635187c9",
     "frontend/components/WorkspaceLink.tsx": "4f3cd20641b895a13206ab2e141981592f8f74f6b62cea57ee59d865e2592012",
     "frontend/components/WorkspaceSwitcher.tsx": "94ac3d829a605f4005943a532b394bef7e13a7816de26b08c761a40f22ee7ff4",
-    "frontend/lib/api.ts": "f1080e542c497dd0d299c111698a8a4859d4280a042eedd33510d8cbbcd90b6a"
+    "frontend/lib/api.ts": "9b7537fa167c35f7e1b2c00c4bb3c0487450e2aaf17c30f84b8af9e8d8f2b797",
+    "frontend/hooks/useFormDraft.ts": "09ad9cc48abc4a061fd1df2effe86ad6d1988b7b8c315487ad238e4936134e2e"
   }
 }

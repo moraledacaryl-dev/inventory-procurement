@@ -1,4 +1,5 @@
 import type { DraftIdempotencyState } from "./draftIdempotency";
+import {trainingAttempt} from "./training-session";
 
 export type TrainingReceivingDraft = {
   poId: string; step: 1|2|3; reference: string; notes: string;
@@ -7,7 +8,7 @@ export type TrainingReceivingDraft = {
 };
 function key(){
   if(process.env.NEXT_PUBLIC_INVENTORY_TRAINING!=="1"||typeof window==="undefined")return null;
-  const attempt=localStorage.getItem("inventory-training-attempt");
+  const attempt=trainingAttempt();
   return attempt&&/^[a-f0-9-]{36}$/.test(attempt)?`inventory-training-receiving:${attempt}`:null;
 }
 export function readTrainingReceiptDraft():TrainingReceivingDraft|null{

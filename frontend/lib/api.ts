@@ -1,3 +1,4 @@
+import {forgetTrainingAttempt,trainingAttempt} from "./training-session";
 export const API = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
 export class ApiError extends Error {
@@ -48,7 +49,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   headers.set("X-Requested-With", "HiddenOasisInventory");
   if (training && typeof window !== "undefined") {
-    const attempt = localStorage.getItem("inventory-training-attempt");
+    const attempt = trainingAttempt();
     if (attempt) headers.set("X-Training-Attempt", attempt);
   }
 
@@ -66,6 +67,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!response.ok) {
+    if (training && typeof window !== "undefined" && !path.startsWith("/training/")) {
+      window.dispatchEvent(new CustomEvent("inventory-training-action", { detail: { path, method: init.method || "GET", status: response.status } }));
+    }
     const body = await response.json().catch(() => ({}));
     throw new ApiError(formatApiError(body?.detail, `Request failed (${response.status})`), response.status, body);
   }
@@ -74,7 +78,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new Error("Practice is unavailable: this API did not identify itself as isolated training.");
   }
   if (training && typeof window !== "undefined" && !path.startsWith("/training/")) {
-    window.dispatchEvent(new CustomEvent("inventory-training-action", { detail: { path, method: init.method || "GET" } }));
+    window.dispatchEvent(new CustomEvent("inventory-training-action", { detail: { path, method: init.method || "GET", status: response.status } }));
   }
 
   if (response.status === 204) return undefined as T;
@@ -86,6 +90,7 @@ export async function logout() {
   await api<void>("/auth/logout", { method: "POST" });
   if (typeof window !== "undefined") {
     if (training) {
+      forgetTrainingAttempt();
       for (const key of Object.keys(localStorage)) if (key.startsWith("inventory-training")) localStorage.removeItem(key);
     }
     window.location.assign(training ? "/training" : "/login?signed_out=1");

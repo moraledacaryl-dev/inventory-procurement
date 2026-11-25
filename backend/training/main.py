@@ -96,7 +96,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 if attempt["curriculum_version"] != VERSION:
                     raise HTTPException(409, "Training has been updated. Return to your course and start the updated lesson.")
                 request.state.training_attempt = attempt
-                if request.method != "GET" and request.headers.get("x-training-attempt") != attempt["id"]:
+                if request.headers.get("x-training-attempt") != attempt["id"]:
                     raise HTTPException(409, "This practice changed in another tab. Return to Training and continue the current lesson.")
             except HTTPException as exc:
                 return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
@@ -109,7 +109,8 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 store.event(attempt["id"], "record_read", {"path": path})
             elif request.method != "GET":
                 store.event(attempt["id"], "business_action", {"path": path, "status": response.status_code})
-                if response.status_code >= 400:
+                expected_refusal=any(step.outcome==path.removeprefix("/api/v1") and step.outcome_status==response.status_code for step in BY_ID[attempt["lesson_id"]].steps)
+                if response.status_code >= 400 and not expected_refusal:
                     with store.connect() as db:
                         db.execute("UPDATE attempts SET mistakes=mistakes+1 WHERE id=? AND status='active'", (attempt["id"],))
             response.headers["x-inventory-environment"] = "isolated-training"
@@ -141,6 +142,8 @@ def create_training_app(root: Path, *, guard_network: bool = True):
             raise HTTPException(409, "Start a lesson first.")
         if attempt["curriculum_version"] != VERSION:
             raise HTTPException(409, "Training has been updated. Start a new attempt from your course.")
+        if request.headers.get("x-training-attempt") != attempt["id"]:
+            raise HTTPException(409, "This practice changed in another tab. Return to Training to continue the current task.")
         if attempt["lesson_id"] not in BY_ID:
             raise HTTPException(409, "The course has changed. Return to Training to choose an updated lesson.")
         return learner, attempt
@@ -183,7 +186,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 engine=engine_for(path)
                 try:
                     with Session(engine) as business:
-                        recovered=recover_checkpoint(business,BY_ID[attempt["lesson_id"]],attempt["mode"],attempt["checkpoint"])
+                        recovered=recover_checkpoint(business,BY_ID[attempt["lesson_id"]],attempt["mode"],attempt["checkpoint"],store.business_actions(attempt["id"]))
                     if recovered != attempt["checkpoint"]:
                         attempt["checkpoint"]=recovered
                         with store.connect() as db:
@@ -270,7 +273,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                     practical = bool(read) and normalize(payload.observation) == normalize(answer)
                     evidence = {"record_inspection": practical, "observation": payload.observation}
                 else:
-                    practical, evidence = verify(db, lesson, attempt["mode"])
+                    practical, evidence = verify(db, lesson, attempt["mode"],store.business_actions(attempt["id"]))
         finally:
             engine.dispose()
         passed = knowledge and practical

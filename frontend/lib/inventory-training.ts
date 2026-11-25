@@ -1,4 +1,4 @@
-export type TrainingStep = { target: string; instruction: string; value: string | number | null; event: string; outcome: string | null };
+export type TrainingStep = { target: string; instruction: string; value: string | number | null; event: string; outcome: string | null; outcome_status: number | null };
 export type TrainingLesson = {
   id: string; module: string; title: string; roles: string[]; route: string;
   workflow: string; situation: string; concept: string; example: string; rule: string;
@@ -6,6 +6,7 @@ export type TrainingLesson = {
   quantity: number; rejected: number; reference: string; practical_question: string; inspection_route: string;
   curriculum_version: string;
   inspection_api_path: string | null;
+  global_access: boolean;
 };
 export type TrainingAttempt = {
   id: string; lesson_id: string; mode: "guided" | "assisted" | "independent";

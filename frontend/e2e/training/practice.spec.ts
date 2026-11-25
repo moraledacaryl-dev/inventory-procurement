@@ -9,14 +9,14 @@ async function prepare(page:Page,lesson_id:string,role:string){
   expect(response.ok(),await response.text()).toBeTruthy();
   const data=await response.json() as {attempt_id:string;lesson:TrainingLesson};
   await page.goto("/training");
-  await page.evaluate(id=>localStorage.setItem("inventory-training-attempt",id),data.attempt_id);
+  await page.evaluate(id=>{localStorage.setItem("inventory-training-attempt",id);sessionStorage.setItem("inventory-training-attempt",id)},data.attempt_id);
   await page.goto(data.lesson.route);
   await expect(page.getByRole("complementary",{name:"Your training task"})).toBeVisible();
   return data;
 }
 
-async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string){
-  for(let index=0;index<lesson.steps.length;index++){
+async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,startIndex=0){
+  for(let index=startIndex;index<lesson.steps.length;index++){
     const step=lesson.steps[index];
     await expect(page.locator(".inventory-training-coach-label")).toContainText(`Action ${index+1} of`);
     const target=page.locator(step.target).first();
@@ -64,7 +64,74 @@ test("signing out returns to onboarding and separates the next employee",async({
   await expect(page.getByLabel("Your name")).toBeVisible();
 });
 
+test("an interrupted item draft restores its fields and acknowledged guide action",async({page})=>{
+  page.on("dialog",dialog=>dialog.accept());
+  const{lesson}=await prepare(page,"create-item","inventory_manager");
+  await page.locator('[data-training="item-create-open"]').click();
+  await page.locator('#item-workspace').selectOption(String(lesson.steps[1].value));
+  await page.locator('#item-type').selectOption(String(lesson.steps[2].value));
+  await page.locator('#item-sku').fill("TRAIN-OIL");
+  await page.locator('#item-name').fill("Training cooking oil");
+  await expect(page.locator('.inventory-training-coach-label')).toContainText("Action 6 of");
+  await expect.poll(()=>page.evaluate(()=>Object.entries(localStorage).some(([key,value])=>key.startsWith("inventory-training:draft:")&&JSON.parse(value).name==="Training cooking oil"))).toBeTruthy();
+  await page.reload();
+  await expect(page.locator('#item-name')).toHaveValue("Training cooking oil");
+  await guide(page,lesson,undefined,5);
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+});
+
+test("resetting a supplier practice cannot restore another attempt's draft",async({page})=>{
+  page.on("dialog",dialog=>dialog.accept());
+  const first=await prepare(page,"create-supplier","procurement_officer");
+  await page.locator('[data-training="supplier-create-open"]').click();
+  await page.locator('#supplier-code').fill("UNFINISHED-OLD");
+  await expect.poll(()=>page.evaluate(()=>Object.values(localStorage).some(value=>value.includes("UNFINISHED-OLD")))).toBeTruthy();
+  const second=await prepare(page,"create-supplier","procurement_officer");
+  expect(first.attempt_id).not.toBe(second.attempt_id);
+  await expect(page.locator('#supplier-code')).toHaveValue("");
+  const me=await(await page.request.get("/api/v1/training/me")).json();
+  expect(me.history.some((row:{id:string;status:string})=>row.id===first.attempt_id&&row.status==="reset")).toBeTruthy();
+});
+
+test("an older tab cannot post into practice started in a different tab",async({page,context})=>{
+  const first=await prepare(page,"issue-kitchen","inventory_manager");
+  await page.locator('[data-training="stock-open"]').click();
+  await page.locator('#stock-kind').selectOption("issue");
+  await page.locator('#stock-location').selectOption("training-store");
+  await page.locator('#stock-item').selectOption("training-chicken");
+  await page.locator('#stock-quantity').fill("5");
+  await page.locator('#stock-reason').fill("Kitchen preparation");
+  await page.locator('[data-training="stock-review"]').click();
+  const other=await context.newPage();
+  const second=await prepare(other,"issue-kitchen","inventory_manager");
+  expect(second.attempt_id).not.toBe(first.attempt_id);
+  const refused=page.waitForResponse(response=>response.url().endsWith('/stock/issues')&&response.status()===409);
+  await page.locator('[data-training="confirm"]').click();
+  expect((await(await refused).json()).detail).toContain("another tab");
+  const result=await other.request.post('/api/v1/training/check',{headers:{...headers,'X-Training-Attempt':second.attempt_id},data:{answer:'issue'}});
+  expect((await result.json()).passed).toBeFalsy();
+  await other.close();
+});
+
 for(const[lesson,role,answer]of[
+  ["create-item","inventory_manager","no"],
+  ["edit-item-reorder","inventory_manager","no"],
+  ["add-item-barcode","inventory_manager","no"],
+  ["remove-item-barcode","inventory_manager","no"],
+  ["define-unit-conversion","inventory_manager","1000"],
+  ["set-location-policy","inventory_manager","no"],
+  ["deactivate-empty-item","inventory_manager","no"],
+  ["reactivate-item","inventory_manager","no"],
+  ["stock-blocks-deactivation","inventory_manager","no"],
+  ["catalogue-scope-required","inventory_manager","no"],
+  ["create-supplier","procurement_officer","no"],
+  ["edit-supplier-terms","procurement_officer","no"],
+  ["link-supplier-item","procurement_officer","no"],
+  ["deactivate-unused-supplier","procurement_officer","no"],
+  ["reactivate-supplier","procurement_officer","no"],
+  ["open-orders-block-deactivation","procurement_officer","no"],
   ["partial-delivery","receiver","no"],
   ["damaged-delivery","receiver","no"],
   ["fully-rejected","receiver","no"],

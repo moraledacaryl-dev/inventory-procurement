@@ -68,3 +68,7 @@ class Store:
     def history(self, learner_id):
         with self.connect() as db:
             return [dict(row) for row in db.execute("SELECT * FROM attempts WHERE learner_id=? ORDER BY started_at DESC, rowid DESC", (learner_id,))]
+
+    def business_actions(self, attempt_id):
+        with self.connect() as db:
+            return [json.loads(row[0]) for row in db.execute("SELECT detail FROM events WHERE attempt_id=? AND kind='business_action' ORDER BY id", (attempt_id,))]

@@ -11,6 +11,7 @@ from app.core.security import hash_password
 from app.services.inventory import post_document
 from app.services.classification_defaults import ensure_operating_structure_defaults
 from training.curriculum import Lesson, VERSION
+from training.catalogue_scenarios import catalogue_values, prepare_catalogue, verify_catalogue
 
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
@@ -22,7 +23,7 @@ def values(lesson: Lesson, mode: str):
     if mode == "independent" and quantity > 1:
         quantity = max(1, quantity - 2)
     rejected = min(lesson.rejected, quantity)
-    return {**IDS, "quantity": quantity, "rejected": rejected,
+    return {**IDS, **catalogue_values(mode), "quantity": quantity, "rejected": rejected,
         "practice_item": IDS["amenities"] if lesson.id == "housekeeping-supplies" else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id == "housekeeping-supplies" else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id == "housekeeping-supplies" else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
@@ -68,7 +69,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         db.add(UnitConversion(item_id=IDS["chicken"], from_unit_id=IDS["kg"], to_unit_id=IDS["gram"], multiplier=1000))
         db.add(SupplierItem(supplier_id=IDS["supplier"], item_id=IDS["chicken"], last_price=200, lead_time_days=3, minimum_order_quantity=1, is_preferred=True))
         if role != "owner":
-            locations = [None] if role in {"procurement_officer", "viewer"} else [IDS["store"], IDS["kitchen"]] if role == "inventory_manager" else [IDS["store"]]
+            locations = [None] if lesson.global_access or role in {"procurement_officer", "viewer"} else [IDS["store"], IDS["kitchen"]] if role == "inventory_manager" else [IDS["store"]]
             for location in locations:
                 db.add(OperationalAccessScope(user_id=IDS["actor"], location_id=location, approval_limit=10000, is_active=True))
         post_document(db, kind="receipt", actor_id=IDS["colleague"], entries=[{"item_id": IDS["chicken"], "location_id": IDS["store"], "quantity": Decimal(v["base"]), "unit_cost": Decimal(200)}], reference="Synthetic opening stock", commit=False)
@@ -123,6 +124,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
             db.add(asset_item);db.flush()
             db.add(FixedAsset(asset_tag="TRAIN-FRIDGE-01",item_id=asset_item.id,asset_class_id=asset_class.id,depreciation_method_id=method.id,location_id=IDS["store"],acquisition_date=date(2026,1,1),acquisition_cost={"guided":20000,"assisted":22000,"independent":24000}[mode],status="active",created_by_user_id=IDS["colleague"]))
         db.add(ProductionBatch(id=IDS["batch"], batch_number="TRAIN-BATCH", recipe_id=recipe.id, location_id=IDS["store"], planned_quantity=12, created_by_user_id=IDS["actor"]))
+        prepare_catalogue(db,lesson,v)
         db.commit()
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
@@ -159,7 +161,7 @@ def practical_question(lesson, mode):
         return "In this supplier's item links, how many delivery lead-time days are shown for chicken?", "3", f"/suppliers/{IDS['supplier']}"
     if lesson.workflow == "read_recipe":
         return "Open the training recipe. What is the chicken cost for one portion in pesos?", "50", f"/production/recipes/{IDS['recipe']}"
-    return "", "", lesson.route.format(**IDS)
+    return "", "", lesson.route.format(**v)
 
 
 def inspection_endpoint(lesson):
@@ -168,8 +170,10 @@ def inspection_endpoint(lesson):
     return {"read_stock":"/api/v1/availability", "read_supplier":f"/api/v1/suppliers/{IDS['supplier']}/detail", "read_recipe":f"/api/v1/recipes/{IDS['recipe']}/costing-detail"}.get(lesson.workflow)
 
 
-def verify(db: Session, lesson: Lesson, mode: str) -> tuple[bool, dict]:
+def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple[bool, dict]:
     v = values(lesson, mode)
+    if lesson.workflow.startswith("catalogue_"):
+        return verify_catalogue(db,lesson,v,business_actions)
     q = Decimal(v["quantity"])
     start = Decimal(v["base"])
     workflow = lesson.workflow
@@ -236,7 +240,7 @@ def verify(db: Session, lesson: Lesson, mode: str) -> tuple[bool, dict]:
     return bool(ok), result
 
 
-def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int) -> int:
+def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int, business_actions=()) -> int:
     """Recover a lost guide acknowledgement from committed business state.
 
     A browser can close after Save commits but before its checkpoint request
@@ -249,8 +253,11 @@ def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int) 
             if count.status in {"pending_approval", "posted"}: return len(lesson.steps)
             if count.status == "open": return max(checkpoint, 2)
     if not lesson.workflow.startswith("read_"):
-        passed, _ = verify(db, lesson, mode)
+        passed, _ = verify(db, lesson, mode,business_actions)
         if passed: return len(lesson.steps)
+        # These real forms persist an attempt-scoped browser draft. The guide
+        # validates its acknowledged fields before restoring this checkpoint.
+        if lesson.id in {"create-item","create-supplier"}: return checkpoint
         # Receiving has an attempt-scoped browser draft. Other unposted forms
         # restart their guide rather than pointing at empty/disabled controls.
         if lesson.workflow != "receiving": return 0

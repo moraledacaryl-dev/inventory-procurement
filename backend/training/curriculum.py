@@ -3,45 +3,16 @@
 Every task uses an existing Inventory route. Knowledge checks alone never certify
 a transaction lesson. Independent attempts start from a fresh, different fixture.
 """
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Literal
+from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.26.2"
+VERSION = "2026.11.26.3"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
 ROLE_NAMES = {"inventory_manager": "Stock and department supplies", "procurement_officer": "Purchasing",
     "receiver": "Receiving deliveries", "counter": "Physical stock counts", "viewer": "Reports and review", "owner": "Owner and administration"}
-
-
-@dataclass(frozen=True)
-class Step:
-    target: str
-    instruction: str
-    value: str | None = None
-    event: str = "click"
-    outcome: str | None = None
-
-
-@dataclass(frozen=True)
-class Lesson:
-    id: str
-    module: str
-    title: str
-    roles: tuple[str, ...]
-    route: str
-    workflow: str
-    situation: str
-    concept: str
-    example: str
-    rule: str
-    question: str
-    answer: str
-    correction: str
-    sources: tuple[str, ...]
-    steps: tuple[Step, ...] = field(default_factory=tuple)
-    quantity: int = 0
-    rejected: int = 0
 
 
 STOCK = ("inventory_manager", "owner")
@@ -345,6 +316,9 @@ for index, lesson in enumerate(LESSONS):
         if lesson.workflow == "production":
             steps[0]=replace(steps[0],outcome="/production-batches/training-batch/start")
         LESSONS[index]=replace(lesson,steps=tuple(steps))
+
+from training.catalogue_lessons import LESSONS as CATALOGUE_LESSONS
+LESSONS.extend(CATALOGUE_LESSONS)
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)

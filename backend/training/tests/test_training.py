@@ -9,9 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 from conftest import begin
 
-LESSON_IDS = [
-    "available-stock", "find-your-work", "catalogue-units", "opening-stock", "issue-kitchen", "transfer-stock", "blind-count", "count-zero", "approve-count", "record-waste", "supplier-profile", "request-purchase", "purchase-approval", "order-supplies", "supplier-return", "expiry-rotation", "recipe-cost", "batch-production", "menu-mapping", "sale-consumption", "staff-meal", "housekeeping-supplies", "asset-maintenance", "accounting-proof", "connected-work", "management-review", "admin-controls", "full-delivery", "partial-delivery", "damaged-delivery", "expired-delivery", "fully-rejected", "quantity-discrepancy", "wrong-item", "later-delivery", "check-order", "resume-delivery",
-]
+from training.curriculum import LESSONS
+LESSON_IDS = [lesson.id for lesson in LESSONS]
 
 
 @pytest.mark.parametrize("lesson",LESSON_IDS)
@@ -146,6 +145,10 @@ def test_reset_preserves_history_and_rejects_stale_tab(learner):
     second=learner.post("/api/v1/training/start",json={"lesson_id":"issue-kitchen"}).json()
     stale=learner.post("/api/v1/stock/issues",json={"location_id":"training-store","lines":[{"item_id":"training-chicken","quantity":5}]})
     assert stale.status_code == 409
+    assert learner.get("/api/v1/stock/balances").status_code==409
+    assert learner.post("/api/v1/training/checkpoint",json={"step":3}).status_code==409
+    assert learner.post("/api/v1/training/hint").status_code==409
+    assert learner.post("/api/v1/training/check",json={"answer":"issue"}).status_code==409
     me=learner.get("/api/v1/training/me").json()
     assert len(me["history"]) == 2
     assert any(row["id"]==first["attempt_id"] and row["status"]=="reset" for row in me["history"])
@@ -309,4 +312,7 @@ main()
         else: pytest.fail("Dedicated launcher did not become ready")
     finally:
         child.terminate()
-        child.wait(timeout=10)
+        try: child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=5)

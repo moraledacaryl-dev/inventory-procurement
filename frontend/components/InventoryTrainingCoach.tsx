@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { trainingEnabled, type TrainingLesson, type TrainingProfile } from "../lib/inventory-training";
 import { readTrainingReceiptDraft } from "../lib/training-receiving-draft";
+import { restoreCatalogueCheckpoint } from "../lib/training-form-draft";
+import {rememberTrainingAttempt,trainingAttempt} from "../lib/training-session";
 import "./inventory-training-coach.css";
 
 type Box = { top: number; left: number; width: number; height: number };
@@ -36,8 +38,11 @@ export function InventoryTrainingCoach() {
     if (!visible) return;
     try {
       const result = await api<TrainingProfile>("/training/me");
+      const bound=trainingAttempt();
+      if(bound&&result.attempt&&bound!==result.attempt.id)throw new Error("This practice changed in another tab. Return to Training to continue the current task.");
       setProfile(result);
       let checkpoint=result.attempt?.checkpoint||0;
+      if(result.lesson&&result.attempt?.status!=="passed")checkpoint=restoreCatalogueCheckpoint(result.lesson,checkpoint);
       if(result.lesson?.workflow==="receiving"&&checkpoint<result.lesson.steps.length){
         const draft=readTrainingReceiptDraft(),steps=result.lesson.steps;
         const index=(target:string)=>Math.max(0,steps.findIndex(row=>row.target===target));
@@ -56,7 +61,7 @@ export function InventoryTrainingCoach() {
       setStep(checkpoint);
       setPassed(result.attempt?.status==="passed");
       setInspected(result.record_inspected || readPaths.current.has(result.lesson?.inspection_api_path||""));
-      if(result.attempt)localStorage.setItem("inventory-training-attempt",result.attempt.id);
+      if(result.attempt)rememberTrainingAttempt(result.attempt.id);
       setError("");
     } catch(exception){setError((exception as Error).message)}
   },[visible]);
@@ -68,8 +73,8 @@ export function InventoryTrainingCoach() {
   useEffect(()=>{
     if(!visible)return;
     const observe=(event:Event)=>{
-      const detail=(event as CustomEvent<{path:string;method:string}>).detail;
-      if(detail.method!=="GET")return;
+      const detail=(event as CustomEvent<{path:string;method:string;status:number}>).detail;
+      if(detail.method!=="GET"||detail.status!==200)return;
       const path="/api/v1"+detail.path.split("?")[0];readPaths.current.add(path);
       if(path===lesson?.inspection_api_path)setInspected(true);
     };
@@ -134,8 +139,9 @@ export function InventoryTrainingCoach() {
       void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:next})}).catch(()=>setError("Your guide checkpoint was not saved. Your posted practice records are safe. Use Continue practice to reconnect."));
     }
     function businessOutcome(event:Event){
-      const detail=(event as CustomEvent<{path:string;method:string}>).detail;
-      if(current?.outcome&&detail.path===current.outcome&&detail.method!=="GET")advance();
+      const detail=(event as CustomEvent<{path:string;method:string;status:number}>).detail;
+      const expected=current?.outcome_status;
+      if(current?.outcome&&detail.path===current.outcome&&detail.method!=="GET"&&(expected?detail.status===expected:detail.status>=200&&detail.status<300))advance();
     }
     function observe(event:Event){
       const target=event.target as HTMLElement;
@@ -143,7 +149,8 @@ export function InventoryTrainingCoach() {
       if(!node||node instanceof HTMLButtonElement&&node.disabled)return;
       if(event.type==="focusout"&&current!.value!==null){
         const input=node as HTMLInputElement;
-        if(input.value!==String(current!.value))setInputMessage(current!.instruction+" Use the amount in this situation, not the original order amount.");
+        if(input.value!==String(current!.value))setInputMessage(current!.instruction+" Check the value and unit or code in this task before continuing.");
+        else if(!current!.outcome)advance();
         return;
       }
       if(event.type!==current!.event)return;
@@ -157,7 +164,7 @@ export function InventoryTrainingCoach() {
 
   async function hint(){setBusy(true);try{const result=await api<{lesson:TrainingLesson}>("/training/hint",{method:"POST"});guideRef.current=result.lesson;setShowHint(true);setExpanded(true)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}
   async function check(){setBusy(true);setFeedback("");try{const result=await api<{passed:boolean;message:string}>("/training/check",{method:"POST",body:JSON.stringify({answer,observation})});setPassed(result.passed);setFeedback(result.message)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}
-  async function reset(){if(!lesson||!profile?.attempt)return;setBusy(true);try{const result=await api<{attempt_id:string;lesson:TrainingLesson}>("/training/start",{method:"POST",body:JSON.stringify({lesson_id:lesson.id,mode:profile.attempt.mode})});localStorage.setItem("inventory-training-attempt",result.attempt_id);window.location.assign(result.lesson.route)}catch(exception){setError((exception as Error).message);setBusy(false)}}
+  async function reset(){if(!lesson||!profile?.attempt)return;setBusy(true);try{const result=await api<{attempt_id:string;lesson:TrainingLesson}>("/training/start",{method:"POST",body:JSON.stringify({lesson_id:lesson.id,mode:profile.attempt.mode})});rememberTrainingAttempt(result.attempt_id);window.location.assign(result.lesson.route)}catch(exception){setError((exception as Error).message);setBusy(false)}}
   if(!visible)return null;
   const floating=!!current&&!!panel&&expanded&&!passed;
   return <>

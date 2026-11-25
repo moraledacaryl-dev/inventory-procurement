@@ -15,6 +15,7 @@ def source_hashes():
     paths.append(ROOT / "frontend/app/layout.tsx")
     paths += sorted(path for path in (ROOT / "frontend/components").glob("*.tsx") if path.name != "InventoryTrainingCoach.tsx")
     paths.append(ROOT / "frontend/lib/api.ts")
+    paths.append(ROOT / "frontend/hooks/useFormDraft.ts")
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
 
 
@@ -25,11 +26,14 @@ def validate():
     if changed:
         raise SystemExit("Inventory source changed; review training contracts and fixtures before refreshing the baseline:\n" + "\n".join(changed))
     from training.curriculum import LESSONS, ROLES, CAPSTONES
+    from training.scenarios import public_lesson
     modules = {lesson.module for lesson in LESSONS}
     assert modules == set("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     from app.core.roles import Role
     assert set(ROLES) == {role.value for role in Role}
     for lesson in LESSONS:
+        for mode in ("guided","assisted","independent"):
+            public_lesson(lesson,mode)
         assert set(lesson.roles).issubset(ROLES)
         assert lesson.steps or lesson.workflow.startswith("read_")
         assert lesson.question and lesson.answer and lesson.correction

@@ -82,6 +82,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function logout() {
+  const training = process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1";
   await api<void>("/auth/logout", { method: "POST" });
-  if (typeof window !== "undefined") window.location.assign("/login?signed_out=1");
+  if (typeof window !== "undefined") {
+    if (training) {
+      for (const key of Object.keys(localStorage)) if (key.startsWith("inventory-training")) localStorage.removeItem(key);
+    }
+    window.location.assign(training ? "/training" : "/login?signed_out=1");
+  }
 }

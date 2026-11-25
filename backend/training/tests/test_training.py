@@ -124,6 +124,15 @@ def test_knowledge_alone_never_passes_and_guide_checkpoint_is_not_evidence(learn
     assert learner.post("/api/v1/training/checkpoint",json={"step":100}).status_code == 422
 
 
+def test_opening_quantity_without_correct_valuation_does_not_pass(learner):
+    begin(learner,"opening-stock","inventory_manager")
+    response=learner.post("/api/v1/stock/receipts",json={"location_id":"training-store","lines":[{"item_id":"training-chicken","quantity":5,"unit_cost":0}]})
+    assert response.status_code==201
+    result=check(learner,"opening-stock")
+    assert not result["passed"]
+    assert "PHP 200 per kg" in result["message"]
+
+
 def test_reading_requires_observation_and_actual_record_request(learner):
     begin(learner,"available-stock","viewer")
     payload={"answer":"available","observation":"20"}
@@ -176,6 +185,15 @@ def test_independent_assessment_locked_until_both_practice_levels(learner):
     assert learner.post("/api/v1/training/start",json={"lesson_id":"issue-kitchen","mode":"independent"}).status_code==409
 
 
+def test_outdated_attempt_cannot_post_or_certify_under_a_new_curriculum(learner,app):
+    result=begin(learner,"issue-kitchen","inventory_manager")
+    with app.state.training_store.connect() as db:
+        db.execute("UPDATE attempts SET curriculum_version='old' WHERE id=?",(result["attempt_id"],))
+    assert learner.get("/api/v1/training/me").json()["attempt"] is None
+    assert learner.post("/api/v1/stock/issues",json={"location_id":"training-store","lines":[{"item_id":"training-chicken","quantity":5}]}).status_code==409
+    assert learner.post("/api/v1/training/check",json={"answer":"issue"}).status_code==409
+
+
 def test_mastery_requires_different_independent_business_outcome_and_no_hints(learner):
     from training.curriculum import BY_ID
     begin(learner,"issue-kitchen","inventory_manager")
@@ -198,6 +216,37 @@ def test_manager_roster_not_exposed_to_self_selected_owner(learner):
     begin(learner,"accounting-proof","owner")
     assert learner.get("/api/v1/training/management").status_code==403
     assert learner.post("/api/v1/training/assign",json={"learner_id":"other","role":"owner"}).status_code==403
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_sign_out_separates_employees_and_preserves_trainer_history(learner,app,active):
+    first=learner.post("/api/v1/training/enrol",json={"name":"First employee","role":"receiver"}).json()
+    if active:
+        assert learner.post("/api/v1/training/start",json={"lesson_id":"partial-delivery"}).status_code==200
+    response=learner.post("/api/v1/auth/logout")
+    assert response.status_code==204
+    assert response.headers["x-inventory-environment"]=="isolated-training"
+    assert learner.get("/api/v1/training/me").status_code==401
+    second=learner.post("/api/v1/training/enrol",json={"name":"Second employee","role":"receiver"}).json()
+    assert first["id"]!=second["id"]
+    assert learner.get("/api/v1/training/me").json()["history"]==[]
+    assert len(app.state.training_store.history(first["id"]))==int(active)
+
+
+def test_authorized_trainer_can_review_and_reassign_without_losing_history(learner,app):
+    begin(learner,"issue-kitchen","inventory_manager")
+    me=learner.get("/api/v1/training/me").json()
+    key=(app.state.training_store.root/"manager-key").read_text()
+    headers={"X-Training-Manager-Key":key}
+    roster=learner.get("/api/v1/training/management",headers=headers)
+    assert roster.status_code==200
+    assert any(row["id"]==me["learner"]["id"] for row in roster.json()["learners"])
+    response=learner.post("/api/v1/training/assign",headers=headers,json={"learner_id":me["learner"]["id"],"role":"receiver"})
+    assert response.status_code==200
+    after=learner.get("/api/v1/training/me").json()
+    assert after["learner"]["role"]=="receiver"
+    assert after["attempt"] is None
+    assert len(after["history"])==1 and after["history"][0]["status"]=="reset"
 
 
 @pytest.mark.parametrize("key,value", [("DATABASE_URL","postgresql://production/database"),("APP_ENV","production"),("JWT_SECRET","production-secret"),("INTEGRATION_ENDPOINTS_JSON",'{"accounting":"http://127.0.0.1:8000"}'),("STAFF_INTEGRATION_TOKEN","production-token"),("NEXT_PUBLIC_API_URL","https://inventory.hiddenoasis.app/api/v1")])

@@ -15,6 +15,13 @@ jobs:
       fail-fast: false
       matrix: {os: [macos-latest, windows-latest]}
     runs-on: ${{ matrix.os }}
+    # Hosted Windows exports PostgreSQL defaults. Smoke tests intentionally
+    # provide no DB credentials; the runtime continues to reject nonempty ones.
+    env:
+      PGUSER: ''
+      PGPASSWORD: ''
+      PGHOST: ''
+      PGDATABASE: ''
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4

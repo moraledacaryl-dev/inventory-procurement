@@ -180,7 +180,11 @@ def verify(db: Session, lesson: Lesson, mode: str) -> tuple[bool, dict]:
         expected = start + q if workflow == "receipt" else start - q
         exact = len(docs) == 1 and len(docs[0].movements) == (2 if workflow == "transfer" else 1)
         movement_item = v["practice_item"]
-        ok = exact and actual == expected and all(movement.item_id == movement_item for movement in docs[0].movements) and sum((Decimal(movement.quantity) for movement in docs[0].movements if movement.location_id == IDS["store"]), Decimal(0)) == (q if workflow == "receipt" else -q)
+        expected_cost=Decimal(50) if lesson.id=="housekeeping-supplies" else Decimal(200)
+        actor_documents=list(db.scalars(select(StockDocument).where(StockDocument.posted_by_user_id==IDS["actor"])).all())
+        ok = exact and len(actor_documents)==1 and actual == expected and all(movement.item_id == movement_item and Decimal(movement.unit_cost)==expected_cost for movement in docs[0].movements) and sum((Decimal(movement.quantity) for movement in docs[0].movements if movement.location_id == IDS["store"]), Decimal(0)) == (q if workflow == "receipt" else -q)
+        if workflow=="receipt" and not ok:
+            result["correction"]="Record only the starting quantity in the situation, at PHP 200 per kg. Unit cost is the price of one kg, not zero or the total value. Reset this practice if an incorrect opening transaction was already posted."
         if workflow == "transfer":
             ok = ok and balance(db, location="kitchen") == q
         result.update(expected_quantity=str(expected), document_ids=[doc.id for doc in docs])

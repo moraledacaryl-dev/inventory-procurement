@@ -151,6 +151,6 @@
     "frontend/components/SystemHealth.tsx": "b00fac1a78d7b9be340acb2fa185623fdf8d6ed544375ab6fb289491635187c9",
     "frontend/components/WorkspaceLink.tsx": "4f3cd20641b895a13206ab2e141981592f8f74f6b62cea57ee59d865e2592012",
     "frontend/components/WorkspaceSwitcher.tsx": "94ac3d829a605f4005943a532b394bef7e13a7816de26b08c761a40f22ee7ff4",
-    "frontend/lib/api.ts": "cd8fac426fe9975ea8010efb234d464088f6cc5ca3ee8d46d05c0ee5df7d6567"
+    "frontend/lib/api.ts": "f1080e542c497dd0d299c111698a8a4859d4280a042eedd33510d8cbbcd90b6a"
   }
 }

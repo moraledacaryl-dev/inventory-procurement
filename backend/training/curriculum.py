@@ -6,7 +6,7 @@ a transaction lesson. Independent attempts start from a fresh, different fixture
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-VERSION = "2026.11.26.1"
+VERSION = "2026.11.26.2"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
@@ -57,7 +57,7 @@ def s(target, instruction, value=None, event="click"):
 
 
 def stock_steps(action="issue"):
-    return (
+    steps = [
         s('[data-training="stock-open"]', "Open Record a stock movement."),
         s('#stock-kind', "Choose {action_label}.", action, "change"),
         s('[name="location"]', "Choose TRAIN-STORE — Training stockroom.", "store", "change"),
@@ -66,7 +66,10 @@ def stock_steps(action="issue"):
         s('[name="reason"]', "Enter {movement_reason} as the reason.", "{movement_reason}", "input"),
         s('[data-training="stock-review"]', "Check the item, location and quantity before posting."),
         s('[data-training="confirm"]', "Post the transaction only after checking the summary."),
-    )
+    ]
+    if action == "receipt":
+        steps.insert(5,s('[name="cost"]', "Enter PHP 200 per kg as the unit cost. Do not enter the total value.", "200", "input"))
+    return tuple(steps)
 
 
 RECEIPT_STEPS = (
@@ -108,7 +111,7 @@ LESSONS = [
         "Check the base unit, conversion direction and multiplier. Ask the catalogue owner to correct errors before posting stock.",
         "How many grams are in 1 kg?", "1000", "1 kg = 1,000 g. A factor of 1,000 in the wrong direction creates a major stock error.", ("catalogue_configuration.py", "inventory_operations.py")),
     Lesson("opening-stock", "D", "Record an opening balance", STOCK, "/stock", "receipt",
-        "A new training storeroom has {quantity} kg of chicken that has not been recorded. This is opening stock, not a supplier delivery against a PO.",
+        "A new training storeroom has {quantity} kg of chicken at PHP 200 per kg that has not been recorded. This is opening stock, not a supplier delivery against a PO.",
         "Opening stock establishes a starting record. Receiving against a purchase order belongs in Receiving. Quantity is the amount; unit cost is the cost of one base unit.",
         "A starting balance of 5 kg at PHP 200 per kg is PHP 1,000 of inventory. Never enter the total value as the quantity.",
         "Record the correct location, base-unit quantity and evidence. Investigate errors through the authorized correction workflow.",

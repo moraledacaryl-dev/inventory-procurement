@@ -48,6 +48,22 @@ test("a new employee starts training with a clear role and next lesson",async({p
   await page.screenshot({path:`training-test-results/${info.project.name}-welcome.png`,fullPage:true});
 });
 
+test("signing out returns to onboarding and separates the next employee",async({page})=>{
+  await prepare(page,"partial-delivery","receiver");
+  const first=(await (await page.request.get("/api/v1/training/me")).json()).learner.id;
+  await page.getByRole("button",{name:/Account menu for/}).click();
+  await page.getByRole("menuitem",{name:"Sign out",exact:true}).click();
+  await expect(page.getByLabel("Your name")).toBeVisible();
+  await page.getByLabel("Your name").fill("Another employee");
+  await page.getByRole("button",{name:"Start training",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Welcome back, Another employee.",exact:true})).toBeVisible();
+  const second=await (await page.request.get("/api/v1/training/me")).json();
+  expect(second.learner.id).not.toBe(first);
+  expect(second.history).toHaveLength(0);
+  await page.getByRole("button",{name:"Sign out for another employee",exact:true}).click();
+  await expect(page.getByLabel("Your name")).toBeVisible();
+});
+
 for(const[lesson,role,answer]of[
   ["partial-delivery","receiver","no"],
   ["damaged-delivery","receiver","no"],

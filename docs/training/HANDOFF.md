@@ -71,11 +71,11 @@ All 37 definitions have independent assessment mode; 24 assess transactions and 
 Local results on 26 November 2026 (Manila):
 
 - Existing Inventory backend suite: **307 passed, 5 skipped**. The skipped tests require capabilities not available in the local SQLite run; this is not a PostgreSQL certification.
-- Training backend suite: **81 passed**, including all lesson fixtures, real outcomes for ten receiving cases, blind masking, role/location boundaries, independent count approval, stock/production/procurement, concurrent users, resets, stale tabs, manager access, prerequisite enforcement, hint handling, configuration rejection and outbound-network denial.
-- Browser suite: **68 passed** in Chromium: desktop and Pixel 7 emulation. It performs actual selections, inputs, confirmations and postings. Every guided target must be in the visible viewport and must not overlap the coach. Saved-count resume and incorrect-input correction pass.
+- Training backend suite: **86 passed**, including all lesson fixtures, real outcomes for ten receiving cases, blind masking, role/location boundaries, independent count approval, stock/production/procurement, concurrent users, resets, stale tabs, manager access, prerequisite enforcement, hint handling, configuration rejection and outbound-network denial.
+- Browser suite: **70 passed** in Chromium: desktop and Pixel 7 emulation. It performs actual selections, inputs, confirmations and postings. Every guided target must be in the visible viewport and must not overlap the coach. Saved-count resume and incorrect-input correction pass.
 - Axe checks report no serious/critical violations in the new onboarding area and guide/banner on both viewports. This is not a full WCAG audit of every inherited Inventory screen or a screen-reader certification.
 - Training Next standalone build and TypeScript checks pass. Compiled API proxy and opening route are verified before recording the package's training identity.
-- macOS arm64 native package built with PyInstaller 6.16.0 and checksum-verified official Node 22.23.5. The frozen API and complete launcher start successfully; interruption fixes are exercised through that package. The complete 68-case desktop/mobile walkthrough suite passed against the compiled macOS API and bundled standalone web server after release-specific recovery fixes. Windows builds/workflows exist but are not locally verified. Unsigned/ad-hoc packaging is not Developer ID signing or notarization.
+- macOS arm64 native package built with PyInstaller 6.16.0 and checksum-verified official Node 22.23.5. The frozen API and complete launcher start successfully; interruption fixes are exercised through that package. The complete 70-case desktop/mobile walkthrough suite passed against the compiled macOS API and bundled standalone web server after release-specific recovery fixes. Windows builds/workflows exist but are not locally verified. Unsigned/ad-hoc packaging is not Developer ID signing or notarization.
 - Production browser inspection was attempted but the browser access host was unavailable. UI fidelity is supported by reusing the current source and browser workflows, not by a live production side-by-side inspection.
 
 Screenshots: [course](screenshots/course.png), [desktop receiving](screenshots/desktop-receiving.png), [mobile receiving](screenshots/mobile-receiving.png), [desktop count](screenshots/desktop-count.png), [mobile count](screenshots/mobile-count.png), [verified task result](screenshots/desktop-result.png). They show actual practice screens. CI uploads the complete HTML report, traces on failures and screenshots.
@@ -88,7 +88,7 @@ This is a guarantee within the maintained training entry point/configuration, no
 
 ## Corrective evaluation
 
-A separate beginner-oriented pass checked terminology, missing steps, empty values, wrong quantities, interruptions and repeated attempts. It found and corrected: invalid synthetic email validation in the real account endpoint; guide advancement before backend posting completed; overlay overlap near right-edge buttons; mobile dialogs hidden behind the guide; report answers being checked before records loaded; location-planning responses overwriting a newer selection; blind quantities leaking through assessment evidence; old curriculum passes satisfying new prerequisites; and task panels obstructing assisted work. Regression checks cover these behaviors where applicable. This was an engineering evaluation, not an independent hospitality-employee usability study.
+A separate beginner-oriented pass checked terminology, missing steps, empty values, wrong quantities, interruptions and repeated attempts. It found and corrected: invalid synthetic email validation in the real account endpoint; guide advancement before backend posting completed; overlay overlap near right-edge buttons; mobile dialogs hidden behind the guide; report answers being checked before records loaded; location-planning responses overwriting a newer selection; blind quantities leaking through assessment evidence; old curriculum passes satisfying new prerequisites; task panels obstructing assisted work; zero-cost opening stock passing assessment; and sign-out retaining the previous employee identity. Regression checks cover these behaviors where applicable. This was an engineering evaluation, not an independent hospitality-employee usability study.
 
 ## Provisional quality audit
 
@@ -102,7 +102,7 @@ These are engineering judgments against the **entire master brief**, not predete
 | Instruction clarity | 8 | Core tasks exercised; expand units, damaged/expired inspection details and decision variants |
 | Guided practice | 8 | Visible targets, response waits and both viewports verified; remaining workflow controls need coverage |
 | Scenario realism | 7 | Synthetic stock/PO/count/yield outcomes are real; linked days and wider item variety remain |
-| Error recovery | 8 | Reset, saved-count resume, stale tabs and preserved history work; cross-device recovery and remaining unposted form drafts and cross-device recovery remain |
+| Error recovery | 8 | Reset, saved-count resume, stale tabs and preserved history work; cross-device recovery and remaining unposted form drafts remain |
 | Role relevance | 8 | Real roles/scopes enforced; fuller department paths and simultaneous assignments remain |
 | Assessment quality | 6 | Real outcomes gate posting skills; expand multi-objective judgment tasks and calibrate role exams |
 | Desktop usability | 8 | Automated workflows pass; independent human review still needed |
@@ -110,7 +110,7 @@ These are engineering judgments against the **entire master brief**, not predete
 | Accessibility | 8 | Targeted axe/keyboard controls; full inherited-screen and assistive-technology audits remain |
 | Isolation/safety | 9 | Fail-closed config, per-attempt DBs, masking and egress tests; native/hosted environment checks still needed |
 | Maintainability | 8 | Typed lessons, separate fixtures/validators and drift gates; reusable registry migration/version tooling can improve |
-| Automated testing | 8 | 81 training + 68 browser checks; all variants, full PostgreSQL and linked capstones remain |
+| Automated testing | 8 | 86 training + 70 browser checks; all variants, full PostgreSQL and linked capstones remain |
 | Deployment reliability | 5 | Standalone web build verified; actual private hosting, Windows validation and signed distribution remain |
 
 The final commit SHA and pull request URL are supplied in the delivery message/PR metadata. Completion, deployment and independent fidelity certification are deliberately not claimed.

@@ -82,12 +82,19 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 return JSONResponse(status_code=403, content={"detail": "Training requests must come from the training browser."})
             if request.headers.get("x-requested-with") != "HiddenOasisInventory":
                 return JSONResponse(status_code=403, content={"detail": "Missing training request verification"})
+        if path == "/api/v1/auth/logout" and request.method == "POST":
+            response = await call_next(request)
+            response.delete_cookie(cookie_name, httponly=True, secure=bool(os.environ.get("INVENTORY_TRAINING_ORIGIN")), samesite="strict")
+            response.headers["x-inventory-environment"] = "isolated-training"
+            return response
         if path.startswith("/api/v1/") and not path.startswith("/api/v1/training/") and path not in {"/api/v1/health"}:
             try:
                 learner = identity(request)
                 attempt = store.attempt(learner["id"])
                 if not attempt:
                     raise HTTPException(409, "Start your next lesson from Training.")
+                if attempt["curriculum_version"] != VERSION:
+                    raise HTTPException(409, "Training has been updated. Return to your course and start the updated lesson.")
                 request.state.training_attempt = attempt
                 if request.method != "GET" and request.headers.get("x-training-attempt") != attempt["id"]:
                     raise HTTPException(409, "This practice changed in another tab. Return to Training and continue the current lesson.")
@@ -132,6 +139,8 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         attempt = store.attempt(learner["id"])
         if not attempt:
             raise HTTPException(409, "Start a lesson first.")
+        if attempt["curriculum_version"] != VERSION:
+            raise HTTPException(409, "Training has been updated. Start a new attempt from your course.")
         if attempt["lesson_id"] not in BY_ID:
             raise HTTPException(409, "The course has changed. Return to Training to choose an updated lesson.")
         return learner, attempt
@@ -165,6 +174,8 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         learner = identity(request)
         cookies(response, learner["id"], learner["role"])
         attempt = store.attempt(learner["id"])
+        if attempt and attempt["curriculum_version"] != VERSION:
+            attempt = None
         inspected = False
         if attempt and attempt["lesson_id"] in BY_ID:
             path=root / f"attempt-{attempt['id']}.sqlite"

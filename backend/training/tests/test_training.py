@@ -272,3 +272,41 @@ print("outbound connections denied")
     result=subprocess.run([sys.executable,"-c",script],capture_output=True,text=True)
     assert result.returncode==0,result.stderr
     assert "outbound connections denied" in result.stdout
+
+
+def test_dedicated_launcher_initializes_os_loop_before_guard_and_serves_requests(tmp_path):
+    import socket
+    import time
+    from urllib.request import urlopen
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1",0))
+        port=listener.getsockname()[1]
+    # Simulate Windows' loopback-based private socketpair initialization on
+    # every OS. This fails if guard installation moves ahead of loop creation.
+    script='''import asyncio, socket, sys
+original=asyncio.events.new_event_loop
+def initialize():
+    with socket.socket() as probe:
+        probe.settimeout(.1)
+        probe.connect_ex(("127.0.0.1",9))
+    return original()
+asyncio.events.new_event_loop=initialize
+from training.launch import main
+main()
+'''
+    env={k:v for k,v in os.environ.items() if k not in {"DATABASE_URL","JWT_SECRET","BOOTSTRAP_OWNER_PASSWORD","INTERNAL_API_URL","NEXT_PUBLIC_API_URL"} and "INTEGRATION" not in k and not k.startswith(("PGHOST","PGDATABASE","PGUSER","PGPASSWORD"))}
+    child=subprocess.Popen([sys.executable,"-c",script,"--data",str(tmp_path/"inventory-training"),"--port",str(port)],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
+    try:
+        for _ in range(100):
+            if child.poll() is not None:
+                pytest.fail(child.stderr.read())
+            try:
+                with urlopen(f"http://127.0.0.1:{port}/api/v1/training/catalogue",timeout=.2) as response:
+                    assert json.load(response)["environment"]=="isolated-training"
+                break
+            except OSError:
+                time.sleep(.1)
+        else: pytest.fail("Dedicated launcher did not become ready")
+    finally:
+        child.terminate()
+        child.wait(timeout=10)

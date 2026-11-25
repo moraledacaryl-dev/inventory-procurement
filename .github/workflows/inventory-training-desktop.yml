@@ -77,7 +77,10 @@ jobs:
           child=subprocess.Popen([str(executable.resolve())],env={**os.environ,'LOCALAPPDATA':str(temp/'native-learner-state'),'INVENTORY_TRAINING_NO_BROWSER':'1'},stdout=log,stderr=log)
           (temp/'native-training.pid').write_text(str(child.pid))
           for _ in range(100):
-            if child.poll() is not None: raise RuntimeError('Native launcher exited; inspect native-training.log')
+            if child.poll() is not None:
+              error=temp/'native-learner-state'/'HiddenOasis'/'inventory-training'/'launcher-error.log'
+              if error.exists(): print(error.read_text())
+              raise RuntimeError('Native launcher exited; inspect native-training.log')
             try:
               with urlopen('http://127.0.0.1:3400/api/v1/training/catalogue',timeout=1) as response:
                 assert json.load(response)['environment']=='isolated-training'

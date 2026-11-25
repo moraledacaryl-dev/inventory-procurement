@@ -51,6 +51,10 @@ def main():
         import socket
         for port in (3400,8400):
             with socket.socket() as probe:
+                # A previous smoke test may leave accepted sockets in TIME_WAIT.
+                # POSIX permits reuse without sharing an active listener.
+                if os.name != "nt": probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+                elif hasattr(socket,"SO_EXCLUSIVEADDRUSE"): probe.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE,1)
                 try: probe.bind(("127.0.0.1",port))
                 except OSError: raise SystemExit("Training is already open, or a required local port is in use. Close the earlier training window and try again.")
         api_command = [sys.executable,"--training-api","--data",str(data)] if getattr(sys,"frozen",False) else [sys.executable,"-m","training.launch","--data",str(data)]
@@ -72,7 +76,7 @@ def main():
         stop();os.chdir(previous)
 
 
-if __name__ == "__main__":
+def launch():
     if sys.stdout is None: sys.stdout = open(os.devnull,"w")
     if sys.stderr is None: sys.stderr = open(os.devnull,"w")
     if "--training-api" in sys.argv:
@@ -82,3 +86,16 @@ if __name__ == "__main__":
         api_main()
     else:
         main()
+
+
+if __name__ == "__main__":
+    try:
+        launch()
+    except BaseException:
+        # Windowed macOS apps have no console. Keep startup failures available
+        # to the trainer and CI, only inside an already marked training folder.
+        import traceback
+        data=Path(os.environ.get("LOCALAPPDATA",str(Path.home()/".local/share")))/"HiddenOasis"/"inventory-training"
+        if (data/"training-only.json").is_file() and not data.is_symlink():
+            (data/"launcher-error.log").write_text(traceback.format_exc())
+        raise

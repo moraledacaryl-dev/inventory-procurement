@@ -71,7 +71,7 @@ All 37 definitions have independent assessment mode; 24 assess transactions and 
 Local results on 26 November 2026 (Manila):
 
 - Existing Inventory backend suite: **307 passed, 5 skipped**. The skipped tests require capabilities not available in the local SQLite run; this is not a PostgreSQL certification.
-- Training backend suite: **86 passed**, including all lesson fixtures, real outcomes for ten receiving cases, blind masking, role/location boundaries, independent count approval, stock/production/procurement, concurrent users, resets, stale tabs, manager access, prerequisite enforcement, hint handling, configuration rejection and outbound-network denial.
+- Training backend suite: **87 passed**, including all lesson fixtures, real outcomes for ten receiving cases, blind masking, role/location boundaries, independent count approval, stock/production/procurement, concurrent users, resets, stale tabs, manager access, prerequisite enforcement, hint handling, configuration rejection and outbound-network denial.
 - Browser suite: **70 passed** in Chromium: desktop and Pixel 7 emulation. It performs actual selections, inputs, confirmations and postings. Every guided target must be in the visible viewport and must not overlap the coach. Saved-count resume and incorrect-input correction pass.
 - Axe checks report no serious/critical violations in the new onboarding area and guide/banner on both viewports. This is not a full WCAG audit of every inherited Inventory screen or a screen-reader certification.
 - Training Next standalone build and TypeScript checks pass. Compiled API proxy and opening route are verified before recording the package's training identity.
@@ -88,7 +88,7 @@ This is a guarantee within the maintained training entry point/configuration, no
 
 ## Corrective evaluation
 
-A separate beginner-oriented pass checked terminology, missing steps, empty values, wrong quantities, interruptions and repeated attempts. It found and corrected: invalid synthetic email validation in the real account endpoint; guide advancement before backend posting completed; overlay overlap near right-edge buttons; mobile dialogs hidden behind the guide; report answers being checked before records loaded; location-planning responses overwriting a newer selection; blind quantities leaking through assessment evidence; old curriculum passes satisfying new prerequisites; task panels obstructing assisted work; zero-cost opening stock passing assessment; and sign-out retaining the previous employee identity. Regression checks cover these behaviors where applicable. This was an engineering evaluation, not an independent hospitality-employee usability study.
+A separate beginner-oriented pass checked terminology, missing steps, empty values, wrong quantities, interruptions and repeated attempts. It found and corrected: invalid synthetic email validation in the real account endpoint; guide advancement before backend posting completed; overlay overlap near right-edge buttons; mobile dialogs hidden behind the guide; report answers being checked before records loaded; location-planning responses overwriting a newer selection; blind quantities leaking through assessment evidence; old curriculum passes satisfying new prerequisites; task panels obstructing assisted work; zero-cost opening stock passing assessment; sign-out retaining the previous employee identity; Windows private event-loop initialization conflicting with the egress guard; and restart probes rejecting TIME_WAIT sockets. Regression checks cover these behaviors where applicable. This was an engineering evaluation, not an independent hospitality-employee usability study.
 
 ## Provisional quality audit
 
@@ -110,7 +110,7 @@ These are engineering judgments against the **entire master brief**, not predete
 | Accessibility | 8 | Targeted axe/keyboard controls; full inherited-screen and assistive-technology audits remain |
 | Isolation/safety | 9 | Fail-closed config, per-attempt DBs, masking and egress tests; native/hosted environment checks still needed |
 | Maintainability | 8 | Typed lessons, separate fixtures/validators and drift gates; reusable registry migration/version tooling can improve |
-| Automated testing | 8 | 86 training + 70 browser checks; all variants, full PostgreSQL and linked capstones remain |
+| Automated testing | 8 | 87 training + 70 browser checks; all variants, full PostgreSQL and linked capstones remain |
 | Deployment reliability | 5 | Standalone web build verified; actual private hosting, Windows validation and signed distribution remain |
 
 The final commit SHA and pull request URL are supplied in the delivery message/PR metadata. Completion, deployment and independent fidelity certification are deliberately not claimed.

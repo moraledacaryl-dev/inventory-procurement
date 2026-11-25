@@ -91,7 +91,7 @@ export function ConfirmDialog({
         </div>
         <div className="confirm-dialog__actions">
           <button ref={cancelRef} type="button" className="secondary" onClick={onCancel} disabled={busy}>{cancelLabel}</button>
-          <button type="button" className={tone === "danger" ? "danger-button" : "primary"} onClick={onConfirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button>
+          <button data-training="confirm" type="button" className={tone === "danger" ? "danger-button" : "primary"} onClick={onConfirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button>
         </div>
       </section>
     </div>

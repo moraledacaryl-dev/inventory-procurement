@@ -42,9 +42,15 @@ function safeReturnPath() {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const training = process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1";
+  if (training && API !== "/api/v1") throw new Error("Training cannot use an external API address.");
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   headers.set("X-Requested-With", "HiddenOasisInventory");
+  if (training && typeof window !== "undefined") {
+    const attempt = localStorage.getItem("inventory-training-attempt");
+    if (attempt) headers.set("X-Training-Attempt", attempt);
+  }
 
   const response = await fetch(`${API}${path}`, {
     ...init,
@@ -53,7 +59,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: "include",
   });
 
-  if (response.status === 401 && typeof window !== "undefined" && window.location.pathname !== "/login") {
+  if (response.status === 401 && typeof window !== "undefined" && window.location.pathname !== "/login" && !path.startsWith("/training/")) {
+    if (training) { window.location.assign("/training"); throw new Error("Return to Training to continue your session."); }
     const next = encodeURIComponent(safeReturnPath());
     window.location.assign(`/login?expired=1&next=${next}`);
   }
@@ -61,6 +68,13 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new ApiError(formatApiError(body?.detail, `Request failed (${response.status})`), response.status, body);
+  }
+
+  if (training && !path.startsWith("/training/") && response.headers.get("x-inventory-environment") !== "isolated-training") {
+    throw new Error("Practice is unavailable: this API did not identify itself as isolated training.");
+  }
+  if (training && typeof window !== "undefined" && !path.startsWith("/training/")) {
+    window.dispatchEvent(new CustomEvent("inventory-training-action", { detail: { path, method: init.method || "GET" } }));
   }
 
   if (response.status === 204) return undefined as T;

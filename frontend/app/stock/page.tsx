@@ -88,7 +88,7 @@ export default function Page(){
 
   return <AppShell title="Stock" description="Check stock at each location or record what happened to an item.">
 
-    <Can permission="inventory.*"><details className="card workflow-disclosure stock-guided-action"><summary><div className="topline"><div><h2>Record a stock movement</h2><p>Use this when stock was used, moved, received without a purchase order, or corrected.</p></div><StatusBadge status={kind}/></div><span className="disclosure-mark" aria-hidden="true">+</span></summary>
+    <Can permission="inventory.*"><details className="card workflow-disclosure stock-guided-action"><summary data-training="stock-open"><div className="topline"><div><h2>Record a stock movement</h2><p>Use this when stock was used, moved, received without a purchase order, or corrected.</p></div><StatusBadge status={kind}/></div><span className="disclosure-mark" aria-hidden="true">+</span></summary>
     <div className="workflow-disclosure-body">
       <ol className="workflow-steps" aria-label="Stock movement steps"><li className="active">1. Choose action</li><li>2. Enter details</li><li>3. Review &amp; post</li></ol>
       <form onSubmit={prepare}>
@@ -132,7 +132,7 @@ export default function Page(){
           </FormField>
         </FormSection>
         {selectedAvailability?<p className="workflow-note" role="status"><strong>Available: {formatQuantity(selectedAvailability.available)}</strong><span>In stock: {formatQuantity(selectedAvailability.physical)} · Set aside for other work: {formatQuantity(selectedAvailability.reserved)}. Do not issue items that are reserved.</span></p>:null}
-        <div className="form-actions"><button className="primary" disabled={posting}>Check before posting</button></div>
+        <div className="form-actions"><button data-training="stock-review" className="primary" disabled={posting}>Check before posting</button></div>
       </form>
       {feedback?<FeedbackBanner tone={feedback.tone} title={feedback.title} message={feedback.message}/>:null}
     </div></details></Can>

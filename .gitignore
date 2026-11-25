@@ -2,6 +2,8 @@
 .env.production
 .env.*.local
 .venv/
+.venv-training/
+*.spec
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -18,3 +20,9 @@ build/
 .DS_Store
 .idea/
 .vscode/
+*.sqlite
+frontend/training-report/
+frontend/training-test-results/
+frontend/tsconfig.tsbuildinfo
+backend/training-results.xml
+inventory-training-source-and-web.tar.gz

@@ -45,6 +45,9 @@ jobs:
           if Path('frontend/public').exists(): shutil.copytree('frontend/public',target/'public',dirs_exist_ok=True)
       - run: node scripts/verify-training-web.mjs
       - run: python scripts/build-inventory-training-desktop.py
+      - name: Verify macOS bundle before use
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict 'dist/Hidden Oasis Inventory Training.app'
       - name: Verify frozen API starts without Python, database credentials or production endpoints
         shell: python
         run: |
@@ -91,6 +94,9 @@ jobs:
         working-directory: frontend
       - run: npx playwright test --config playwright.training.config.ts
         working-directory: frontend
+      - name: Verify macOS bundle remains unchanged after employee workflows
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict 'dist/Hidden Oasis Inventory Training.app'
       - name: Stop native training processes
         if: always()
         shell: python

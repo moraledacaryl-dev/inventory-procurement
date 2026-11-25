@@ -36,6 +36,7 @@ The packaged frontend must contain `inventory-training-build.json`, produced onl
 - `progress.sqlite` retains learners, immutable attempt history, hints, mistakes and checkpoints. Registry schema 1 migrates transactionally to schema 2, adding curriculum versions. Legacy attempts remain history and do not satisfy current-version prerequisites.
 - `attempt-<uuid>.sqlite` is a separate complete Inventory schema for each practice attempt. A reset creates a fresh file and preserves the previous one and its audit history. The current application models create these disposable schemas; existing attempt schemas are not upgraded in place. Source drift requires review and a new attempt/curriculum version.
 - `session-key` signs participant cookies. `manager-key` protects cross-employee progress and assignments. Both are generated locally, must stay private, and must never enter a package, repository or screenshot.
+- `web-runtime-<build>` is a writable per-build copy of the bundled web server. Next route caches stay here so using training cannot change the signed application bundle. It is disposable while training is stopped; learner records remain in the registry and attempt databases.
 
 The trainer access code is the local `manager-key` value. An authorized administrator supplies it privately to the trainer. The employee role chooser, including Owner, cannot access the roster without that key. No actual staff messages, Accounting delivery or POS service intake is enabled.
 

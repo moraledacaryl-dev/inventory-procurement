@@ -17,6 +17,25 @@ import webbrowser
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
 
 
+def writable_web(frontend, data):
+    # Next writes route caches beside its server. A signed/read-only app bundle
+    # must never be its working directory. Keep a per-build private runtime.
+    import hashlib
+    import shutil
+    import tempfile
+    identity=hashlib.sha256((frontend/".next/BUILD_ID").read_bytes()).hexdigest()[:20]
+    target=data/("web-runtime-"+identity)
+    if target.is_symlink(): raise SystemExit("Training web runtime cannot be a symlink")
+    if not target.exists():
+        with tempfile.TemporaryDirectory(prefix="web-prepare-",dir=data) as stage:
+            payload=Path(stage)/"web"
+            shutil.copytree(frontend,payload)
+            payload.replace(target)
+    if not (target/"server.js").is_file() or not (target/"inventory-training-build.json").is_file():
+        raise SystemExit("Training web runtime is incomplete. Ask your trainer to repair the installation.")
+    return target
+
+
 def main():
     from importlib.util import find_spec
     if sys.version_info < (3, 11) or not find_spec("uvicorn"):
@@ -57,6 +76,7 @@ def main():
                 elif hasattr(socket,"SO_EXCLUSIVEADDRUSE"): probe.setsockopt(socket.SOL_SOCKET,socket.SO_EXCLUSIVEADDRUSE,1)
                 try: probe.bind(("127.0.0.1",port))
                 except OSError: raise SystemExit("Training is already open, or a required local port is in use. Close the earlier training window and try again.")
+        frontend=writable_web(frontend,data)
         api_command = [sys.executable,"--training-api","--data",str(data)] if getattr(sys,"frozen",False) else [sys.executable,"-m","training.launch","--data",str(data)]
         node = ROOT / "runtime" / ("node.exe" if os.name == "nt" else "node")
         children.append(subprocess.Popen(api_command,cwd=ROOT/"backend"))

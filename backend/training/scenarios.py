@@ -1,6 +1,6 @@
 """Deterministic fixtures and read-only outcome verification of real business data."""
 from decimal import Decimal
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from dataclasses import asdict
 from sqlalchemy import create_engine, select
@@ -81,8 +81,15 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
             locations = [None] if lesson.global_access or role in {"procurement_officer", "viewer"} else [IDS["store"], IDS["kitchen"]] if role == "inventory_manager" else [IDS["store"]]
             for location in locations:
                 db.add(OperationalAccessScope(user_id=IDS["actor"], location_id=location, approval_limit=10000, is_active=True))
-        post_document(db, kind="receipt", actor_id=IDS["colleague"], entries=[{"item_id": IDS["chicken"], "location_id": IDS["store"], "quantity": Decimal(v["base"]), "unit_cost": Decimal(200)}], reference="Synthetic opening stock", commit=False)
-        post_document(db, kind="receipt", actor_id=IDS["colleague"], entries=[{"item_id": IDS["amenities"], "location_id": IDS["store"], "quantity": Decimal(v["base"]), "unit_cost": Decimal(50)}], reference="Synthetic amenities", commit=False)
+        # Opening stock precedes this exercise's counting window. Windows
+        # clocks can assign equal timestamps to consecutive fixture writes;
+        # the unchanged source correctly treats >= snapshot as later movement.
+        # Give only these synthetic historical openings a prior-day timestamp.
+        opening_at=datetime.now(timezone.utc)-timedelta(days=1)
+        for item,cost,reference in (("chicken",200,"Synthetic opening stock"),("amenities",50,"Synthetic amenities")):
+            document=post_document(db,kind="receipt",actor_id=IDS["colleague"],entries=[{"item_id":IDS[item],"location_id":IDS["store"],"quantity":Decimal(v["base"]),"unit_cost":Decimal(cost)}],reference=reference,commit=False)
+            document.posted_at=opening_at
+            for movement in db.scalars(select(StockMovement).where(StockMovement.document_id==document.id)):movement.created_at=opening_at
         db.add(StockReservation(reservation_number="TRAIN-RESERVE", item_id=IDS["chicken"], location_id=IDS["store"], quantity=4, reference_type="training", reference_id="another-job", status="active", created_by_user_id=IDS["colleague"]))
         if lesson.workflow == "requisition":
             db.add(ItemLocationSetting(item_id=IDS["chicken"], location_id=IDS["store"], minimum_stock=v["base"] + 6 + v["quantity"], reorder_quantity=0, preferred_supplier_id=IDS["supplier"]))
@@ -197,6 +204,10 @@ def inspection_endpoint(lesson, db=None):
     endpoints={"find-your-work":"/api/v1/dashboard/summary", "catalogue-units":f"/api/v1/items/{IDS['chicken']}/configuration", "expiry-rotation":"/api/v1/reports/expiry", "menu-mapping":"/api/v1/fnb/menu", "asset-maintenance":"/api/v1/assets", "accounting-proof":"/api/v1/integrations/accounting/workspace", "connected-work":"/api/v1/integrations/operations/workspace", "management-review":"/api/v1/supplier-performance", "admin-controls":"/api/v1/access-scopes"}
     if lesson.id in endpoints:return endpoints[lesson.id]
     return {"read_stock":"/api/v1/availability", "read_supplier":f"/api/v1/suppliers/{IDS['supplier']}/detail", "read_recipe":f"/api/v1/recipes/{IDS['recipe']}/costing-detail"}.get(lesson.workflow)
+
+
+def read_only_unchanged(db,actor_id):
+    return not db.scalar(select(AuditLog.id).where(AuditLog.actor_user_id==actor_id)) and not db.scalar(select(StockDocument.id).where(StockDocument.posted_by_user_id==actor_id))
 
 
 def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple[bool, dict]:

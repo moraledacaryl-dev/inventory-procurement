@@ -223,7 +223,7 @@ export function InventoryTrainingCoach() {
         {!guided&&<button type="button" onClick={()=>setExpanded(false)}>Work in the application</button>}
       </>}
       {feedback&&<p className={passed?"inventory-training-success":"inventory-training-correction"} role="status">{feedback}</p>}
-      {passed?<><p>{lesson?.rule}</p><Link className="inventory-training-check" href="/training">Continue your course →</Link></>:lesson&&<div className="inventory-training-recovery"><button disabled={busy} onClick={()=>void reset()}>Reset this practice</button><Link href="/training">Save and return</Link></div>}
+      {passed?<><p>{lesson?.rule}</p><Link className="inventory-training-check" href={profile?.attempt?.exam_id?`/training/assessments?exam=${profile.attempt.exam_id}`:"/training"}>{profile?.attempt?.exam_id?"Continue your final check →":"Continue your course →"}</Link></>:lesson&&<div className="inventory-training-recovery"><button disabled={busy} onClick={()=>void reset()}>Reset this practice</button><Link href="/training">Save and return</Link></div>}
     </aside>}
   </>;
 }

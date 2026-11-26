@@ -79,6 +79,8 @@ jobs:
           log=open(temp/'native-training.log','w')
           child=subprocess.Popen([str(executable.resolve())],env={**os.environ,'LOCALAPPDATA':str(temp/'native-learner-state'),'INVENTORY_TRAINING_NO_BROWSER':'1'},stdout=log,stderr=log)
           (temp/'native-training.pid').write_text(str(child.pid))
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as envfile:
+            envfile.write(f"TRAINING_MANAGER_KEY_PATH={temp/'native-learner-state'/'HiddenOasis'/'inventory-training'/'manager-key'}\n")
           for _ in range(100):
             if child.poll() is not None:
               error=temp/'native-learner-state'/'HiddenOasis'/'inventory-training'/'launcher-error.log'

@@ -34,6 +34,7 @@ jobs:
         run: npm run build
       - name: Start isolated services without production configuration
         run: |
+          echo "TRAINING_MANAGER_KEY_PATH=$RUNNER_TEMP/inventory-training/manager-key" >> "$GITHUB_ENV"
           cd backend
           python -m training.launch --data "$RUNNER_TEMP/inventory-training" > "$RUNNER_TEMP/training-api.log" 2>&1 &
           cd ../frontend

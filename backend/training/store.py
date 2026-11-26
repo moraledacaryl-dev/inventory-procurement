@@ -30,14 +30,33 @@ class Store:
                 id INTEGER PRIMARY KEY, attempt_id TEXT NOT NULL REFERENCES attempts(id),
                 kind TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
             ''')
+            db.execute("BEGIN IMMEDIATE")
             versions = [row[0] for row in db.execute("SELECT version FROM schema_version")]
             if versions == [1]:
                 db.execute("ALTER TABLE attempts ADD COLUMN curriculum_version TEXT NOT NULL DEFAULT 'legacy'")
                 db.execute("UPDATE schema_version SET version=2")
                 versions = [2]
-            if versions != [2]:
+            if versions == [2]:
+                db.execute("CREATE TABLE path_assignments (learner_id TEXT NOT NULL REFERENCES learners(id), path_id TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(learner_id,path_id))")
+                db.execute("CREATE TABLE exams (id TEXT PRIMARY KEY, learner_id TEXT NOT NULL REFERENCES learners(id), path_id TEXT NOT NULL, role TEXT NOT NULL, module TEXT, curriculum_version TEXT NOT NULL, assessment_version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', blueprint TEXT NOT NULL, answers_draft TEXT NOT NULL DEFAULT '{}', result TEXT NOT NULL DEFAULT '{}', started_at TEXT DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)")
+                db.execute("ALTER TABLE learners ADD COLUMN path_id TEXT NOT NULL DEFAULT 'legacy'")
+                db.execute("ALTER TABLE attempts ADD COLUMN path_id TEXT NOT NULL DEFAULT 'legacy'")
+                db.execute("ALTER TABLE attempts ADD COLUMN exam_id TEXT REFERENCES exams(id)")
+                db.execute("UPDATE learners SET path_id='role-'||role")
+                db.execute("UPDATE attempts SET path_id='role-'||role")
+                db.execute("INSERT INTO path_assignments(learner_id,path_id) SELECT id,path_id FROM learners")
+                db.execute("UPDATE schema_version SET version=3")
+                versions = [3]
+            if versions == [3]:
+                db.execute("ALTER TABLE exams ADD COLUMN draft_revision INTEGER NOT NULL DEFAULT 0")
+                db.execute("UPDATE schema_version SET version=4")
+                versions = [4]
+            if versions != [4]:
                 raise RuntimeError("Unsupported training registry schema; migration required")
             db.executescript('''
+              CREATE UNIQUE INDEX IF NOT EXISTS training_active_exam ON exams(learner_id,path_id,COALESCE(module,'')) WHERE status='active';
+              CREATE INDEX IF NOT EXISTS training_exam_history ON exams(learner_id,started_at);
+              CREATE INDEX IF NOT EXISTS training_exam_attempts ON attempts(exam_id,lesson_id);
               CREATE INDEX IF NOT EXISTS training_event_attempt_kind ON events(attempt_id,kind,id);
               CREATE INDEX IF NOT EXISTS training_history_learner ON attempts(learner_id,started_at);
             ''')
@@ -78,3 +97,17 @@ class Store:
     def business_actions(self, attempt_id):
         with self.connect() as db:
             return [json.loads(row[0]) for row in db.execute("SELECT detail FROM events WHERE attempt_id=? AND kind IN ('business_action','record_read') ORDER BY id", (attempt_id,))]
+
+
+    def assignments(self, learner_id):
+        with self.connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM path_assignments WHERE learner_id=? ORDER BY created_at,path_id",(learner_id,))]
+
+    def exam(self, learner_id, exam_id):
+        with self.connect() as db:
+            row=db.execute("SELECT * FROM exams WHERE id=? AND learner_id=?",(exam_id,learner_id)).fetchone()
+            return dict(row) if row else None
+
+    def exams(self, learner_id):
+        with self.connect() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM exams WHERE learner_id=? ORDER BY started_at DESC,rowid DESC",(learner_id,))]

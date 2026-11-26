@@ -46,8 +46,19 @@ def validate():
         assert all(any(lesson.id == ident for lesson in LESSONS) for ident in capstone["lessons"])
         if capstone.get("linked"):
             assert len(capstone["lessons"])==1 and next(lesson for lesson in LESSONS if lesson.id==capstone["lessons"][0]).workflow.startswith("capstone_")
+    from training.paths import PATHS
+    from training.exams import blueprint,public_blueprint
+    exams=0
+    for path in PATHS:
+        assert all(path.role in next(lesson.roles for lesson in LESSONS if lesson.id==id) for id in path.lessons)
+        for module in [None]+sorted({next(lesson.module for lesson in LESSONS if lesson.id==id) for id in path.lessons}):
+            row=blueprint(path.id,module)
+            assert set(row["practical_lessons"])<=set(path.lessons)
+            assert all(question.prompt and question.answer and question.correction for question in row["questions"])
+            assert all("answer" not in question for question in public_blueprint(row)["questions"])
+            exams+=1
     linked=sum(bool(row.get("linked")) for row in CAPSTONES)
-    print(f"Verified {len(LESSONS)} lesson definitions, 26 modules, 6 roles, {len(actual)} operational source contracts, {linked} linked capstones and {len(CAPSTONES)-linked} task sequences")
+    print(f"Verified {len(LESSONS)} lesson definitions, 26 modules, 6 roles, {len(actual)} operational source contracts, {linked} linked capstones and {len(CAPSTONES)-linked} task sequences, {len(PATHS)} duty courses and {exams} final-check blueprints")
 
 
 if __name__ == "__main__":

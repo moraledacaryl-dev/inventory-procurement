@@ -110,7 +110,7 @@ test("a new employee starts training with a clear role and next lesson",async({p
   await page.goto("/");
   await expect(page).toHaveURL(/training/);
   await page.getByLabel("Your name").fill("New stockroom colleague");
-  await page.getByLabel("Your training responsibilities").selectOption("inventory_manager");
+  await page.getByLabel("Your training responsibilities").selectOption("stockroom");
   await page.getByRole("button",{name:"Start training",exact:true}).click();
   await expect(page.getByRole("heading",{name:/Welcome back, New stockroom/})).toBeVisible();
   await expect(page.getByText("skills demonstrated independently",{exact:true})).toBeVisible();

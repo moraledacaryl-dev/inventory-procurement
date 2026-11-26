@@ -12,14 +12,15 @@ export type TrainingAttempt = {
   id: string; lesson_id: string; mode: "guided" | "assisted" | "independent";
   role: string; status: string; hints: number; mistakes: number; checkpoint: number;
   started_at: string; completed_at: string | null; evidence: string;
-  curriculum_version: string;
+  curriculum_version: string; path_id:string; exam_id:string|null;
 };
 export type TrainingProfile = {
-  learner: { id: string; name: string; role: string }; attempt: TrainingAttempt | null;
+  learner: { id: string; name: string; role: string; path_id:string }; attempt: TrainingAttempt | null;
   lesson: TrainingLesson | null; history: TrainingAttempt[]; version: string;
-  record_inspected: boolean;
+  record_inspected: boolean; assignments:{path_id:string;created_at:string}[];
 };
-export type TrainingCatalogue = { version: string; roles: Record<string, string>; lessons: TrainingLesson[];
+export type DutyPath = {id:string;title:string;role:string;description:string;lessons:string[];final_tasks:string[]};
+export type TrainingCatalogue = { paths:DutyPath[]; version: string; roles: Record<string, string>; lessons: TrainingLesson[];
   capstones: { id: string; title: string; lessons: string[]; linked?:boolean }[]; environment: string };
 
 export function mastery(history: TrainingAttempt[], lesson: TrainingLesson, role: string) {

@@ -218,3 +218,43 @@ def test_capstone_reset_preserves_history_and_removes_previous_business_outcomes
     result=learner.post('/api/v1/training/check',json={'answer':'no'}).json()
     assert not result['passed'] and not result['evidence']['critical_pass']
     assert any(row['id']==old['attempt_id'] and row['status']=='reset' for row in learner.get('/api/v1/training/me').json()['history'])
+
+
+@pytest.mark.parametrize('lesson,role',[('cap-monthly-count','counter'),('count-multiple-units','counter')])
+def test_count_fixture_order_remains_valid_when_the_clock_does_not_advance(learner,monkeypatch,lesson,role):
+    from datetime import datetime,timezone
+    from app.models.inventory import CountSession,StockMovement
+    from training.scenarios import values
+    from training.curriculum import BY_ID
+    fixed=datetime.now(timezone.utc).replace(microsecond=0)
+    monkeypatch.setattr(CountSession.__table__.c.created_at.default,'arg',lambda context:fixed)
+    monkeypatch.setattr(StockMovement.__table__.c.created_at.default,'arg',lambda context:fixed)
+    begin(learner,lesson,role)
+    v=values(BY_ID[lesson],'guided')
+    assert learner.put('/api/v1/counts/training-count/entries',json={'lines':[{'item_id':v['chicken'],'counted_quantity':v['quantity']},{'item_id':v['amenities'],'counted_quantity':v['secondary_count']}]}).status_code==200
+    response=learner.post('/api/v1/counts/training-count/submit')
+    assert response.status_code==200,response.text
+    assert response.json()['status']=='pending_approval'
+    if lesson=='cap-monthly-count':assert learner.get('/api/v1/counts/training-count/detail').json()['status']=='posted'
+    assert learner.post('/api/v1/training/check',json={'answer':BY_ID[lesson].answer}).json()['passed']
+
+
+def test_same_instant_new_movement_still_invalidates_an_equal_quantity_count(learner,app,monkeypatch):
+    from datetime import datetime,timezone
+    from decimal import Decimal
+    from sqlalchemy.orm import Session
+    from app.models.inventory import CountSession,StockMovement
+    from app.services.inventory import post_document
+    from training.scenarios import engine_for,values
+    from training.curriculum import BY_ID
+    fixed=datetime.now(timezone.utc).replace(microsecond=0)
+    monkeypatch.setattr(CountSession.__table__.c.created_at.default,'arg',lambda context:fixed)
+    monkeypatch.setattr(StockMovement.__table__.c.created_at.default,'arg',lambda context:fixed)
+    started=begin(learner,'blind-count','counter');v=values(BY_ID['blind-count'],'guided')
+    engine=engine_for(app.state.training_store.root/f"attempt-{started['attempt_id']}.sqlite")
+    with Session(engine) as db:
+        for qty in (-1,1):post_document(db,kind='issue' if qty<0 else 'receipt',actor_id=v['colleague'],entries=[{'item_id':v['chicken'],'location_id':v['store'],'quantity':Decimal(qty),'unit_cost':200}],reference='Legitimate later movement')
+    engine.dispose()
+    assert learner.put('/api/v1/counts/training-count/entries',json={'lines':[{'item_id':v['chicken'],'counted_quantity':v['quantity']}]}).status_code==200
+    response=learner.post('/api/v1/counts/training-count/submit')
+    assert response.status_code==409 and 'Stock moved after' in response.text

@@ -26,9 +26,10 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     from app.api.deps import SESSION_COOKIE_NAME
     from training.store import Store
     from training.curriculum import BY_ID, LESSONS, VERSION, ROLES, ROLE_NAMES, CAPSTONES
-    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, recover_checkpoint, resolve_practice_route, verify, values
+    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, read_only_unchanged, recover_checkpoint, resolve_practice_route, verify, values
     from training.connected_scenarios import local_control_allowed
     from training.capstone_scenarios import run_capstone_counterparts
+    from training.paths import BY_PATH, default_path, public_paths
 
     store = Store(root)
     app.title = "Hidden Oasis Inventory Training — isolated practice"
@@ -135,10 +136,12 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     class Enrolment(BaseModel):
         name: str = Field(min_length=1, max_length=80)
         role: str
+        path_id: str | None = None
 
     class Start(BaseModel):
         lesson_id: str
         mode: str = "guided"
+        exam_id: str | None = None
 
     class Check(BaseModel):
         answer: str = Field(max_length=200)
@@ -163,7 +166,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
 
     @router.get("/catalogue")
     def catalogue():
-        return {"version": VERSION, "roles": ROLE_NAMES,
+        return {"version": VERSION, "roles": ROLE_NAMES, "paths":public_paths(),
             "lessons": [public_lesson(lesson) for lesson in LESSONS], "capstones": CAPSTONES,
             "environment": "isolated-training"}
 
@@ -171,6 +174,9 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     def enrol(payload: Enrolment, request: Request, response: Response):
         if payload.role not in ROLES or not payload.name.strip():
             raise HTTPException(422, "Choose a supported training role and enter your name.")
+        path_id=payload.path_id or default_path(payload.role)
+        path=BY_PATH.get(path_id)
+        if not path or path.role!=payload.role:raise HTTPException(422,"Choose a duty course that matches these training responsibilities.")
         try:
             existing = identity(request)
         except HTTPException:
@@ -179,11 +185,12 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         with store.connect() as db:
             if existing:
                 db.execute("UPDATE attempts SET status='reset' WHERE learner_id=? AND status='active'", (learner_id,))
-                db.execute("UPDATE learners SET role=?,name=?,current_attempt=NULL WHERE id=?", (payload.role, payload.name.strip(), learner_id))
+                db.execute("UPDATE learners SET role=?,name=?,path_id=?,current_attempt=NULL WHERE id=?", (payload.role, payload.name.strip(), path_id, learner_id))
             else:
-                db.execute("INSERT INTO learners(id,name,role) VALUES (?,?,?)", (learner_id, payload.name.strip(), payload.role))
+                db.execute("INSERT INTO learners(id,name,role,path_id) VALUES (?,?,?,?)", (learner_id, payload.name.strip(), payload.role,path_id))
+            db.execute("INSERT OR IGNORE INTO path_assignments(learner_id,path_id) VALUES (?,?)",(learner_id,path_id))
         cookies(response, learner_id, payload.role)
-        return {"id": learner_id, "name": payload.name.strip(), "role": payload.role}
+        return {"id": learner_id, "name": payload.name.strip(), "role": payload.role, "path_id":path_id}
 
     @router.get("/me")
     def me(request: Request, response: Response):
@@ -217,19 +224,22 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 inspected = bool(db.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], lesson_payload["inspection_api_path"])).fetchone())
         return {"learner": learner, "attempt": attempt,
             "lesson": lesson_payload,
-            "history": store.history(learner["id"]), "version": VERSION, "record_inspected": inspected}
+            "history": store.history(learner["id"]), "assignments":store.assignments(learner["id"]), "version": VERSION, "record_inspected": inspected}
 
     @router.post("/start")
     def start(payload: Start, request: Request, response: Response):
         learner = identity(request)
         lesson = BY_ID.get(payload.lesson_id)
-        if not lesson or learner["role"] not in lesson.roles:
+        if not lesson or learner["role"] not in lesson.roles or lesson.id not in BY_PATH[learner["path_id"]].lessons:
             raise HTTPException(403, "This lesson is outside your selected training responsibilities.")
         if payload.mode not in {"guided", "assisted", "independent"}:
             raise HTTPException(422, "Choose guided, assisted or independent practice.")
         previous = {row["mode"] for row in store.history(learner["id"]) if row["lesson_id"] == lesson.id and row["role"] == learner["role"] and row["status"] == "passed" and row["curriculum_version"] == VERSION}
         if payload.mode == "assisted" and "guided" not in previous or payload.mode == "independent" and not {"guided", "assisted"}.issubset(previous):
             raise HTTPException(409, "Complete guided practice, then assisted practice, before the independent assessment.")
+        if payload.exam_id:
+            from training.assessment_routes import validate_exam_attempt
+            validate_exam_attempt(store,learner,payload.exam_id,lesson.id,payload.mode)
         attempt_id = str(uuid.uuid4())
         path = root / f"attempt-{attempt_id}.sqlite"
         try:
@@ -240,7 +250,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
             raise HTTPException(503, "Practice could not be prepared. Your previous work is safe. Try preparing this lesson again.") from exc
         with store.connect() as db:
             db.execute("UPDATE attempts SET status='reset' WHERE learner_id=? AND status='active'", (learner["id"],))
-            db.execute("INSERT INTO attempts(id,learner_id,lesson_id,mode,role,curriculum_version) VALUES (?,?,?,?,?,?)", (attempt_id, learner["id"], lesson.id, payload.mode, learner["role"], VERSION))
+            db.execute("INSERT INTO attempts(id,learner_id,lesson_id,mode,role,curriculum_version,path_id,exam_id) VALUES (?,?,?,?,?,?,?,?)", (attempt_id, learner["id"], lesson.id, payload.mode, learner["role"], VERSION,learner["path_id"],payload.exam_id))
             db.execute("UPDATE learners SET current_attempt=? WHERE id=?", (attempt_id, learner["id"]))
         cookies(response, learner["id"], learner["role"])
         return {"attempt_id": attempt_id, "lesson": public_lesson(lesson, payload.mode)}
@@ -291,7 +301,10 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                     with store.connect() as registry:
                         read = registry.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], inspection_endpoint(lesson,db))).fetchone()
                     practical = bool(read) and normalize(payload.observation) == normalize(answer)
-                    evidence = {"record_inspection": practical, "observation": payload.observation}
+                    untouched=read_only_unchanged(db,IDS["actor"])
+                    practical=practical and untouched
+                    evidence = {"record_inspection": practical, "observation": payload.observation,"record_unchanged":bool(untouched)}
+                    if not untouched:evidence["correction"]="This is an inspection task. Keep its business records unchanged while reading the actual result. Start a fresh practice if a change was posted."
                     if lesson.workflow=="read_procurement":
                         from training.procurement_scenarios import verify_procurement_inspection
                         valid,detail=verify_procurement_inspection(db,lesson,attempt["mode"])
@@ -329,25 +342,35 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     def management(request: Request):
         require_manager(request)
         with store.connect() as db:
-            learners = [dict(row) for row in db.execute("SELECT id,name,role,created_at FROM learners ORDER BY created_at DESC")]
+            learners = [dict(row) for row in db.execute("SELECT id,name,role,path_id,created_at FROM learners ORDER BY created_at DESC")]
         for learner in learners:
             learner["attempts"] = store.history(learner["id"])
-        return {"learners": learners, "version": VERSION}
+            learner["assignments"] = store.assignments(learner["id"])
+            from training.assessment_routes import public_exam
+            learner["exams"] = [public_exam(row) for row in store.exams(learner["id"])]
+        from training.exams import ASSESSMENT_VERSION
+        return {"learners": learners, "version": VERSION, "assessment_version":ASSESSMENT_VERSION}
 
     class Assignment(BaseModel):
         learner_id: str
-        role: str
+        role: str | None = None
+        path_id: str | None = None
 
     @router.post("/assign")
     def assign(payload: Assignment, request: Request):
         require_manager(request)
-        if payload.role not in ROLES or not store.learner(payload.learner_id):
+        path_id=payload.path_id or default_path(payload.role or "")
+        path=BY_PATH.get(path_id)
+        if not path or payload.role and path.role!=payload.role or not store.learner(payload.learner_id):
             raise HTTPException(422, "Choose a known employee and training path.")
         with store.connect() as db:
             db.execute("UPDATE attempts SET status='reset' WHERE learner_id=? AND status='active'", (payload.learner_id,))
-            db.execute("UPDATE learners SET role=?,current_attempt=NULL WHERE id=?", (payload.role, payload.learner_id))
+            db.execute("UPDATE learners SET role=?,path_id=?,current_attempt=NULL WHERE id=?", (path.role,path_id,payload.learner_id))
+            db.execute("INSERT OR IGNORE INTO path_assignments(learner_id,path_id) VALUES (?,?)",(payload.learner_id,path_id))
         return {"assigned": True}
 
+    from training.assessment_routes import register_assessments
+    register_assessments(router,store,root,identity)
     app.include_router(router)
     app.state.training_store = store
     if guard_network:

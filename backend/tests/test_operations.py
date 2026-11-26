@@ -24,7 +24,7 @@ def test_integration_idempotency_retry_and_worker_delivery(client):
         claimed=claim_events(db,'test-worker'); assert len(claimed)==1
         delivered=process_event(db,claimed[0].id,'test-worker',{'accounting':'https://accounting.test/events'},SuccessClient())
         assert delivered.status=='completed' and delivered.attempts==1
-    retry=client.post(f"/api/v1/integration-events/{first.json()['id']}/retry",headers=h); assert retry.json()['status']=='pending' and retry.json()['attempts']==0
+    retry=client.post(f"/api/v1/integration-events/{first.json()['id']}/retry",headers=h); assert retry.status_code==409  # A delivered obligation must not be requeued
 
 def test_worker_backoff_and_dead_letter(client):
     h=auth(client); payload={'direction':'outbound','source_system':'inventory','destination_system':'accounting','event_type':'failure.test','aggregate_type':'test','aggregate_id':'1','idempotency_key':'evt-fail','payload':{},'max_attempts':1}

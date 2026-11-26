@@ -58,7 +58,7 @@ def test_receiving_workspace_and_controlled_receipt(client):
     body = workspace.json()
     assert body["summary"]["receipts"] == 1
     assert body["summary"]["discrepant_receipts"] == 1
-    assert body["purchase_orders"][0]["status"] == "received"
+    assert body["purchase_orders"][0]["status"] == "partially_received"
 
     lots = client.get("/api/v1/lots", headers=headers)
     assert lots.status_code == 200

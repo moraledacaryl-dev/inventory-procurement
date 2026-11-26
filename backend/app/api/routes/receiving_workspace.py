@@ -365,7 +365,8 @@ def receiving_workspace(
             "status": po.status,
             "ordered_quantity": str(ordered),
             "received_quantity": str(received),
-            "outstanding_quantity": str(max(Decimal("0"), ordered - received)),
+            "outstanding_quantity": str(sum((line.outstanding_quantity for line in po.lines), Decimal("0"))),
+            "replacement_required": any(Decimal(line.rejected_quantity) > 0 and line.outstanding_quantity > 0 for line in po.lines),
             "lines": [
                 {
                     "id": line.id,
@@ -374,8 +375,10 @@ def receiving_workspace(
                     "item_name": items[line.item_id].name if line.item_id in items else "Unknown item",
                     "ordered_quantity": str(line.ordered_quantity),
                     "received_quantity": str(line.received_quantity),
+                    "accepted_quantity": str(line.fulfilled_quantity),
+                    "rejected_quantity": str(line.rejected_quantity),
                     "returned_quantity": str(line.returned_quantity),
-                    "outstanding_quantity": str(max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity))),
+                    "outstanding_quantity": str(line.outstanding_quantity),
                     "returnable_quantity": str(max(Decimal("0"), accepted_by_line.get(line.id, Decimal("0")) - Decimal(line.returned_quantity))),
                     "unit_price": str(line.unit_price),
                 }
@@ -446,7 +449,7 @@ def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Se
         line = po_lines.get(received.purchase_order_line_id)
         if not line:
             fail(422, "Purchase order line not found")
-        outstanding = Decimal(line.ordered_quantity) - Decimal(line.received_quantity)
+        outstanding = line.outstanding_quantity
         if received.received_quantity > outstanding:
             fail(409, "Received quantity exceeds outstanding quantity")
         if received.accepted_quantity > 0:
@@ -473,9 +476,11 @@ def post_controlled_receipt(po_id: str, payload: ControlledReceiptCreate, db: Se
                 lot_balance = LotBalance(lot_id=lot.id, location_id=po.delivery_location_id, quantity=Decimal("0"))
                 db.add(lot_balance)
             lot_balance.quantity = Decimal(lot_balance.quantity) + received.accepted_quantity
-        po.status = "received" if all(Decimal(line.received_quantity) >= Decimal(line.ordered_quantity) for line in po.lines) else "partially_received"
         db.add(receipt)
         db.flush()
+        for line in po.lines:
+            db.expire(line, ["rejected_quantity"])
+        po.status = "received" if all(line.outstanding_quantity == 0 for line in po.lines) else "partially_received"
         add_audit(db, actor_user_id=user.id, action="goods_receipt.controlled_posted", entity_type="goods_receipt", entity_id=receipt.id, details={"purchase_order_id": po.id, "line_count": len(receipt.lines), "discrepancies": discrepancy_lines, "lot_lines": len(lot_updates)})
         if discrepancy_lines:
             add_notification(db, title="Receiving discrepancy recorded", message=f"{receipt.goods_receipt_number} includes {len(discrepancy_lines)} rejected line(s).", severity="warning")

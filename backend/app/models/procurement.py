@@ -1,8 +1,9 @@
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import func, select, Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship, column_property
+from sqlalchemy.ext.hybrid import hybrid_property
 from app.db.base import Base
 
 def uid(): return str(uuid.uuid4())
@@ -111,6 +112,15 @@ class PurchaseOrderLine(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     purchase_order: Mapped[PurchaseOrder] = relationship(back_populates="lines")
 
+    @hybrid_property
+    def fulfilled_quantity(self):
+        return self.received_quantity - self.rejected_quantity
+
+    @property
+    def outstanding_quantity(self):
+        return max(Decimal("0"), Decimal(self.ordered_quantity) - Decimal(self.fulfilled_quantity))
+
+
 class GoodsReceipt(Base):
     __tablename__ = "goods_receipts"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -128,7 +138,7 @@ class GoodsReceiptLine(Base):
     __tablename__ = "goods_receipt_lines"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     goods_receipt_id: Mapped[str] = mapped_column(String(36), ForeignKey("goods_receipts.id"), index=True)
-    purchase_order_line_id: Mapped[str] = mapped_column(String(36), ForeignKey("purchase_order_lines.id"))
+    purchase_order_line_id: Mapped[str] = mapped_column(String(36), ForeignKey("purchase_order_lines.id"), index=True)
     item_id: Mapped[str] = mapped_column(String(36), ForeignKey("items.id"))
     received_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     accepted_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
@@ -146,3 +156,12 @@ class PurchaseReturn(Base):
     reason: Mapped[str] = mapped_column(Text)
     created_by_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# Derived from immutable receipt history, including older rejected deliveries.
+PurchaseOrderLine.rejected_quantity = column_property(
+    select(func.coalesce(func.sum(GoodsReceiptLine.rejected_quantity), 0))
+    .where(GoodsReceiptLine.purchase_order_line_id == PurchaseOrderLine.id)
+    .correlate_except(GoodsReceiptLine)
+    .scalar_subquery()
+)

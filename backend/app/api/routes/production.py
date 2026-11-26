@@ -189,7 +189,7 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
         original=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type=='sale_completed',PosSaleEvent.status=='processed').with_for_update())
         if not original or not original.stock_document_id: fail(409,'Original completed sale was not found')
         prior=db.scalar(select(PosSaleEvent).where(PosSaleEvent.pos_system==p.pos_system,PosSaleEvent.external_sale_id==p.external_sale_id,PosSaleEvent.event_type.in_(['sale_voided','sale_refunded'])))
-        if prior: fail(409,'Sale has already been reversed')
+        if prior and (p.event_type != 'sale_returned' or prior.stock_document_id): fail(409,'Sale has already been reversed')
     if p.event_type=='sale_returned':
         # A financial refund is not a stock return. Only explicitly resellable
         # returns restore stock; damaged/discarded goods remain consumed.
@@ -261,12 +261,27 @@ def process_pos_event(p:PosSaleEventIn,db:Session=Depends(get_db),user:User=Depe
             row=PosSaleEvent(external_event_id=p.external_event_id,event_type=p.event_type,external_sale_id=p.external_sale_id,pos_system=p.pos_system,payload=p.model_dump(mode='json'),stock_document_id=doc.id)
             db.add(row); db.flush(); enqueue_event(db,destination_system='accounting',event_type='inventory.pos_sale_consumed',aggregate_type='pos_sale_event',aggregate_id=row.id,idempotency_key=f'accounting-pos:{p.external_event_id}',payload={'sale_id':p.external_sale_id,'stock_document_id':doc.id,'total_cost':str(total_cost),'lines':accounting_lines})
         else:
-            original_doc=db.scalar(select(StockDocument).where(StockDocument.id==original.stock_document_id).options(selectinload(StockDocument.movements)))
-            entries=[{'item_id':m.item_id,'location_id':m.location_id,'quantity':-Decimal(m.quantity),'unit_cost':Decimal(m.unit_cost),'reason':p.event_type} for m in original_doc.movements]
-            reversal_cost=sum((abs(Decimal(m.quantity))*Decimal(m.unit_cost) for m in original_doc.movements),Decimal('0'))
-            doc=post_document(db,kind='pos_sale_reversal',actor_id=user.id,entries=entries,reference=p.external_sale_id,idempotency_key=f'pos:reversal:{p.pos_system}:{p.external_sale_id}',commit=False)
-            row=PosSaleEvent(external_event_id=p.external_event_id,event_type=p.event_type,external_sale_id=p.external_sale_id,pos_system=p.pos_system,payload=p.model_dump(mode='json'),stock_document_id=doc.id,reversal_of_event_id=original.id)
-            db.add(row); db.flush(); enqueue_event(db,destination_system='accounting',event_type='inventory.pos_sale_reversed',aggregate_type='pos_sale_event',aggregate_id=row.id,idempotency_key=f'accounting-pos:{p.external_event_id}',payload={'sale_id':p.external_sale_id,'event_type':p.event_type,'stock_document_id':doc.id,'reverses_stock_document_id':original.stock_document_id,'total_cost':str(reversal_cost)})
+            # Refund/void is financial evidence, never proof that ingredients
+            # physically returned. Correct an unused-sale mistake through an
+            # authorized, audited inventory adjustment after physical review.
+            if any(line.inventory_disposition not in {None, 'waste'} for line in p.lines):
+                fail(409, 'Financial refunds and voids cannot restore recipe ingredients; use a controlled stock correction')
+            sold = {}
+            for line in (original.payload or {}).get('lines', []):
+                key = line['external_product_id']
+                sold[key] = sold.get(key, Decimal('0')) + Decimal(str(line['quantity']))
+            requested = {}
+            for line in p.lines:
+                key = line.external_product_id
+                requested[key] = requested.get(key, Decimal('0')) + line.quantity
+                if key not in sold or requested[key] > sold[key]:
+                    fail(409, f'Refunded or voided quantity exceeds sold quantity for {key}')
+            row = PosSaleEvent(external_event_id=p.external_event_id, event_type=p.event_type,
+                external_sale_id=p.external_sale_id, pos_system=p.pos_system,
+                payload=p.model_dump(mode='json'), stock_document_id=None,
+                reversal_of_event_id=original.id)
+            db.add(row)
+            db.flush()
         add_audit(db,actor_user_id=user.id,action=f'pos.{p.event_type}',entity_type='pos_sale_event',entity_id=row.id,details={'external_sale_id':p.external_sale_id,'source_system':'hidden-oasis-pos'}); db.commit(); db.refresh(row); return row
     except IntegrityError:
         db.rollback(); fail(409,'POS sale lifecycle conflict')

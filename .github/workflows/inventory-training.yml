@@ -28,6 +28,8 @@ jobs:
         working-directory: frontend
       - run: npm run typecheck
         working-directory: frontend
+      - name: Verify frontend configuration fails closed before transport
+        run: node scripts/test-training-web-config.mjs
       - name: Build isolated training frontend
         working-directory: frontend
         env: {NEXT_PUBLIC_INVENTORY_TRAINING: '1'}

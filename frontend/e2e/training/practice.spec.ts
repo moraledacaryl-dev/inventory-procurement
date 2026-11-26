@@ -201,16 +201,12 @@ test("a committed catalogue item resumes at assessment after its draft clears",a
 
 test("an older tab cannot post into practice started in a different tab",async({page,context})=>{
   const first=await prepare(page,"issue-kitchen","inventory_manager");
-  await page.locator('[data-training="stock-open"]').click();
-  await page.locator('#stock-kind').selectOption("issue");
-  await page.locator('#stock-location').selectOption("training-store");
-  await page.locator('#stock-item').selectOption("training-chicken");
-  await page.locator('#stock-quantity').fill("5");
-  await page.locator('#stock-reason').fill("Kitchen preparation");
-  await page.locator('[data-training="stock-review"]').click();
+  await guide(page,first.lesson,undefined,0,first.lesson.steps.length-1);
+  await expect(page.locator('[data-training="confirm"]')).toHaveAttribute("data-inventory-training-focus","true");
   const other=await context.newPage();
   const second=await prepare(other,"issue-kitchen","inventory_manager");
   expect(second.attempt_id).not.toBe(first.attempt_id);
+  await page.bringToFront();
   const refused=page.waitForResponse(response=>response.url().endsWith('/stock/issues')&&response.status()===409);
   await page.locator('[data-training="confirm"]').click();
   expect((await(await refused).json()).detail).toContain("another tab");

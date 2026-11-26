@@ -1,5 +1,10 @@
 import {forgetTrainingAttempt,trainingAttempt} from "./training-session";
 export const API = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+// Reject contaminated builds before any consumer (including CSV/blob exports)
+// can use the configured address. Runtime request checks remain below.
+if (process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1" && API !== "/api/v1") {
+  throw new Error("Training cannot use an external API address.");
+}
 
 export class ApiError extends Error {
   status: number;

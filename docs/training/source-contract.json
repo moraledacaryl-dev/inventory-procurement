@@ -183,7 +183,7 @@
     "frontend/components/SystemHealth.tsx": "4f4e2c71d7c30d05cb3d2edbec1da819343c4d12de852451adba47e37450f0e0",
     "frontend/components/WorkspaceLink.tsx": "4f3cd20641b895a13206ab2e141981592f8f74f6b62cea57ee59d865e2592012",
     "frontend/components/WorkspaceSwitcher.tsx": "94ac3d829a605f4005943a532b394bef7e13a7816de26b08c761a40f22ee7ff4",
-    "frontend/lib/api.ts": "9b7537fa167c35f7e1b2c00c4bb3c0487450e2aaf17c30f84b8af9e8d8f2b797",
+    "frontend/lib/api.ts": "b065274c66ad07ee2b95f2068abb99b88c35c3e21354f2013f77ed1af8920edb",
     "frontend/hooks/useFormDraft.ts": "09ad9cc48abc4a061fd1df2effe86ad6d1988b7b8c315487ad238e4936134e2e"
   }
 }

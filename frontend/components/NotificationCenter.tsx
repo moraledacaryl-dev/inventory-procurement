@@ -43,7 +43,7 @@ export function NotificationCenter() {
 
   return (
     <div className="notification-center" ref={rootRef}>
-      <button className="icon-button" type="button" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)}>
+      <button data-training="notifications-open" className="icon-button" type="button" aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7"/><path d="M10 19h4"/></svg>
         {unread ? <span className="notification-count">{unread > 99 ? "99+" : unread}</span> : null}
       </button>
@@ -52,7 +52,7 @@ export function NotificationCenter() {
           <div className="notification-popover__header"><div><strong>Notifications</strong><span>{unread} unread</span></div><button type="button" className="text-button" onClick={() => void load()} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button></div>
           <div className="notification-list">
             {!notifications.length && !loading ? <div className="notification-empty">No operational notifications.</div> : null}
-            {notifications.map(item => <button type="button" key={item.id} className={`notification-item ${item.is_read ? "is-read" : "is-unread"}`} onClick={() => void markRead(item)}><span className={`notification-item__severity severity-${item.severity}`} aria-hidden="true"/><span className="notification-item__copy"><strong>{item.title}</strong><span>{item.message}</span><small>{formatDateTime(item.created_at)}{item.is_read ? " · Read" : " · Mark as read"}</small></span></button>)}
+            {notifications.map(item => <button data-training={`notification-${item.id}`} type="button" key={item.id} className={`notification-item ${item.is_read ? "is-read" : "is-unread"}`} onClick={() => void markRead(item)}><span className={`notification-item__severity severity-${item.severity}`} aria-hidden="true"/><span className="notification-item__copy"><strong>{item.title}</strong><span>{item.message}</span><small>{formatDateTime(item.created_at)}{item.is_read ? " · Read" : " · Mark as read"}</small></span></button>)}
           </div>
         </section>
       ) : null}

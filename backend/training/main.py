@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 import os
+import re
 from pathlib import Path
 import secrets
 import uuid
@@ -123,7 +124,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 store.event(attempt["id"], "record_read", {"path": path,"method":"GET","status":200})
             elif request.method != "GET":
                 store.event(attempt["id"], "business_action", {"path": path,"method":request.method,"status": response.status_code})
-                expected_refusal=any(step.outcome==path.removeprefix("/api/v1") and step.outcome_status==response.status_code for step in BY_ID[attempt["lesson_id"]].steps)
+                expected_refusal=any(bool(step.outcome and re.fullmatch(re.escape(step.outcome).replace(r"\*",r"[a-f0-9-]{36}"),path.removeprefix("/api/v1"))) and step.outcome_status==response.status_code for step in BY_ID[attempt["lesson_id"]].steps)
                 if response.status_code >= 400 and not expected_refusal:
                     with store.connect() as db:
                         db.execute("UPDATE attempts SET mistakes=mistakes+1 WHERE id=? AND status='active'", (attempt["id"],))
@@ -163,6 +164,14 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         if attempt["lesson_id"] not in BY_ID:
             raise HTTPException(409, "The course has changed. Return to Training to choose an updated lesson.")
         return learner, attempt
+
+    @router.get("/practice-file")
+    def practice_file(request: Request):
+        _,attempt=current_attempt(request)
+        from training.csv_fixtures import practice_csv
+        fixture=practice_csv(attempt["lesson_id"],values(BY_ID[attempt["lesson_id"]],attempt["mode"]))
+        if fixture is None:raise HTTPException(404,"This practice has no CSV input.")
+        return JSONResponse(content={"filename":fixture["filename"],"content":fixture["content"]},headers={"Cache-Control":"no-store"})
 
     @router.get("/catalogue")
     def catalogue():

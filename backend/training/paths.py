@@ -1,5 +1,5 @@
 """Duty courses are subsets of source-authorized lessons, never new roles."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from training.curriculum import LESSONS, BY_ID, ROLES, ROLE_NAMES
 
 
@@ -41,6 +41,9 @@ PATHS += [
     duty("department-supervisor","Department supervision","Review saved differences and formulas independently. Do not approve your own work or change observed quantities to avoid review.",ids("inventory_manager","ABGP",exclude=("create-governed-recipe","retire-obsolete-recipe")),("cap-monthly-count","recipe-self-approval","request-count-recheck")),
     duty("accounting-review","Accounting-related inventory review","Read permitted stock and purchasing evidence. This viewer course grants no journal posting, event retry, stock adjustment or production Accounting access.",ids("viewer"),("available-stock","management-review"),"viewer"),
 ]
+# All stock/department staff can read their alerts and submit specific feedback.
+COMMON_STOCK={"acknowledge-operational-alert","submit-workflow-feedback"}
+PATHS=[replace(path,lessons=tuple(lesson.id for lesson in LESSONS if lesson.id in set(path.lessons)|COMMON_STOCK)) if path.role=="inventory_manager" else path for path in PATHS]
 BY_PATH={path.id:path for path in PATHS}
 assert len(BY_PATH)==len(PATHS)
 for path in PATHS:

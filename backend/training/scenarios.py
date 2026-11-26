@@ -21,6 +21,10 @@ from training.capstone_scenarios import capstone_values, prepare_capstone, after
 
 from training.extensions_scenarios import extension_values, prepare_extensions, after_prepare_extensions, verify_extensions
 
+from training.admin_scenarios import admin_values, prepare_admin, after_prepare_admin, verify_admin
+from training.migration_scenarios import verify_migration, recover_migration_checkpoint
+from training.csv_fixtures import CSV_FILES
+
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "reviewer", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "each", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
 
@@ -32,11 +36,11 @@ def values(lesson: Lesson, mode: str):
         quantity = max(1, quantity - 2)
     rejected = min(lesson.rejected, quantity)
     base={"guided":24,"assisted":27,"independent":31}[mode]
-    return {**IDS, **extension_values(lesson,mode), **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), **capstone_values(lesson,mode), "quantity": quantity, "rejected": rejected,
+    return {**IDS, **extension_values(lesson,mode), **admin_values(mode), **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), **capstone_values(lesson,mode), "quantity": quantity, "rejected": rejected,
         "practice_item": IDS["amenities"] if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
-        "base": {"guided": 24, "assisted": 27, "independent": 31}[mode],
+        "base": 0 if lesson.id=="import-initial-balances" else {"guided": 24, "assisted": 27, "independent": 31}[mode],
         "reference": f"TRAIN-{lesson.id.upper()}-{mode.upper()}",
         "reject_reason": "wrong item delivered" if lesson.id == "wrong-item" else "unacceptable expiry" if lesson.id == "expired-delivery" else "damaged or unusable goods",
         "action_label": "Used or issued stock" if lesson.id=="cap-housekeeping" else {"issue": "Used or issued stock", "receipt": "Received stock (no PO)", "transfer": "Moved between locations"}.get(lesson.workflow, lesson.workflow)}
@@ -88,11 +92,11 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         # the unchanged source correctly treats >= snapshot as later movement.
         # Give only these synthetic historical openings a prior-day timestamp.
         opening_at=datetime.now(timezone.utc)-timedelta(days=1)
-        for item,cost,reference in (("chicken",200,"Synthetic opening stock"),("amenities",50,"Synthetic amenities")):
+        for item,cost,reference in (() if lesson.id=="import-initial-balances" else (("chicken",200,"Synthetic opening stock"),("amenities",50,"Synthetic amenities"))):
             document=post_document(db,kind="receipt",actor_id=IDS["colleague"],entries=[{"item_id":IDS[item],"location_id":IDS["store"],"quantity":Decimal(v["base"]),"unit_cost":Decimal(cost)}],reference=reference,commit=False)
             document.posted_at=opening_at
             for movement in db.scalars(select(StockMovement).where(StockMovement.document_id==document.id)):movement.created_at=opening_at
-        db.add(StockReservation(reservation_number="TRAIN-RESERVE", item_id=IDS["chicken"], location_id=IDS["store"], quantity=4, reference_type="training", reference_id="another-job", status="active", created_by_user_id=IDS["colleague"]))
+        if lesson.id!="import-initial-balances":db.add(StockReservation(reservation_number="TRAIN-RESERVE", item_id=IDS["chicken"], location_id=IDS["store"], quantity=4, reference_type="training", reference_id="another-job", status="active", created_by_user_id=IDS["colleague"]))
         if lesson.workflow == "requisition":
             db.add(ItemLocationSetting(item_id=IDS["chicken"], location_id=IDS["store"], minimum_stock=v["base"] + 6 + v["quantity"], reorder_quantity=0, preferred_supplier_id=IDS["supplier"]))
         po = PurchaseOrder(id=IDS["po"], purchase_order_number="TRAIN-PO", supplier_id=IDS["supplier"], delivery_location_id=IDS["store"], status="draft" if lesson.workflow == "approve_po" else "approved", created_by_user_id=IDS["colleague"])
@@ -152,6 +156,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         prepare_connected(db,lesson,v)
         prepare_capstone(db,lesson,v)
         prepare_extensions(db,lesson,v)
+        prepare_admin(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
         after_prepare_procurement(db,lesson,v)
@@ -160,6 +165,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         after_prepare_connected(db,lesson,v)
         after_prepare_capstone(db,lesson,v)
         after_prepare_extensions(db,lesson,v)
+        after_prepare_admin(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -217,6 +223,10 @@ def read_only_unchanged(db,actor_id):
 
 def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple[bool, dict]:
     v = values(lesson, mode)
+    if lesson.workflow.startswith("admin_"):
+        return verify_admin(db,lesson,v,business_actions)
+    if lesson.workflow.startswith("migration_"):
+        return verify_migration(db,lesson,v,business_actions)
     if lesson.workflow.startswith("extended_"):
         return verify_extensions(db,lesson,v,business_actions)
     if lesson.workflow.startswith("catalogue_"):
@@ -318,6 +328,7 @@ def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int, 
     if not lesson.workflow.startswith("read_"):
         passed, _ = verify(db, lesson, mode,business_actions)
         if passed: return len(lesson.steps)
+        if lesson.workflow.startswith("migration_"):return recover_migration_checkpoint(db,lesson,values(lesson,mode))
         # These real forms persist an attempt-scoped browser draft. The guide
         # validates its acknowledged fields before restoring this checkpoint.
         if lesson.id in {"create-item","create-supplier"}: return checkpoint
@@ -336,6 +347,7 @@ def public_lesson(lesson: Lesson, mode="guided"):
     v = values(lesson, mode)
     row = asdict(lesson)
     row["curriculum_version"] = VERSION
+    row["practice_file_name"] = CSV_FILES[lesson.id][0] if lesson.id in CSV_FILES else None
     row.pop("answer")
     row["situation"] = lesson.situation.format(**v)
     row["route"] = lesson.route.format(**v)

@@ -6,6 +6,7 @@ export type TrainingLesson = {
   quantity: number; rejected: number; reference: string; practical_question: string; inspection_route: string;
   curriculum_version: string;
   inspection_api_path: string | null;
+  practice_file_name?: string | null;
   global_access: boolean;
 };
 export type TrainingAttempt = {

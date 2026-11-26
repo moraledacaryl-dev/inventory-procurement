@@ -96,14 +96,26 @@ async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,st
       if(screenshotPrefix)await page.screenshot({path:`training-test-results/${screenshotPrefix}-dialog.png`});
     }
     if(screenshotPrefix&&((lesson.id==="send-used-linen-to-laundry"&&index===6)||(lesson.id==="create-governed-recipe"&&index===7)))await page.screenshot({path:`training-test-results/${screenshotPrefix}-detail.png`});
-    if(step.event==="change")await target.selectOption(String(step.value));
+    if(step.event==="change"){
+      if(await target.getAttribute("type")==="file"){
+        const downloading=page.waitForEvent("download");
+        await page.getByRole("button",{name:"Download practice CSV",exact:true}).click();
+        const file=await downloading;expect(file.suggestedFilename()).toBe(String(step.value));
+        const saved=test.info().outputPath(file.suggestedFilename());
+        await file.saveAs(saved);
+        await target.setInputFiles(saved);
+      }else await target.selectOption(String(step.value));
+    }
     else if(step.event==="input"){
       if(lesson.id==="create-menu-with-modifier"&&step.target.includes("options")){await target.fill("");await target.pressSequentially(String(step.value));await expect(target).toHaveValue(String(step.value));}
       else await target.fill(String(step.value));
     }
     else await target.click();
   }
-  if(endIndex===lesson.steps.length)await expect(page.getByRole("button",{name:"Check my work",exact:true})).toBeVisible();
+  if(endIndex===lesson.steps.length){
+    if(lesson.id==="reject-invalid-csv")await expect(page.getByText("Row 3: duplicate SKU in file",{exact:true})).toBeVisible();
+    await expect(page.getByRole("button",{name:"Check my work",exact:true})).toBeVisible();
+  }
 }
 
 test("a new employee starts training with a clear role and next lesson",async({page},info)=>{
@@ -134,6 +146,8 @@ test("signing out returns to onboarding and separates the next employee",async({
 });
 
 test("an interrupted item draft restores its fields and acknowledged guide action",async({page})=>{
+  const cpu=await page.context().newCDPSession(page);
+  await cpu.send("Emulation.setCPUThrottlingRate",{rate:4});
   page.on("dialog",dialog=>dialog.accept());
   const{lesson}=await prepare(page,"create-item","inventory_manager");
   await page.route("**/api/v1/training/checkpoint",route=>{
@@ -145,6 +159,7 @@ test("an interrupted item draft restores its fields and acknowledged guide actio
   await page.locator('#item-type').selectOption(String(lesson.steps[2].value));
   await page.locator('#item-sku').fill("TRAIN-OIL");
   await page.locator('#item-name').fill("Training cooking oil");
+  await expect(page.locator('#item-name')).toHaveValue("Training cooking oil");
   await expect(page.locator('.inventory-training-coach-label')).toContainText("Action 6 of");
   await expect.poll(()=>page.evaluate(()=>Object.entries(localStorage).some(([key,value])=>key.startsWith("inventory-training:draft:")&&JSON.parse(value).name==="Training cooking oil"))).toBeTruthy();
   await page.unroute("**/api/v1/training/checkpoint");
@@ -268,6 +283,25 @@ for(const[lesson,role,answer]of[
   ["recipe-self-approval","inventory_manager","no"],
   ["retire-obsolete-recipe","inventory_manager","no"],
   ["plan-production-batch","inventory_manager","no"],
+  ["assign-location-approval-scope","owner","no"],
+  ["create-operating-department","owner","no"],
+  ["retire-unused-classification","owner","no"],
+  ["classify-legacy-ingredient","owner","no"],
+  ["create-accounting-mapping","owner","no"],
+  ["save-report-scope","owner","no"],
+  ["acknowledge-operational-alert","inventory_manager","no"],
+  ["submit-workflow-feedback","inventory_manager","no"],
+  ["resolve-verified-feedback","owner","no"],
+  ["resolve-verified-incident","owner","no"],
+  ["record-assurance-review","owner","no"],
+  ["run-isolated-acceptance","owner","no"],
+  ["check-isolated-rollout","owner","no"],
+  ["import-item-catalogue","owner","no"],
+  ["import-supplier-catalogue","owner","no"],
+  ["reject-invalid-csv","owner","no"],
+  ["import-initial-balances","owner","no"],
+  ["refuse-duplicate-opening-import","owner","no"],
+
   ["create-conditional-price-rule","inventory_manager","no"],
   ["deactivate-conditional-price-rule","inventory_manager","no"],
   ["create-reusable-add-ons","inventory_manager","no"],
@@ -538,4 +572,20 @@ test("a stale batch cancellation retains details and shows the actual refusal",a
   await dialog.getByRole("button",{name:"Keep batch",exact:true}).click();
   await page.reload();
   await expect(page.locator('[data-training="production-cancel"]')).toHaveCount(0);
+});
+
+
+test("a validated CSV resumes its original apply job after interruption",async({page})=>{
+  const {lesson}=await prepare(page,"import-item-catalogue","owner");
+  await guide(page,lesson,undefined,0,3);
+  await expect(page.getByText("Import validated and ready to apply.",{exact:true})).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.inventory-training-coach-label')).toContainText('Action 4 of');
+  await guide(page,lesson,undefined,3);
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+  const profile=await(await page.request.get('/api/v1/training/me')).json();
+  const jobs=await(await page.request.get('/api/v1/migration/imports',{headers:{...headers,'X-Training-Attempt':profile.attempt.id}})).json();
+  expect(jobs).toHaveLength(1);expect(jobs[0].status).toBe('applied');
 });

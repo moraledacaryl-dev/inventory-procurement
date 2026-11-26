@@ -163,6 +163,7 @@ export function InventoryTrainingCoach() {
   useEffect(()=>{
     if(!current||!profile?.attempt||!visible||passed)return;
     let advancing=false;
+    let inputFrame=0;
     function advance(){
       if(advancing)return;advancing=true;setInputMessage("");
       const next=step+1;setStep(next);
@@ -179,23 +180,37 @@ export function InventoryTrainingCoach() {
       if(!node||node instanceof HTMLButtonElement&&node.disabled)return;
       const matchesValue=()=>{
         const input=node as HTMLInputElement;
+        if(input instanceof HTMLInputElement&&input.type==="file")return input.files?.length===1&&input.files[0].name===String(current!.value);
         if(input instanceof HTMLInputElement&&input.type==="number")return input.value.trim()!==""&&Number.isFinite(Number(input.value))&&Number(input.value)===Number(current!.value);
         return input.value===String(current!.value);
       };
+      const afterControlledInput=()=>{
+        // Native capture runs before the business form's React handler. Wait
+        // until that handler commits, then acknowledge the retained value.
+        // An aborted checkpoint must never make the guide outrun the form.
+        window.cancelAnimationFrame(inputFrame);
+        inputFrame=window.requestAnimationFrame(()=>{
+          if(node.isConnected&&(current!.value===null||matchesValue()))advance();
+        });
+      };
       if(event.type==="focusout"&&current!.value!==null){
         if(!matchesValue())setInputMessage(current!.instruction+" Check the value and unit or code in this task before continuing.");
-        else if(!current!.outcome)advance();
+        else if(!current!.outcome)afterControlledInput();
         return;
       }
       if(event.type!==current!.event)return;
       if(current!.value!==null&&!matchesValue())return;
-      if(!current!.outcome)advance();
+      if(!current!.outcome){
+        if(node instanceof HTMLInputElement||node instanceof HTMLSelectElement||node instanceof HTMLTextAreaElement)afterControlledInput();
+        else advance();
+      }
     }
     document.addEventListener("click",observe,true);document.addEventListener("input",observe,true);document.addEventListener("change",observe,true);document.addEventListener("focusout",observe,true);
     window.addEventListener("inventory-training-action",businessOutcome);
-    return()=>{window.removeEventListener("inventory-training-action",businessOutcome);document.removeEventListener("click",observe,true);document.removeEventListener("input",observe,true);document.removeEventListener("change",observe,true);document.removeEventListener("focusout",observe,true)}
+    return()=>{window.cancelAnimationFrame(inputFrame);window.removeEventListener("inventory-training-action",businessOutcome);document.removeEventListener("click",observe,true);document.removeEventListener("input",observe,true);document.removeEventListener("change",observe,true);document.removeEventListener("focusout",observe,true)}
   },[current,profile?.attempt,visible,passed,step]);
 
+  async function downloadInput(){if(!lesson?.practice_file_name)return;setBusy(true);setError("");try{const file=await api<{filename:string;content:string}>("/training/practice-file");if(file.filename!==lesson.practice_file_name)throw new Error("This practice changed. Return to your current training task.");const url=URL.createObjectURL(new Blob([file.content],{type:"text/csv;charset=utf-8"}));const anchor=document.createElement("a");anchor.href=url;anchor.download=file.filename;anchor.click();URL.revokeObjectURL(url)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}
   async function hint(){setBusy(true);try{const result=await api<{lesson:TrainingLesson}>("/training/hint",{method:"POST"});guideRef.current=result.lesson;setShowHint(true);setExpanded(true)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}
   async function check(){setBusy(true);setFeedback("");try{const result=await api<{passed:boolean;message:string}>("/training/check",{method:"POST",body:JSON.stringify({answer,observation})});setPassed(result.passed);setFeedback(result.message)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}
   async function reset(){if(!lesson||!profile?.attempt)return;setBusy(true);try{const result=await api<{attempt_id:string;lesson:TrainingLesson}>("/training/start",{method:"POST",body:JSON.stringify({lesson_id:lesson.id,mode:profile.attempt.mode})});rememberTrainingAttempt(result.attempt_id);window.location.assign(result.lesson.route)}catch(exception){setError((exception as Error).message);setBusy(false)}}
@@ -208,6 +223,7 @@ export function InventoryTrainingCoach() {
       <div className="inventory-training-coach-label">{profile?.attempt?.mode||"Practice"}{current?` · Action ${step+1} of ${lesson?.steps.length}`:""}</div>
       <h2>{passed?"Task passed":lesson?.title||"Continue your training"}</h2>
       {error&&<div role="alert"><p>{error}</p><button onClick={()=>void load()}>Reconnect to practice</button></div>}
+      {lesson?.practice_file_name&&!passed&&<button type="button" disabled={busy} onClick={()=>void downloadInput()}>Download practice CSV</button>}
       {!lesson&&<Link href="/training">Open your training course</Link>}
       {lesson&&!passed&&<>
         {!current&&<p className="inventory-training-situation">{lesson.situation}</p>}

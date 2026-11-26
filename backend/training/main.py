@@ -108,6 +108,12 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 path.startswith("/api/v1/integrations/") and not local_control_allowed(request.method,path,BY_ID[attempt["lesson_id"]]) or path in {"/api/v1/integration-events/process", "/api/v1/master-data/publish"})
             if blocked:
                 return JSONResponse(status_code=403, content={"detail": "External services and integration delivery are disabled in training."})
+            calculation=None
+            if request.method=="POST" and path=="/api/v1/recipes/training-recipe/margin-scenario" and attempt["lesson_id"]=="calculate-food-margin":
+                try:
+                    payload=await request.json()
+                    if isinstance(payload,dict):calculation={"location_id":str(payload.get("location_id","")),"selling_price":str(payload.get("selling_price",""))}
+                except (ValueError,TypeError):pass
             response = await call_next(request)
             if request.method!="GET" and 200<=response.status_code<300 and BY_ID[attempt["lesson_id"]].workflow.startswith("capstone_"):
                 engine=engine_for(root/f"attempt-{attempt['id']}.sqlite")
@@ -123,7 +129,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
             if request.method == "GET" and response.status_code == 200:
                 store.event(attempt["id"], "record_read", {"path": path,"method":"GET","status":200})
             elif request.method != "GET":
-                store.event(attempt["id"], "business_action", {"path": path,"method":request.method,"status": response.status_code})
+                store.event(attempt["id"], "business_action", {"path": path,"method":request.method,"status": response.status_code,**({"calculation":calculation} if calculation is not None else {})})
                 expected_refusal=any(bool(step.outcome and re.fullmatch(re.escape(step.outcome).replace(r"\*",r"[a-f0-9-]{36}"),path.removeprefix("/api/v1"))) and step.outcome_status==response.status_code for step in BY_ID[attempt["lesson_id"]].steps)
                 if response.status_code >= 400 and not expected_refusal:
                     with store.connect() as db:

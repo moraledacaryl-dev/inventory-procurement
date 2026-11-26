@@ -164,6 +164,7 @@ export function InventoryTrainingCoach() {
     if(!current||!profile?.attempt||!visible||passed)return;
     let advancing=false;
     let inputFrame=0;
+    let inputObserver:MutationObserver|null=null;
     function advance(){
       if(advancing)return;advancing=true;setInputMessage("");
       const next=step+1;setStep(next);
@@ -178,8 +179,8 @@ export function InventoryTrainingCoach() {
       const target=event.target as HTMLElement;
       const node=target?.closest?.(current!.target);
       if(!node||node instanceof HTMLButtonElement&&node.disabled)return;
-      const matchesValue=()=>{
-        const input=node as HTMLInputElement;
+      const matchesValue=(candidate:Element=node)=>{
+        const input=candidate as HTMLInputElement;
         if(input instanceof HTMLInputElement&&input.type==="file")return input.files?.length===1&&input.files[0].name===String(current!.value);
         if(input instanceof HTMLInputElement&&input.type==="number")return input.value.trim()!==""&&Number.isFinite(Number(input.value))&&Number(input.value)===Number(current!.value);
         return input.value===String(current!.value);
@@ -188,10 +189,20 @@ export function InventoryTrainingCoach() {
         // Native capture runs before the business form's React handler. Wait
         // until that handler commits, then acknowledge the retained value.
         // An aborted checkpoint must never make the guide outrun the form.
-        window.cancelAnimationFrame(inputFrame);
-        inputFrame=window.requestAnimationFrame(()=>{
-          if(node.isConnected&&(current!.value===null||matchesValue()))advance();
-        });
+        window.cancelAnimationFrame(inputFrame);inputObserver?.disconnect();inputObserver=null;
+        const checkRetained=()=>{
+          const retained=document.querySelector(current!.target);
+          if(!retained){
+            // Some source forms replace the entire control while loading.
+            // Follow its semantic selector when it returns, rather than the
+            // detached node that dispatched the original change event.
+            if(!inputObserver){inputObserver=new MutationObserver(()=>{window.cancelAnimationFrame(inputFrame);inputFrame=window.requestAnimationFrame(checkRetained)});inputObserver.observe(document.body,{childList:true,subtree:true})}
+            return;
+          }
+          inputObserver?.disconnect();inputObserver=null;
+          if(current!.value===null||matchesValue(retained))advance();
+        };
+        inputFrame=window.requestAnimationFrame(checkRetained);
       };
       if(event.type==="focusout"&&current!.value!==null){
         if(!matchesValue())setInputMessage(current!.instruction+" Check the value and unit or code in this task before continuing.");
@@ -207,7 +218,7 @@ export function InventoryTrainingCoach() {
     }
     document.addEventListener("click",observe,true);document.addEventListener("input",observe,true);document.addEventListener("change",observe,true);document.addEventListener("focusout",observe,true);
     window.addEventListener("inventory-training-action",businessOutcome);
-    return()=>{window.cancelAnimationFrame(inputFrame);window.removeEventListener("inventory-training-action",businessOutcome);document.removeEventListener("click",observe,true);document.removeEventListener("input",observe,true);document.removeEventListener("change",observe,true);document.removeEventListener("focusout",observe,true)}
+    return()=>{window.cancelAnimationFrame(inputFrame);inputObserver?.disconnect();window.removeEventListener("inventory-training-action",businessOutcome);document.removeEventListener("click",observe,true);document.removeEventListener("input",observe,true);document.removeEventListener("change",observe,true);document.removeEventListener("focusout",observe,true)}
   },[current,profile?.attempt,visible,passed,step]);
 
   async function downloadInput(){if(!lesson?.practice_file_name)return;setBusy(true);setError("");try{const file=await api<{filename:string;content:string}>("/training/practice-file");if(file.filename!==lesson.practice_file_name)throw new Error("This practice changed. Return to your current training task.");const url=URL.createObjectURL(new Blob([file.content],{type:"text/csv;charset=utf-8"}));const anchor=document.createElement("a");anchor.href=url;anchor.download=file.filename;anchor.click();URL.revokeObjectURL(url)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}
@@ -228,12 +239,12 @@ export function InventoryTrainingCoach() {
       {lesson&&!passed&&<>
         {!current&&<p className="inventory-training-situation">{lesson.situation}</p>}
         {current?<><h3>Your turn</h3><p className="inventory-training-current-instruction">{navigationInstruction||current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<details key={step} className="inventory-training-context"><summary>Review the situation</summary><p>{lesson.situation}</p></details><button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. If an entered value is already correct, review it and move to the next field. Progress saves after each action; the server checks the final result.</p></>:<>
-          <p>{lesson.practical_question?"Inspect the record in the application, then enter what it shows.":"Complete the task in the application, then check your saved result below."}</p>
+          <p>{lesson.practical_question?"Inspect the record in the application, then enter what it shows.":"Complete the task in the application, then check your work below."}</p>
           {lesson.practical_question&&<><Link href={lesson.inspection_route}>Open the record to inspect →</Link><label>{lesson.practical_question}<input value={observation} onChange={event=>setObservation(event.target.value)} autoComplete="off"/></label></>}
           {!lesson.practical_question&&showTaskAmount&&<p>Task amount: {lesson.quantity}{lesson.workflow==="receiving"?` arrived; ${lesson.rejected} rejected`:""}. {lesson.workflow==="production"?"Use 3 kg of chicken; record the actual usable output.":""}{lesson.workflow==="purchase_order"?"Use Training Valley Foods, Training stockroom and PHP 200 per kg.":""}{lesson.workflow==="receiving"?`Delivery reference: ${lesson.reference}`:""}</p>}
           <label>{lesson.question}<input value={answer} onChange={event=>setAnswer(event.target.value)} autoComplete="off" placeholder="Type your answer"/></label>
           {!!lesson.practical_question&&!inspected&&<p role="status">Open the record and wait for it to finish loading before checking your answer.</p>}
-          <button className="inventory-training-check" disabled={busy||!answer.trim()||!!lesson.practical_question&&(!observation.trim()||!inspected)} onClick={()=>void check()}>{busy?"Checking saved result…":"Check my work"}</button>
+          <button className="inventory-training-check" disabled={busy||!answer.trim()||!!lesson.practical_question&&(!observation.trim()||!inspected)} onClick={()=>void check()}>{busy?"Checking your work…":"Check my work"}</button>
           {!guided&&<button disabled={busy} onClick={()=>void hint()}>{profile?.attempt?.mode==="independent"?"Use a hint (this attempt becomes practice)":"Show me a hint"}</button>}
         </>}
         {!guided&&<button type="button" onClick={()=>setExpanded(false)}>Work in the application</button>}

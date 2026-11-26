@@ -99,7 +99,7 @@ export default function Page() {
                   <td>{entry.aggregate_id}</td>
                   <td>{entry.status}</td>
                   <td>{entry.attempts}</td>
-                  <td>{["failed", "dead_letter"].includes(entry.status) ? <button className="secondary" onClick={() => retry(entry.id)}>Retry</button> : ""}</td>
+                  <td>{["failed", "dead_letter"].includes(entry.status) ? <button data-training={`integration-retry-${entry.id}`} className="secondary" onClick={() => retry(entry.id)}>Retry</button> : ""}</td>
                 </tr>
               ))}
             </tbody>

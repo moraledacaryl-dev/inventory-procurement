@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Literal
 from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.26.10"
+VERSION = "2026.11.26.11"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
@@ -340,6 +340,9 @@ from training.admin_lessons import LESSONS as ADMIN_LESSONS
 from training.csv_lessons import LESSONS as CSV_LESSONS
 LESSONS.extend(ADMIN_LESSONS)
 LESSONS.extend(CSV_LESSONS)
+
+from training.steward_lessons import LESSONS as STEWARD_LESSONS
+LESSONS.extend(STEWARD_LESSONS)
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)

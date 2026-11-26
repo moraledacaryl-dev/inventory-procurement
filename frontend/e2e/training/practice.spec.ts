@@ -283,6 +283,15 @@ for(const[lesson,role,answer]of[
   ["recipe-self-approval","inventory_manager","no"],
   ["retire-obsolete-recipe","inventory_manager","no"],
   ["plan-production-batch","inventory_manager","no"],
+  ["unlink-obsolete-supplier-item","procurement_officer","no"],
+  ["create-authorized-storage-location","owner","no"],
+  ["correct-storage-location-label","owner","no"],
+  ["stock-screen-signed-correction","inventory_manager","no"],
+  ["assign-menu-selling-controls","inventory_manager","no"],
+  ["retry-eligible-inbound-event","owner","no"],
+  ["activate-verified-pos-mapping","owner","no"],
+  ["calculate-food-margin","inventory_manager","no"],
+
   ["assign-location-approval-scope","owner","no"],
   ["create-operating-department","owner","no"],
   ["retire-unused-classification","owner","no"],
@@ -588,4 +597,23 @@ test("a validated CSV resumes its original apply job after interruption",async({
   const profile=await(await page.request.get('/api/v1/training/me')).json();
   const jobs=await(await page.request.get('/api/v1/migration/imports',{headers:{...headers,'X-Training-Attempt':profile.attempt.id}})).json();
   expect(jobs).toHaveLength(1);expect(jobs[0].status).toBe('applied');
+});
+
+
+test("a costing location change waits for its retained replacement control",async({page})=>{
+  let delayed=false;
+  await page.route('**/api/v1/recipes/training-recipe/costing-detail?location_id=training-store',async route=>{
+    const response=await route.fetch(),body=await response.body();
+    if(!delayed){delayed=true;await new Promise(resolve=>setTimeout(resolve,500))}
+    await route.fulfill({status:response.status(),headers:response.headers(),body});
+  });
+  const {lesson}=await prepare(page,'calculate-food-margin','inventory_manager');
+  await guide(page,lesson,undefined,0,1);
+  await expect(page.locator('.inventory-training-coach-label')).toContainText('Action 2 of');
+  await expect(page.getByLabel('Recipe costing location',{exact:true})).toHaveValue('training-store');
+  await guide(page,lesson,undefined,1);
+  await page.getByRole('textbox',{name:lesson.question,exact:true}).fill('no');
+  await page.getByRole('button',{name:'Check my work',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Task passed',exact:true})).toBeVisible();
+  await page.unrouteAll({behavior:'wait'});
 });

@@ -25,6 +25,8 @@ from training.admin_scenarios import admin_values, prepare_admin, after_prepare_
 from training.migration_scenarios import verify_migration, recover_migration_checkpoint
 from training.csv_fixtures import CSV_FILES
 
+from training.steward_scenarios import steward_values, prepare_steward, verify_steward
+
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "reviewer", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "each", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
 
@@ -36,7 +38,7 @@ def values(lesson: Lesson, mode: str):
         quantity = max(1, quantity - 2)
     rejected = min(lesson.rejected, quantity)
     base={"guided":24,"assisted":27,"independent":31}[mode]
-    return {**IDS, **extension_values(lesson,mode), **admin_values(mode), **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), **capstone_values(lesson,mode), "quantity": quantity, "rejected": rejected,
+    return {**IDS, **extension_values(lesson,mode), **admin_values(mode), **steward_values(mode,quantity), **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), **capstone_values(lesson,mode), "quantity": quantity, "rejected": rejected,
         "practice_item": IDS["amenities"] if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
@@ -157,6 +159,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         prepare_capstone(db,lesson,v)
         prepare_extensions(db,lesson,v)
         prepare_admin(db,lesson,v)
+        prepare_steward(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
         after_prepare_procurement(db,lesson,v)
@@ -223,6 +226,8 @@ def read_only_unchanged(db,actor_id):
 
 def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple[bool, dict]:
     v = values(lesson, mode)
+    if lesson.workflow.startswith("steward_"):
+        return verify_steward(db,lesson,v,business_actions)
     if lesson.workflow.startswith("admin_"):
         return verify_admin(db,lesson,v,business_actions)
     if lesson.workflow.startswith("migration_"):

@@ -18,7 +18,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /auth/me` | `auth.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /items/{item_id}/configuration` | `catalogue_configuration.py` | items.read | Supporting UI / record inspection |
 | `PATCH /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Excluded from employee GUI practice: ItemConfigurationPanel exposes create/remove links but no PATCH editor |
-| `DELETE /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Further practical lesson required |
+| `DELETE /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Assessed: remove obsolete sourcing link while retaining supplier, original approved PO and unchanged stock |
 | `PATCH /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Excluded from employee GUI practice: ItemConfigurationPanel exposes add/remove barcodes but no PATCH editor |
 | `DELETE /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `PATCH /items/{item_id}/conversions/{conversion_id}` | `catalogue_configuration.py` | items.* | Excluded from employee GUI practice: ItemConfigurationPanel exposes conversion creation/read only, no existing-row editor |
@@ -61,7 +61,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /units` | `inventory.py` | items.read | Supporting UI / record inspection |
 | `POST /units` | `inventory.py` | items.* | Excluded from employee GUI practice: current item/configuration forms select units; no standalone unit editor |
 | `GET /locations` | `inventory.py` | locations.read | Supporting UI / record inspection |
-| `POST /locations` | `inventory.py` | locations.* | Further practical lesson required |
+| `POST /locations` | `inventory.py` | locations.* | Assessed: approved stable code, name, type and parent; actual POST and empty new location, no invented creation audit |
 | `GET /items` | `inventory.py` | items.read | Supporting UI / record inspection |
 | `POST /items` | `inventory.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /items/catalogue-workspace` | `inventory.py` | items.read | Supporting UI / record inspection |
@@ -72,7 +72,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /stock/receipts` | `inventory.py` | inventory.* | Assessed business outcome |
 | `POST /stock/issues` | `inventory.py` | inventory.* | Assessed business outcome |
 | `POST /stock/transfers` | `inventory.py` | inventory.* | Assessed business outcome |
-| `POST /stock/adjustments` | `inventory.py` | inventory.* | Further practical lesson required |
+| `POST /stock/adjustments` | `inventory.py` | inventory.* | Assessed additional Stock-screen variant of verified signed correction; exact quantity/cost/reference, not a new stock engine |
 | `POST /counts` | `inventory.py` | counts.create | Assessed real business/control outcome |
 | `GET /counts` | `inventory.py` | counts.read | Supporting UI / record inspection |
 | `GET /counts/{count_id}/worksheet` | `inventory.py` | counts.read | Supporting UI / record inspection |
@@ -104,10 +104,10 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /reports/expiry` | `inventory_operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /reports/waste` | `inventory_operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /locations/{location_id}` | `location_controls.py` | locations.read | Supporting UI / record inspection |
-| `PATCH /locations/{location_id}` | `location_controls.py` | locations.* | Further practical lesson required |
+| `PATCH /locations/{location_id}` | `location_controls.py` | locations.* | Assessed: correct original display name while preserving stable code, type, hierarchy and stock |
 | `GET /fnb/menu` | `menu.py` | items.read | Supporting UI / record inspection |
 | `POST /fnb/menu` | `menu.py` | items.* | Assessed: actual variant, station, availability and optional priced modifier |
-| `PUT /fnb/menu/{item_id}` | `menu.py` | items.* | Further practical lesson required |
+| `PUT /fnb/menu/{item_id}` | `menu.py` | items.* | Assessed: conditional target tag/price and reusable group assignment, retaining SKU, recipe link, base price, availability and POS visibility |
 | `POST /integrations/operations/requests` | `operational_integrations.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /integrations/operations/workspace` | `operational_integrations.py` | integrations.read | Supporting UI / record inspection |
 | `POST /integrations/operations/requests/{event_id}/decision` | `operational_integrations.py` | integrations.* | Assessed: owner accepts with canonical assignee, rejects duplicate or completes evidenced handover; only local pending status outbox |
@@ -116,7 +116,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /notifications/{notification_id}/read` | `operations.py` | reports.read | Assessed: acknowledge own operational alert without correcting or completing its underlying work |
 | `GET /integration-events` | `operations.py` | reports.read | Supporting UI / record inspection |
 | `POST /integration-events` | `operations.py` | procurement.* | Excluded from employee GUI practice: event inbox has inspection/retry but no arbitrary event-creation form; real service intake remains disabled |
-| `POST /integration-events/{event_id}/retry` | `operations.py` | procurement.* | Further practical lesson required |
+| `POST /integration-events/{event_id}/retry` | `operations.py` | procurement.* | Assessed only for a reviewed eligible failed inbound POS event; preserve event/payload identity and pending local state. Generic route lacks accepted-financial safeguards; dedicated Accounting controls required |
 | `POST /integration-events/process` | `operations.py` | procurement.* | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /exports/items.csv` | `operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /exports/balances.csv` | `operations.py` | reports.read | Supporting UI / record inspection |
@@ -146,7 +146,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `PUT /fnb/pos-rules/modifiers/{template_id}` | `pos_rules.py` | items.* | Assessed: correct approved shared add-on price while preserving option identities and other prices |
 | `GET /integrations/pos/catalog` | `pos_sync.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /integrations/pos/workspace` | `pos_sync.py` | integrations.read | Supporting UI / record inspection |
-| `POST /pos-mappings/{mapping_id}/activate` | `pos_sync.py` | integrations.* | Further practical lesson required |
+| `POST /pos-mappings/{mapping_id}/activate` | `pos_sync.py` | integrations.* | Assessed: exact product/approved recipe/location; no historical sale consumption; retirement invalidates assessment |
 | `POST /pos-mappings/{mapping_id}/deactivate` | `pos_sync.py` | integrations.* | Assessed: disable confirmed stale recipe mapping without reversing old sales |
 | `GET /suppliers` | `procurement.py` | suppliers.read | Supporting UI / record inspection |
 | `POST /suppliers` | `procurement.py` | suppliers.* | Assessed real outcome; relevant lifecycle refusals also exercised |
@@ -212,7 +212,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /receiving/purchase-orders/{po_id}/returns` | `receiving_workspace.py` | receiving.* | Assessed business outcome |
 | `GET /recipes/costing/workspace` | `recipe_costing.py` | reports.read | Supporting UI / record inspection |
 | `GET /recipes/{recipe_id}/costing-detail` | `recipe_costing.py` | reports.read | Supporting UI / record inspection |
-| `POST /recipes/{recipe_id}/margin-scenario` | `recipe_costing.py` | reports.read | Further practical lesson required |
+| `POST /recipes/{recipe_id}/margin-scenario` | `recipe_costing.py` | reports.read | Assessed: actual latest calculation at assigned location/price with unchanged stock/menu; captures only the two task-specific inputs |
 | `POST /recipes/{recipe_id}/revise` | `recipe_costing.py` | inventory.* | Excluded from employee GUI practice: API has no revision editor in current Recipe screens; ask authorized recipe steward |
 | `POST /recipes/{recipe_id}/retire` | `recipe_costing.py` | inventory.* | Assessed: authorized retirement retains version/history |
 | `GET /shared-identities` | `shared_master_data.py` | users.read | Supporting UI / record inspection |

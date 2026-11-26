@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_permission
 from app.api.integration_auth import integration_token_header, require_integration_token
 from app.db.session import get_db
+from app.services.integration_retry import reset_failed_event
 from app.models.operations import IntegrationEvent
 from app.models.user import User
 from app.services.controls import add_audit, add_notification
@@ -160,8 +161,9 @@ def accounting_receipt(payload:AccountingReceipt,token:str|None=Depends(integrat
 @router.post("/integrations/accounting/events/{event_id}/requeue")
 def requeue_accounting_event(event_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission("integrations.*"))):
     require_global_operational_access(db,user)
-    event=db.get(IntegrationEvent,event_id)
+    event=db.scalar(select(IntegrationEvent).where(IntegrationEvent.id==event_id).with_for_update())
     if not event or event.destination_system!="accounting":raise HTTPException(404,"Accounting event not found")
-    if event.status not in {"failed","dead_letter"}:raise HTTPException(409,"Only failed or dead-letter accounting events can be requeued")
-    if (event.payload or {}).get("accounting_receipt",{}).get("accepted") is True:raise HTTPException(409,"Accepted accounting events cannot be requeued")
-    event.status="pending";event.attempts=0;event.last_error=None;event.locked_at=None;event.locked_by=None;event.available_at=utcnow();add_audit(db,actor_user_id=user.id,action="accounting.event_requeued",entity_type="integration_event",entity_id=event.id);db.commit();return event_row(event)
+    reset_failed_event(event)
+    add_audit(db,actor_user_id=user.id,action="accounting.event_requeued",entity_type="integration_event",entity_id=event.id)
+    db.commit()
+    return event_row(event)

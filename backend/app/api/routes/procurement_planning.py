@@ -62,7 +62,7 @@ def planned_rows(db: Session, location_id: str | None = None, *, allowed_locatio
     for po in db.scalars(select(PurchaseOrder).where(PurchaseOrder.delivery_location_id.in_(location_ids), PurchaseOrder.status.in_(["approved", "partially_received"])).options(selectinload(PurchaseOrder.lines))).unique().all():
         for line in po.lines:
             key = (line.item_id, po.delivery_location_id)
-            on_order[key] = on_order.get(key, Decimal("0")) + max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity))
+            on_order[key] = on_order.get(key, Decimal("0")) + line.outstanding_quantity
     pending_pr: dict[tuple[str, str], Decimal] = {}
     for req in db.scalars(
         select(PurchaseRequisition).where(

@@ -66,7 +66,7 @@ def po_total(po: PurchaseOrder) -> Decimal:
 
 
 def po_outstanding(po: PurchaseOrder) -> Decimal:
-    return sum((max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity)) * Decimal(line.unit_price) for line in po.lines), Decimal("0"))
+    return sum((line.outstanding_quantity * Decimal(line.unit_price) for line in po.lines), Decimal("0"))
 
 
 @router.get("/procurement/quotation-workspace")
@@ -89,8 +89,8 @@ def quotation_workspace(
     ) or 0
     open_commitment_value = db.scalar(
         select(func.coalesce(func.sum(case(
-            (PurchaseOrderLine.ordered_quantity > PurchaseOrderLine.received_quantity,
-             (PurchaseOrderLine.ordered_quantity - PurchaseOrderLine.received_quantity) * PurchaseOrderLine.unit_price),
+            (PurchaseOrderLine.ordered_quantity > PurchaseOrderLine.fulfilled_quantity,
+             (PurchaseOrderLine.ordered_quantity - PurchaseOrderLine.fulfilled_quantity) * PurchaseOrderLine.unit_price),
             else_=0,
         )), 0))
         .select_from(PurchaseOrderLine)
@@ -345,7 +345,7 @@ def purchase_order_detail(po_id: str, db: Session = Depends(get_db), user: User 
             "total": str(po_total(po)),
             "outstanding_value": str(po_outstanding(po)),
             "line_count": len(po.lines),
-            "received_lines": sum(1 for line in po.lines if Decimal(line.received_quantity) >= Decimal(line.ordered_quantity)),
+            "received_lines": sum(1 for line in po.lines if Decimal(line.fulfilled_quantity) >= Decimal(line.ordered_quantity)),
         },
         "lines": [
             {
@@ -356,7 +356,7 @@ def purchase_order_detail(po_id: str, db: Session = Depends(get_db), user: User 
                 "ordered_quantity": str(line.ordered_quantity),
                 "received_quantity": str(line.received_quantity),
                 "returned_quantity": str(line.returned_quantity),
-                "outstanding_quantity": str(max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity))),
+                "outstanding_quantity": str(line.outstanding_quantity),
                 "unit_price": str(line.unit_price),
                 "line_total": str(Decimal(line.ordered_quantity) * Decimal(line.unit_price)),
             }

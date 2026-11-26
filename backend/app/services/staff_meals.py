@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.inventory import Item, Location, StockBalance, StockDocument, StockMovement
 from app.models.staff_meals import StaffMeal, StaffMealLine
 from app.services.controls import add_audit
-from app.services.inventory import InventoryError, post_document
+from app.services.inventory import InventoryError, active_reserved_quantity, post_document
 
 
 class StaffMealError(ValueError):
@@ -22,7 +22,7 @@ def _validate_location(db: Session, location_id: str) -> Location:
     return location
 
 
-def _validate_lines(db: Session, location_id: str, lines):
+def _validate_lines(db: Session, location_id: str, lines, *, check_availability: bool = True):
     _validate_location(db, location_id)
     seen: set[str] = set()
     rows = []
@@ -41,10 +41,12 @@ def _validate_lines(db: Session, location_id: str, lines):
                 StockBalance.location_id == location_id,
             )
         )
-        available = Decimal(balance.quantity) if balance else Decimal("0")
+        physical = Decimal(balance.quantity) if balance else Decimal("0")
+        reserved = active_reserved_quantity(db, item.id, location_id)
+        available = physical - reserved
         unit_cost = Decimal(balance.average_cost) if balance else Decimal(item.standard_cost or 0)
-        if available < quantity and not item.allow_negative_stock:
-            raise StaffMealError(f"Insufficient stock for {item.sku} at location")
+        if check_availability and available < quantity and (reserved > 0 or not item.allow_negative_stock):
+            raise StaffMealError(f"Insufficient unreserved stock for {item.sku} at location")
         line_cost = quantity * unit_cost
         total += line_cost
         rows.append(
@@ -72,7 +74,7 @@ def preview_staff_meal(db: Session, *, location_id: str, servings: int, lines):
 
 
 def post_staff_meal(db: Session, *, payload, actor_id: str) -> StaffMeal:
-    _validate_lines(db, payload.location_id, payload.lines)
+    _validate_lines(db, payload.location_id, payload.lines, check_availability=False)
     entries = [
         {
             "item_id": line.item_id,
@@ -149,7 +151,10 @@ def post_staff_meal(db: Session, *, payload, actor_id: str) -> StaffMeal:
         return db.scalar(
             select(StaffMeal).options(selectinload(StaffMeal.lines)).where(StaffMeal.id == meal.id)
         )
-    except (InventoryError, StaffMealError):
+    except InventoryError as exc:
+        db.rollback()
+        raise StaffMealError(str(exc)) from exc
+    except StaffMealError:
         db.rollback()
         raise
     except IntegrityError as exc:

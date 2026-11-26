@@ -70,7 +70,7 @@ def reorder_rows(db:Session,location_id:str|None=None)->list[ReorderSuggestion]:
     on_order:dict[str,Decimal]={}
     for po in db.scalars(po_stmt).unique().all():
         for line in po.lines:
-            outstanding=max(Decimal('0'),Decimal(line.ordered_quantity)-Decimal(line.received_quantity))
+            outstanding=line.outstanding_quantity
             on_order[line.item_id]=on_order.get(line.item_id,Decimal('0'))+outstanding
     preferred={}
     for link in db.scalars(select(SupplierItem).where(SupplierItem.is_preferred==True)).all(): preferred.setdefault(link.item_id,link)
@@ -283,7 +283,7 @@ def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:Us
     for x in p.lines:
         line=po_lines.get(x.purchase_order_line_id)
         if not line: fail(422,'Purchase order line not found')
-        outstanding=Decimal(line.ordered_quantity)-Decimal(line.received_quantity)
+        outstanding=line.outstanding_quantity
         if x.received_quantity>outstanding: fail(409,'Received quantity exceeds outstanding quantity')
         if x.accepted_quantity: entries.append({'item_id':line.item_id,'location_id':po.delivery_location_id,'quantity':x.accepted_quantity,'unit_cost':line.unit_price,'reason':'purchase order receipt'})
     try:
@@ -292,8 +292,11 @@ def receive_po(po_id:str,p:GoodsReceiptCreate,db:Session=Depends(get_db),user:Us
         for x in p.lines:
             line=po_lines[x.purchase_order_line_id]; line.received_quantity=Decimal(line.received_quantity)+x.received_quantity
             receipt.lines.append(GoodsReceiptLine(purchase_order_line_id=line.id,item_id=line.item_id,received_quantity=x.received_quantity,accepted_quantity=x.accepted_quantity,rejected_quantity=x.rejected_quantity,unit_cost=line.unit_price))
-        po.status='received' if all(Decimal(x.received_quantity)>=Decimal(x.ordered_quantity) for x in po.lines) else 'partially_received'
-        db.add(receipt); db.flush(); add_audit(db,actor_user_id=user.id,action='goods_receipt.posted',entity_type='goods_receipt',entity_id=receipt.id,details={'purchase_order_id':po.id,'line_count':len(receipt.lines)}); enqueue_event(db,destination_system='accounting',event_type='procurement.goods_received',aggregate_type='goods_receipt',aggregate_id=receipt.id,idempotency_key=f'goods-received:{receipt.id}',payload={'goods_receipt_id':receipt.id,'goods_receipt_number':receipt.goods_receipt_number,'purchase_order_id':po.id,'supplier_id':po.supplier_id,'lines':[{'item_id':x.item_id,'accepted_quantity':str(x.accepted_quantity),'rejected_quantity':str(x.rejected_quantity),'unit_cost':str(x.unit_cost)} for x in receipt.lines]}); db.commit(); db.refresh(receipt); return receipt
+        db.add(receipt); db.flush()
+        for line in po.lines:
+            db.expire(line, ["rejected_quantity"])
+        po.status='received' if all(x.outstanding_quantity == 0 for x in po.lines) else 'partially_received'
+        add_audit(db,actor_user_id=user.id,action='goods_receipt.posted',entity_type='goods_receipt',entity_id=receipt.id,details={'purchase_order_id':po.id,'line_count':len(receipt.lines)}); enqueue_event(db,destination_system='accounting',event_type='procurement.goods_received',aggregate_type='goods_receipt',aggregate_id=receipt.id,idempotency_key=f'goods-received:{receipt.id}',payload={'goods_receipt_id':receipt.id,'goods_receipt_number':receipt.goods_receipt_number,'purchase_order_id':po.id,'supplier_id':po.supplier_id,'lines':[{'item_id':x.item_id,'accepted_quantity':str(x.accepted_quantity),'rejected_quantity':str(x.rejected_quantity),'unit_cost':str(x.unit_cost)} for x in receipt.lines]}); db.commit(); db.refresh(receipt); return receipt
     except (InventoryError,IntegrityError) as exc:
         db.rollback(); fail(409,str(exc) if isinstance(exc,InventoryError) else 'Goods receipt could not be posted')
 @router.get('/goods-receipts',response_model=list[GoodsReceiptOut])

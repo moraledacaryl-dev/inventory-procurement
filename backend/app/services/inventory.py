@@ -113,7 +113,7 @@ def _balance(db: Session, item_id: str, location_id: str) -> StockBalance:
     if db.bind is not None and db.bind.dialect.name == "postgresql":
         db.execute(text("select pg_advisory_xact_lock(hashtext(:key))"),
                    {"key": f"stock-balance:{item_id}:{location_id}"})
-    row = db.scalar(select(StockBalance).where(StockBalance.item_id == item_id, StockBalance.location_id == location_id).with_for_update())
+    row = db.scalar(select(StockBalance).where(StockBalance.item_id == item_id, StockBalance.location_id == location_id).with_for_update().execution_options(populate_existing=True))
     if row is None:
         row = StockBalance(item_id=item_id, location_id=location_id, quantity=Decimal("0"), average_cost=Decimal("0")); db.add(row); db.flush()
     return row
@@ -148,6 +148,18 @@ def assert_count_snapshot_current(db: Session, session: CountSession) -> None:
             raise InventoryError(
                 "Stock moved after this count started; create a new physical count"
             )
+
+
+def active_reserved_quantity(db: Session, item_id: str, location_id: str) -> Decimal:
+    now = datetime.now(timezone.utc)
+    rows = db.scalars(select(StockReservation).where(
+        StockReservation.item_id == item_id,
+        StockReservation.location_id == location_id,
+        StockReservation.status == "active",
+    )).all()
+    return sum((Decimal(row.quantity) for row in rows if row.expires_at is None or (
+        row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at.tzinfo is None else row.expires_at
+    ) > now), Decimal("0"))
 
 
 def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict], reference: str | None = None, notes: str | None = None, idempotency_key: str | None = None, commit: bool = True, allow_empty: bool = False) -> StockDocument:
@@ -223,21 +235,8 @@ def post_document(db: Session, *, kind: str, actor_id: str, entries: list[dict],
         # used by reservation creation, so concurrent requests serialize.
         # Controlled stock counts and documented waste remain separate,
         # reviewed workflows; they must not silently erase reservations.
-        if qty < 0 and kind in {"issue", "transfer"}:
-            now = datetime.now(timezone.utc)
-            reservations = db.scalars(
-                select(StockReservation).where(
-                    StockReservation.item_id == item.id,
-                    StockReservation.location_id == entry["location_id"],
-                    StockReservation.status == "active",
-                )
-            ).all()
-            reserved = sum((
-                Decimal(res.quantity) for res in reservations
-                if res.expires_at is None or (
-                    res.expires_at.replace(tzinfo=timezone.utc) if res.expires_at.tzinfo is None else res.expires_at
-                ) > now
-            ), Decimal("0"))
+        if qty < 0 and kind in {"issue", "transfer", "staff_meal"}:
+            reserved = active_reserved_quantity(db, item.id, entry["location_id"])
             if reserved > 0 and new_qty < reserved:
                 raise InventoryError(
                     f"Insufficient unreserved stock for {item.sku} at location "

@@ -32,6 +32,10 @@ async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,st
       return Math.max(0,Math.min(t.x+t.width,c.x+c.width)-Math.max(t.x,c.x))*Math.max(0,Math.min(t.y+t.height,c.y+c.height)-Math.max(t.y,c.y));
     }).toBe(0);
     if(index===0&&screenshotPrefix)await page.screenshot({path:`training-test-results/${screenshotPrefix}-start.png`});
+    if(lesson.id==="award-timely-quotation"&&index===1){
+      await expect(page.getByRole("alertdialog").locator(step.target)).toBeVisible();
+      if(screenshotPrefix)await page.screenshot({path:`training-test-results/${screenshotPrefix}-dialog.png`});
+    }
     if(step.event==="change")await target.selectOption(String(step.value));
     else if(step.event==="input")await target.fill(String(step.value));
     else await target.click();
@@ -154,6 +158,14 @@ test("a correctly prefilled transfer amount can be reviewed without retyping",as
 });
 
 for(const[lesson,role,answer]of[
+  ["approve-purchase-request","procurement_officer","no"],
+  ["reject-duplicate-request","procurement_officer","no"],
+  ["request-self-approval","procurement_officer","no"],
+  ["record-supplier-quotation","procurement_officer","no"],
+  ["award-timely-quotation","procurement_officer","no"],
+  ["purchase-approval-limit","procurement_officer","no"],
+  ["amend-draft-order","procurement_officer","no"],
+  ["cancel-unreceived-order","procurement_officer","no"],
   ["reserve-event-stock","inventory_manager","no"],
   ["reservation-shortage","inventory_manager","no"],
   ["create-controlled-transfer","inventory_manager","no"],
@@ -270,6 +282,9 @@ test("an interrupted receiving draft restores quantities and the correct guide c
 });
 
 for(const[id,role,answer,observation]of[
+  ["inspect-awarded-order","procurement_officer","no","draft"],
+  ["inspect-approved-order-lock","procurement_officer","no","approved"],
+  ["inspect-received-order-lock","procurement_officer","no","5"],
   ["find-your-work","inventory_manager","no","1"],
   ["catalogue-units","inventory_manager","1000","1000"],
   ["supplier-profile","procurement_officer","no","3"],
@@ -286,6 +301,9 @@ for(const[id,role,answer,observation]of[
     const{lesson}=await prepare(page,id,role);
     const coach=page.getByRole("complementary",{name:"Your training task"});
     await coach.getByRole("link",{name:"Open the record to inspect →",exact:true}).click();
+    if(id==="inspect-awarded-order")await page.getByRole("link",{name:"Open TRAIN-PO",exact:true}).click();
+    if(id==="inspect-approved-order-lock"||id==="inspect-received-order-lock")await expect(page.locator('[data-training="po-amend-save"]')).toHaveCount(0);
+    if(id==="inspect-received-order-lock")await expect(page.locator('[data-training="po-cancel"]')).toHaveCount(0);
     await coach.getByRole("textbox",{name:lesson.question,exact:true}).fill(answer);
     await coach.getByRole("textbox",{name:lesson.practical_question,exact:true}).fill(observation);
     await coach.getByRole("button",{name:"Check my work",exact:true}).click();

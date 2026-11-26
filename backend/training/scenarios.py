@@ -13,6 +13,7 @@ from app.services.classification_defaults import ensure_operating_structure_defa
 from training.curriculum import Lesson, VERSION
 from training.catalogue_scenarios import catalogue_values, prepare_catalogue, verify_catalogue
 from training.control_scenarios import control_values, prepare_controls, after_prepare_controls, verify_controls, resolve_control_route, recover_control_checkpoint
+from training.procurement_scenarios import prepare_procurement, after_prepare_procurement, verify_procurement, procurement_inspection
 
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
@@ -128,8 +129,10 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         db.add(ProductionBatch(id=IDS["batch"], batch_number="TRAIN-BATCH", recipe_id=recipe.id, location_id=IDS["store"], planned_quantity=12, created_by_user_id=IDS["actor"]))
         prepare_catalogue(db,lesson,v)
         prepare_controls(db,lesson,v)
+        prepare_procurement(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
+        after_prepare_procurement(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -146,6 +149,7 @@ def balance(db, item="chicken", location="store"):
 
 def practical_question(lesson, mode):
     v = values(lesson, mode)
+    if lesson.workflow=="read_procurement":return procurement_inspection(lesson,mode,v)
     tasks={
         "find-your-work":("On Home, how many pending purchase orders are shown?","1","/dashboard"),
         "catalogue-units":("In this item's conversions, what multiplier converts kilograms to grams?","1000",f"/items/{IDS['chicken']}"),
@@ -168,7 +172,12 @@ def practical_question(lesson, mode):
     return "", "", lesson.route.format(**v)
 
 
-def inspection_endpoint(lesson):
+def inspection_endpoint(lesson, db=None):
+    if lesson.workflow=="read_procurement":
+        if lesson.id=="inspect-awarded-order":
+            po=db.scalar(select(PurchaseOrder).where(PurchaseOrder.quotation_id=="training-quote-fast")) if db is not None else None
+            return f"/api/v1/purchase-orders/{po.id}/detail" if po else "/api/v1/procurement/quotation-workspace"
+        return "/api/v1/purchase-orders/training-po/detail"
     endpoints={"find-your-work":"/api/v1/dashboard/summary", "catalogue-units":f"/api/v1/items/{IDS['chicken']}/configuration", "expiry-rotation":"/api/v1/reports/expiry", "menu-mapping":"/api/v1/fnb/menu", "asset-maintenance":"/api/v1/assets", "accounting-proof":"/api/v1/integrations/accounting/workspace", "connected-work":"/api/v1/integrations/operations/workspace", "management-review":"/api/v1/supplier-performance", "admin-controls":"/api/v1/access-scopes"}
     if lesson.id in endpoints:return endpoints[lesson.id]
     return {"read_stock":"/api/v1/availability", "read_supplier":f"/api/v1/suppliers/{IDS['supplier']}/detail", "read_recipe":f"/api/v1/recipes/{IDS['recipe']}/costing-detail"}.get(lesson.workflow)
@@ -180,6 +189,8 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
         return verify_catalogue(db,lesson,v,business_actions)
     if lesson.workflow.startswith("control_"):
         return verify_controls(db,lesson,v,business_actions)
+    if lesson.workflow.startswith("procurement_"):
+        return verify_procurement(db,lesson,v,business_actions)
     q = Decimal(v["quantity"])
     start = Decimal(v["base"])
     workflow = lesson.workflow

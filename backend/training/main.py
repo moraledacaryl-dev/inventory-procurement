@@ -189,6 +189,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                     with Session(engine) as business:
                         recovered=recover_checkpoint(business,BY_ID[attempt["lesson_id"]],attempt["mode"],attempt["checkpoint"],store.business_actions(attempt["id"]))
                         lesson_payload["route"]=resolve_practice_route(business,BY_ID[attempt["lesson_id"]],attempt["mode"])
+                        lesson_payload["inspection_api_path"]=inspection_endpoint(BY_ID[attempt["lesson_id"]],business)
                     if recovered != attempt["checkpoint"]:
                         attempt["checkpoint"]=recovered
                         with store.connect() as db:
@@ -196,7 +197,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 finally:
                     engine.dispose()
             with store.connect() as db:
-                inspected = bool(db.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], inspection_endpoint(BY_ID[attempt["lesson_id"]]))).fetchone())
+                inspected = bool(db.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], lesson_payload["inspection_api_path"])).fetchone())
         return {"learner": learner, "attempt": attempt,
             "lesson": lesson_payload,
             "history": store.history(learner["id"]), "version": VERSION, "record_inspected": inspected}
@@ -271,9 +272,14 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 if lesson.workflow.startswith("read_"):
                     _, answer, _ = practical_question(lesson, attempt["mode"])
                     with store.connect() as registry:
-                        read = registry.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], inspection_endpoint(lesson))).fetchone()
+                        read = registry.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], inspection_endpoint(lesson,db))).fetchone()
                     practical = bool(read) and normalize(payload.observation) == normalize(answer)
                     evidence = {"record_inspection": practical, "observation": payload.observation}
+                    if lesson.workflow=="read_procurement":
+                        from training.procurement_scenarios import verify_procurement_inspection
+                        valid,detail=verify_procurement_inspection(db,lesson,attempt["mode"])
+                        practical=practical and valid
+                        evidence.update(detail)
                 else:
                     practical, evidence = verify(db, lesson, attempt["mode"],store.business_actions(attempt["id"]))
         finally:

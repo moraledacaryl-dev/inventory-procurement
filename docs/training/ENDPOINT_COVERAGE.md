@@ -157,11 +157,11 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /reorder-suggestions/requisition` | `procurement.py` | procurement.* | Further practical lesson required |
 | `GET /requisitions` | `procurement.py` | procurement.read | Supporting UI / record inspection |
 | `POST /requisitions` | `procurement.py` | procurement.* | Further practical lesson required |
-| `POST /requisitions/{requisition_id}/approve` | `procurement.py` | procurement.* | Further practical lesson required |
-| `POST /requisitions/{requisition_id}/reject` | `procurement.py` | procurement.* | Further practical lesson required |
+| `POST /requisitions/{requisition_id}/approve` | `procurement.py` | procurement.* | Assessed: independent request approval and self-approval refusal |
+| `POST /requisitions/{requisition_id}/reject` | `procurement.py` | procurement.* | Assessed: reject duplicate demand |
 | `GET /quotations` | `procurement.py` | procurement.read | Supporting UI / record inspection |
-| `POST /quotations` | `procurement.py` | procurement.* | Further practical lesson required |
-| `GET /requisitions/{requisition_id}/quotation-comparison` | `procurement.py` | procurement.read | Supporting UI / record inspection |
+| `POST /quotations` | `procurement.py` | procurement.* | Assessed: actual supplier price, delivery and payment terms |
+| `GET /requisitions/{requisition_id}/quotation-comparison` | `procurement.py` | procurement.read | Supporting comparison; deadline-aware offer decision assessed through quotation workspace |
 | `GET /purchase-orders` | `procurement.py` | procurement.read | Supporting UI / record inspection |
 | `POST /purchase-orders` | `procurement.py` | procurement.* | Assessed business outcome |
 | `POST /purchase-orders/{po_id}/approve` | `procurement.py` | procurement.* | Assessed business outcome |
@@ -193,10 +193,10 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /hotel/par-profiles` | `property_operations.py` | inventory.read | Supporting UI / record inspection |
 | `POST /hotel/par-profiles` | `property_operations.py` | inventory.* | Further practical lesson required |
 | `GET /procurement/quotation-workspace` | `quotation_po_workspace.py` | procurement.read | Supporting UI / record inspection |
-| `POST /requisitions/{requisition_id}/award-quotation` | `quotation_po_workspace.py` | procurement.* | Further practical lesson required |
-| `GET /purchase-orders/{po_id}/detail` | `quotation_po_workspace.py` | procurement.read | Supporting UI / record inspection |
-| `PATCH /purchase-orders/{po_id}/amend` | `quotation_po_workspace.py` | procurement.* | Further practical lesson required |
-| `POST /purchase-orders/{po_id}/cancel-workspace` | `quotation_po_workspace.py` | procurement.* | Further practical lesson required |
+| `POST /requisitions/{requisition_id}/award-quotation` | `quotation_po_workspace.py` | procurement.* | Assessed: justified offer award creates one linked draft PO |
+| `GET /purchase-orders/{po_id}/detail` | `quotation_po_workspace.py` | procurement.read | Assessed: linked awarded draft, approval limit, amendment lock and receipt cancellation lock |
+| `PATCH /purchase-orders/{po_id}/amend` | `quotation_po_workspace.py` | procurement.* | Assessed: correct draft commercial terms without approval or stock movement |
+| `POST /purchase-orders/{po_id}/cancel-workspace` | `quotation_po_workspace.py` | procurement.* | Assessed: authorized pre-receipt cancellation and retained local handoff |
 | `POST /migration/imports/{import_type}/validate` | `readiness.py` | inventory.* | Further practical lesson required |
 | `GET /migration/imports` | `readiness.py` | reports.read | Supporting UI / record inspection |
 | `POST /migration/imports/{job_id}/apply` | `readiness.py` | inventory.* | Further practical lesson required |

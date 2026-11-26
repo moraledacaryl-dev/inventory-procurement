@@ -1,4 +1,4 @@
-export type TrainingStep = { target: string; instruction: string; value: string | number | null; event: string; outcome: string | null; outcome_status: number | null };
+export type TrainingStep = { target: string; instruction: string; value: string | number | null; event: string; outcome: string | null; outcome_status: number | null; outcome_method?: string | null };
 export type TrainingLesson = {
   id: string; module: string; title: string; roles: string[]; route: string;
   workflow: string; situation: string; concept: string; example: string; rule: string;
@@ -6,6 +6,7 @@ export type TrainingLesson = {
   quantity: number; rejected: number; reference: string; practical_question: string; inspection_route: string;
   curriculum_version: string;
   inspection_api_path: string | null;
+  inspection_query?: Record<string,string> | null;
   practice_file_name?: string | null;
   global_access: boolean;
 };
@@ -38,4 +39,12 @@ export function trainingOutcomeMatches(expected:string,actual:string) {
   if(parts.length!==2||!actual.startsWith(parts[0])||!actual.endsWith(parts[1]))return false;
   const id=actual.slice(parts[0].length,actual.length-parts[1].length);
   return /^[a-f0-9-]{36}$/.test(id);
+}
+
+export function trainingInspectionMatches(lesson:TrainingLesson|null|undefined,path:string){
+  if(!lesson?.inspection_api_path)return false;
+  const [pathname,query=""]=path.split("?");
+  if(pathname!==lesson.inspection_api_path)return false;
+  const params=new URLSearchParams(query);
+  return Object.entries(lesson.inspection_query||{}).every(([key,value])=>params.get(key)===value);
 }

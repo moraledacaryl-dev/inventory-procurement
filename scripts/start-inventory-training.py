@@ -99,6 +99,12 @@ def main():
 def launch():
     if sys.stdout is None: sys.stdout = open(os.devnull,"w")
     if sys.stderr is None: sys.stderr = open(os.devnull,"w")
+    if "--training-recovery" in sys.argv:
+        sys.argv.remove("--training-recovery")
+        sys.path.insert(0,str(ROOT / "backend"))
+        from training.recovery import main as recovery_main
+        recovery_main()
+        return
     if "--training-api" in sys.argv:
         sys.argv.remove("--training-api")
         sys.path.insert(0,str(ROOT / "backend"))

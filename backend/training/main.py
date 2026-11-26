@@ -126,7 +126,8 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                     logging.exception("The isolated capstone colleague needs recovery")
                     store.event(attempt["id"],"counterparty_recovery_required",{})
                 finally:engine.dispose()
-            if request.method == "GET" and response.status_code == 200:
+            from training.report_scenarios import record_read_allowed
+            if request.method == "GET" and response.status_code == 200 and record_read_allowed(BY_ID[attempt["lesson_id"]],path,request.query_params):
                 store.event(attempt["id"], "record_read", {"path": path,"method":"GET","status":200})
             elif request.method != "GET":
                 store.event(attempt["id"], "business_action", {"path": path,"method":request.method,"status": response.status_code,**({"calculation":calculation} if calculation is not None else {})})
@@ -320,6 +321,16 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                     practical=practical and untouched
                     evidence = {"record_inspection": practical, "observation": payload.observation,"record_unchanged":bool(untouched)}
                     if not untouched:evidence["correction"]="This is an inspection task. Keep its business records unchanged while reading the actual result. Start a fresh practice if a change was posted."
+                    if lesson.workflow=="read_pos":
+                        from training.pos_review_scenarios import verify_pos_review
+                        valid,detail=verify_pos_review(db,lesson,values(lesson,attempt["mode"]))
+                        practical=practical and valid
+                        evidence.update(detail)
+                    if lesson.workflow=="read_report":
+                        from training.report_scenarios import verify_report
+                        valid,detail=verify_report(db,lesson,values(lesson,attempt["mode"]))
+                        practical=practical and valid
+                        evidence.update(detail)
                     if lesson.workflow=="read_procurement":
                         from training.procurement_scenarios import verify_procurement_inspection
                         valid,detail=verify_procurement_inspection(db,lesson,attempt["mode"])

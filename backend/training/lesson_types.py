@@ -10,6 +10,7 @@ class Step:
     event: str = "click"
     outcome: str | None = None
     outcome_status: int | None = None
+    outcome_method: str | None = None
 
 
 @dataclass(frozen=True)

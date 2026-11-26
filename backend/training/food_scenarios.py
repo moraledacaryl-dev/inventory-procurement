@@ -39,7 +39,10 @@ def verify_food(db,lesson,v,actions):
     untouched=balance==v["base"] and not docs
     def audited(action,entity):return bool(db.scalar(select(AuditLog.id).where(AuditLog.actor_user_id==v["actor"],AuditLog.action==action,AuditLog.entity_id==entity)))
     ok=False
-    if id=="create-governed-recipe":
+    if id=="staff-meal-shortage":
+        refusals={(row.get("path"),row.get("status")) for row in actions}
+        ok=("/api/v1/staff-meals/preview",409) in refusals and ("/api/v1/staff-meals",409) in refusals and db.scalar(select(StaffMeal.id)) is None
+    elif id=="create-governed-recipe":
         row=db.scalar(select(Recipe).where(Recipe.code=="TRAIN-TEST-RECIPE"))
         ok=bool(row and row.created_by_user_id==v["actor"] and row.status=="draft" and not row.approved_by_user_id and row.name=="Training chicken portion" and row.output_item_id==v["alfredo"] and row.yield_quantity==1 and row.notes==v["reference"] and len(row.lines)==1 and row.lines[0].ingredient_item_id==v["chicken"] and row.lines[0].quantity==Decimal("0.25") and row.lines[0].waste_factor==Decimal("0.1") and not row.lines[0].optional)
     elif id=="approve-colleague-recipe":ok=recipe.status=="approved" and recipe.approved_by_user_id==v["actor"] and recipe.created_by_user_id!=v["actor"] and audited("recipe.approved",recipe.id)

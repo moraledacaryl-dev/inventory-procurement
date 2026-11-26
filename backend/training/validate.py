@@ -37,6 +37,7 @@ def validate():
         assert set(lesson.roles).issubset(ROLES)
         assert lesson.steps or lesson.workflow.startswith("read_")
         assert lesson.question and lesson.answer and lesson.correction
+        assert all(step.outcome_method in {None,"GET","POST","PUT","PATCH","DELETE"} and (step.outcome_method is None or step.outcome) for step in lesson.steps)
         route = lesson.route.split("?")[0]
         import re
         route = re.sub(r"\{[^}]+\}", "[id]", route)

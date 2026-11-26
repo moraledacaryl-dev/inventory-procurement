@@ -50,7 +50,8 @@ def task(client,lesson_id,mode='guided',exam_id=None,perform=True):
     if perform:
         from training.scenarios import practical_question
         lesson=BY_ID[lesson_id]
-        assert client.get(prepared['lesson']['inspection_api_path']).status_code==200
+        current=client.get("/api/v1/training/me").json()["lesson"]
+        assert client.get(current["inspection_api_path"],params=current.get("inspection_query") or {}).status_code==200
         _,answer,_=practical_question(lesson,mode)
         result=client.post('/api/v1/training/check',json={'answer':lesson.answer,'observation':answer})
         assert result.status_code==200,result.text
@@ -255,3 +256,25 @@ def test_an_inspection_lesson_cannot_pass_after_changing_its_business_record(lea
     result=learner.post('/api/v1/training/check',json={'answer':'available','observation':'20'}).json()
     assert not result['passed'] and not result['evidence']['record_unchanged']
     assert 'inspection task' in result['message']
+
+
+@pytest.mark.parametrize("id",["interpret-period-issues","interpret-actual-yield-cost","sale-consumption","inspect-unmapped-pos-refusal"])
+def test_fresh_report_and_pos_finals_recheck_live_evidence_after_practice_pass(learner,app,monkeypatch,id):
+    from training.scenarios import engine_for
+    from sqlalchemy.orm import Session
+    from sqlalchemy import select
+    from app.models import StockBalance
+    path=DutyPath("test-evidence-final","Evidence final","viewer","A bounded source-evidence final.",(id,),(id,))
+    monkeypatch.setitem(BY_PATH,path.id,path)
+    enrol(learner,path);study(learner,path)
+    exam=start_exam(learner,BY_ID[id].module)
+    practice=task(learner,id,"independent",exam["id"])
+    engine=engine_for(app.state.training_store.root/f"attempt-{practice['attempt_id']}.sqlite")
+    try:
+        with Session(engine) as db:
+            row=db.scalar(select(StockBalance).where(StockBalance.item_id=="training-chicken",StockBalance.location_id=="training-store"))
+            row.quantity+=1;db.commit()
+    finally:engine.dispose()
+    result=submit(learner,exam)
+    assert result["status"]=="failed" and result["result"]["practical_score"]==0
+    assert not result["result"]["practical"][0]["evidence"].get("record_inspection")

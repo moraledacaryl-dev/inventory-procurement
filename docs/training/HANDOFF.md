@@ -1,144 +1,130 @@
 # Inventory Training implementation and evidence
 
-Status: **working implementation for review, not the complete 10/10 master brief**. Keep the pull request in draft until the remaining curriculum and release requirements below are satisfied. No production Inventory deployment or production data change was made.
+This is a source-backed training application on the dedicated feature branch, with release verification tracked in draft PR [#158](https://github.com/moraledacaryl-dev/inventory-procurement/pull/158). It has not been deployed to production Inventory or a private training host. Native signing, installation and independent human verification have distinct limits below; this document does not certify a predetermined 10/10 score.
 
-## Repository basis and architecture
+## Repository basis
 
-- Repository: `moraledacaryl-dev/inventory-procurement`.
-- Feature branch: `codex/inventory-training-20261126`.
-- Inventory main fetched directly from GitHub: `07c651d0111be2840cac81b66bb1d7b97fd4c616`.
-- Operations reference main fetched directly from GitHub: `63a9e7c011ecfa140f7ae3e75612c2d5d6e4fa86`.
-- Work used fresh clones. Existing Desktop Operations and Inventory checkouts were not used as source authority or overwritten.
-- Actual Next screens, FastAPI endpoints, permission checks, SQLAlchemy models and posting services are reused. Training has a separate entry point, registry and database per participant/attempt. There is no second stock engine.
-- The coverage plan was written before curriculum implementation. `ENDPOINT_COVERAGE.md` inventories 234 decorated route contracts. `source-contract.json` fingerprints 183 operational backend/frontend sources. The gate stops on drift and requires explicit review.
+| Source | Verified GitHub main |
+|---|---|
+| `moraledacaryl-dev/inventory-procurement` | `07c651d0111be2840cac81b66bb1d7b97fd4c616` |
+| `moraledacaryl-dev/operations-command-center` | `63a9e7c011ecfa140f7ae3e75612c2d5d6e4fa86` |
 
-## Implemented content
+Both were fetched and rechecked directly against GitHub. Work uses fresh clones; the existing Desktop checkout is not source authority. Branch: `codex/inventory-training-20261126`. The PR and native `RELEASE.json` identify the exact implementation/package commit. Native CI checks out the feature head explicitly, rather than attributing a generated merge commit to the branch head.
 
-There are **151 lesson definitions**, including **134 action exercises** and **17 record-inspection exercises**. Twelve action exercises finish with a genuine protective HTTP refusal. Other actions include saved business/master records, invalid-file validation and a real diagnostic that retains its missing-backup failure. One saved transfer-correction task also requires a genuine refusal before correction. Every definition supports guided, assisted and independent attempts: **453 deterministic attempt variants**. This count does not mean 453 different business workflows. Independent assessments require current-version guided and assisted passes, a successful business outcome or relevant record inspection, the knowledge answer, and no hints. Using a hint converts an independent attempt into practice and requires a fresh assessment. Individual skills retain all-or-nothing outcomes. Versioned module and duty finals now combine scored knowledge with fresh independent practical records and every critical integrity objective.
+## Architecture and safety
 
-| Module | Current lessons | Practical scope |
-|---|---|---|
-| A | Available stock and counter foundations | Read physical/reserved/available values; counters inspect the actual blind-count item/unit without inventory-read permission |
-| B | Find your work | Home indicators and navigation |
-| C | Catalogue units and ten maintenance/control exercises | Create item, edit minimum, add/remove barcode, directional conversion, location policy, deactivate/reactivate, stock refusal and global-scope refusal; wider classification editing remains |
-| D | Opening stock | Actual opening receipt and stock outcome |
-| E | Kitchen, café and bar issues | Actual kg issue; applied case-to-individual-can and bottle-to-mL handovers with exact stock/cost outcomes |
-| F | Direct transfer and ten control scenarios | Reservation/shortage; draft/dispatch/full or discrepant receipt/cancellation; destination correction; changed availability; transit scope. Reservation release has no employee UI and is explicitly excluded pending upstream UI. |
-| G | Blind/zero count, approval and six recovery/control scenarios | New full count including zero; multiple units; safe partial save; targeted recount; stale snapshot refusal; cancellation. Schedule APIs lack an employee editor; item-location count intervals remain policies. |
-| H | Spoilage, approved opening correction, expired lot write-off | Real signed correction and lot-linked expiry disposal with valuation; no extra in-app approval stage is invented. |
-| I | Supplier profile and six maintenance/control exercises | Create/edit supplier, preferred item link, deactivate/reactivate and open-order refusal; quotation capture and deadline-aware comparison are included in K |
-| J | Purchase request and review | Stock/on-order planning, submission, independent approval, duplicate rejection and self-approval refusal |
-| K | Supplier quotations and purchase approval | Record actual offers; compare delivery deadline with price; award one linked draft; inspect its existing PO; independent PO approval |
-| L | Controlled purchase orders | Manual draft, amendment, authorized pre-receipt cancellation, monetary-limit refusal, approved amendment lock and receipt cancellation lock; print practice remains |
-| M | Ten receiving situations | Full, partial, damaged, expired, fully rejected, discrepancy, wrong-item rejection, later delivery, correct-order selection, interrupted-session scenario |
-| N | Supplier return | Actual return of accepted stock and quantity outcome |
-| O | Expiry inspection and four traceability actions | Create lot metadata; tracked opening receipt; selected batch issue; batch shortage refusal. Physical inspection and rotation remain employee responsibilities. |
-| P | Recipe costing and governance | Read costing, create formula with units/waste, independently approve, refuse self-approval, retire safely. Revision API has no employee editor and is explicitly excluded pending upstream UI. |
-| Q | Batch planning and production | Plan approved output without stock movement; actual start/execute, material deduction and finished yield; planned/started cancellation with explicit material disposition |
-| R | Menu and modifiers | Inspect price; create variant with station, availability and priced optional modifier; create/deactivate conditional rules; create reusable multi-select add-ons and correct approved option price; approved product tag/conditional-price/shared-group assignment is included; actual external synchronization remains separately verified |
-| S | POS recipe mapping | Create exact product/recipe/location mapping; disable stale or activate verified mapping; queue a reviewed eligible local failure. Real sandbox POS event/reversal inspection remains; service intake is not an employee Inventory control. |
-| T | Staff meals | Actual ingredient posting and authorized duplicate reversal with retained original and idempotent correction |
-| U | Housekeeping and reusable linen | Amenity issue; clean-to-room, used-to-laundry and accepted clean return; room par standard without an issue |
-| V | Assets and maintenance | Inspect/register asset; preventive plan; one-off job; start/complete verified zero-charge work; prepare/post reviewed depreciation. Lifecycle APIs and non-zero maintenance cost/parts capture have no current employee form. |
-| W | Accounting proof, mappings and retry | Inspect intake versus journal evidence; requeue one eligible failed event with unchanged source/amount and no transport. Reviewer-approved mapping configuration is included; broader reconciliation remains. |
-| X | Accountable connected work | Inspect request; accept with canonical fictional assignee, reject duplicate demand, complete a confirmed linked handover; pending local status events only; acknowledgement of own alert and specific staff feedback. Actual Staff SSO is not present. |
-| Y | Management review | Inspect supplier purchasing value and interpret possible causes; save an explicit F&B report scope; fuller report interpretation remains |
-| Z | Administration | Bounded approval/location scope; department masters and original-item classification; real item/supplier/opening CSV validation/apply/refusals/recovery; verified follow-up resolution; honest assurance, acceptance and diagnostics. Location creation/name correction are included; an isolated backup drill remains. |
+The application reuses the actual Next screens, FastAPI routes, SQLAlchemy schema, authorization and stock/procurement/production services. A dedicated training launcher configures isolation **before** importing operational settings. A separate versioned registry retains participant/course/final history; each attempt has its own complete business database. There is no parallel stock engine or simulated sale/approval button.
 
-The ten receiving fixtures validate accepted stock and PO received/status effects. Rejected goods count toward arrived/PO fulfillment in the current source, but never increase usable stock. Rejection does not automatically leave quantities outstanding. A fully rejected receipt may close an order.
+The launcher rejects production/database/API/credential/integration configuration, operational `.env` files, symlink state and unmarked nonempty directories. The real training process denies outbound Python sockets, DNS and UDP, including loopback. Cross-application intake/delivery is blocked; workers never start. Task-specific local control handlers retain their real permissions. Integration events and notifications remain fictional local records. This boundary applies to the maintained launcher, not an administrator deliberately replacing its code.
 
-## Role coverage
+Signed participant cookies and tab-bound attempt headers prevent another tab from posting or grading a superseded attempt. A private local manager key separately protects cross-employee review/assignment. Choosing Owner or passing a course grants no production permission. Participant identity is local browser training identity, not Staff SSO or verified employee identity. No actual staff message, supplier commitment, Accounting delivery or production transaction is sent.
 
-| Actual role | Lessons | Intended responsibilities |
+Registry schemas 1–3 migrate transactionally to schema 4. Old versions remain history and do not satisfy current prerequisites. Completed final grades/certificate names are frozen. Answer revisions protect against stale-tab overwrites. Reset creates a fresh business database and retains the previous evidence.
+
+## Curriculum and responsibilities
+
+Curriculum `2026.11.26.12` contains **163 definitions: 135 action/validation/analysis exercises and 28 inspections**. Thirteen action exercises finish with an actual protective refusal. Every definition supports guided, assisted and independent mode: **489 attempt variants**. These are not 489 distinct business workflows. Café/bar issues and the direct Stock correction reuse existing posting engines with different unit/custody decisions. The original conceptual POS inspection is replaced in place, not counted twice.
+
+| Module | Definitions | Source-supported scope |
 |---|---:|---|
-| inventory_manager | 85 | Stockroom, kitchen, café, bar, housekeeping, maintenance posting when authorized; location scopes still apply |
-| procurement_officer | 28 | Purchasing, with explicit monetary scope for approvals |
-| receiver | 16 | Delivery inspection and supplier returns at permitted locations |
-| counter | 8 | Blind physical counts, including zero; no variance approval |
-| viewer | 6 | Authorized inspection and reports |
-| owner | 148 | All authorized paths except the two manager-only scope-refusal exercises and the purchaser-only monetary-limit refusal; no automatic roster access |
+| A — Fundamentals | 2 | Physical/reserved/available stock; counter-only unit reading without inventory-read access |
+| B — Navigation | 1 | Actual Home indicators, navigation, record search and restricted responsibility |
+| C — Catalogue | 11 | Units; item creation/editing; barcodes; conversions; location settings; lifecycle and stock/scope refusals |
+| D — Balances and ledger | 2 | Opening quantity/cost; real date/item/location/type filters; net movement versus running/closing quantity |
+| E — Issuance | 3 | Kitchen kg, café case-to-individual-can and bar bottle-to-mL decisions |
+| F — Transfers/reservations | 11 | Reservation shortage; controlled dispatch/receipt; partial variance; cancellation; destination, availability and transit-scope controls |
+| G — Counts | 11 | Blind and zero; multiple units; full/partial save; recount; independent approval; stale snapshot; posted variance; linked monthly count |
+| H — Corrections/waste | 5 | Spoilage; signed authorized correction; lot-linked expiry write-off; original waste quantity/value |
+| I — Suppliers | 8 | Profile/history; create/edit; preferred link/unlink; deactivate/reactivate; open-order refusal |
+| J — Requests | 4 | Check stock/on-order demand; submit; independent approval; duplicate rejection; self-approval refusal |
+| K — Quotations/authority | 5 | Real offers; price versus deadline; award one linked draft; inspect the same PO; linked busy weekend |
+| L — Purchase orders | 6 | Manual draft, amendment, pre-receipt cancellation, approval-limit refusal and immutable-status controls |
+| M — Receiving | 11 | Ten required delivery/recovery cases plus one linked delivery-problem capstone |
+| N — Returns | 1 | Source-linked return of previously accepted goods with exact stock/obligation evidence |
+| O — Lots/expiry | 5 | Metadata, tracked receipt/issue, batch shortage, expiry/condition/FIFO/FEFO responsibilities |
+| P — Recipes/cost | 6 | Location-specific cost; units/waste; independent governance; safe retirement; margin analysis without changing menu price |
+| Q — Production | 6 | Plan, start/actual execution, good output, cancellations with material disposition, posted actual unit cost |
+| R — Menu/selling | 7 | Variant/price/modifier; conditional rules; shared add-ons; approved tags, conditional prices and group assignment |
+| S — POS | 9 | Exact mapping controls/retry; actual four-ingredient consumption; duplicate identity; unmapped refusal; cooked waste return; verified unused-sale reversal |
+| T — Staff meals | 3 | Four-serving consumption/cost; genuine shortage refusals; authorized duplicate reversal |
+| U — Housekeeping/linen | 6 | Amenities; clean/in-use/laundry handovers; accepted return; room par; linked room preparation |
+| V — Assets/maintenance | 8 | Register/read asset; preventive plan; work order/start/verified zero-cost completion; reviewed depreciation |
+| W — Accounting | 3 | Delivery/intake versus journal evidence; approved mapping; eligible failed-event requeue with preserved obligation |
+| X — Connected work | 7 | Canonical assignee, accept/reject, confirmed linked completion, alert, specific feedback and owner-review capstone |
+| Y — Management reports | 5 | Supplier purchasing/acceptance, stock valuation, saved scope, separate reconciliation/backup assurance evidence |
+| Z — Administration | 17 | Bounded scopes, departments/classification, fixed fictional CSV migration, original-job resume, locations, verified follow-ups, honest diagnostics |
 
-Roles are the six source-defined roles. Department personas do not grant invented permissions. Fourteen courses include the six complete role courses plus stockroom, kitchen, café, bar, housekeeping, maintenance, department supervision and accounting-related viewer review. Learners may retain multiple assignments and change training paths while preserving earlier history. Trainer roster/assignment access additionally requires the private local manager key. Training identity is a signed browser participant session, not Staff SSO or proof of employee identity.
+The complete definition-to-role matrix and 14 duty-course assignments are in [CURRICULUM.md](CURRICULUM.md). [ENDPOINT_COVERAGE.md](ENDPOINT_COVERAGE.md) covers 234 decorated API contracts, including explicit exclusions. [source-contract.json](source-contract.json) fingerprints 183 operational files and fails CI when source changes without review.
 
-## Simulations and assessments
-
-Six **linked capstones** now use one evolving sandbox each:
-
-| Capstone | Actual linked evidence | Learner roles |
-|---|---|---|
-| Busy weekend | Independently approved request → learner quotation/award → independently approved PO → actual partial/rejected receipt → receipt-referenced kitchen issue → learner inspects same PO | Purchasing, owner |
-| Delivery problems | Same request/offer/approved PO → learner arrived/rejected receipt → later return of accepted stock → local Accounting handoffs | Receiver, owner |
-| Restaurant service | Actual raw chicken/yield → prepared portions → faithful local POS serving recipe → staff meal of prepared portions; no double raw deduction | Inventory manager, owner |
-| Monthly count | Two blind physical lines → learner submission → different authorized reviewer → one linked stock adjustment → learner refresh | Counter, inventory manager, owner |
-| Housekeeping | Actual amenity issue → same 12 towels issued, sent to laundry and partly returned clean; separate room standard | Inventory manager, owner |
-| Owner review | Canonical assignee/acceptance → colleague's linked issue → learner completion → separate eligible failed Accounting event requeued locally | Owner |
-
-Counterpart stages are explicitly explained deterministic training actors using unchanged typed source handlers and services. They neither change the learner's role nor teach automatic approval in production. Reconnect retries these stages idempotently. Assessments verify relationships, actors, quantities, valuation, duplicate prevention and local pending handoffs. Blind-count assessment evidence omits hidden starting quantities; source permits historical snapshots after posting.
-
-All 151 definitions have independent assessment mode; 134 assess actions, including twelve final refusal controls and invalid-file/diagnostic checks, and 17 assess observations. Every capstone's assigned role and all three modes pass real backend outcomes. Browser evidence does not establish separate walkthroughs of every one of the 453 variants. Fourteen duty courses and 144 final-check blueprints are implemented: 130 applicable module finals and 14 duty finals. Finals reuse the existing real business scenarios; these are not 144 additional distinct workflows.
-
-
-Finals require guided and assisted passes for the applicable module; a duty final additionally requires all assigned skills in all three modes and current module finals. Practical records must be new, independent, tied to the same exam/course/role/version and completed without hints. Knowledge must reach 85%, practical objectives 90%, and every critical knowledge and business check must pass. Specific corrections follow grading; a failed final can be retaken with a new exam and new practical records. Certificates appear only after a duty final passes and attest to local training performance, not verified employee identity or production authority.
-
-The progress registry migrates transactionally to schema 4 while retaining earlier attempts and curriculum versions. Answer drafts use revision checks so another tab cannot silently overwrite them. Completed grades and certificate names are frozen snapshots; switching courses or curriculum versions preserves read-only historical results. Trainer review shows each selected participant's multiple assignments, applicable skill progress and final history; the private local manager key remains an additional boundary.
-
-The nine added definitions include six new selling/cancellation controls, one counter fundamentals inspection and two applied stock-unit exercises. The café/bar exercises reuse the issue workflow with packaging/measurement decisions; changing item names or quantities does not count as a new business workflow.
-
-
-The administration pass adds 18 real exercises. CSV inputs are fixed fictional files supplied only to the authenticated current attempt, then downloaded and uploaded through the actual file control. Item/supplier import adds no stock; the opening fixture has no prior movements. Invalid rows stay unapplied, and a later opening import remains refused. A saved validated job resumes at its original Apply action without another upload. Validation errors now disclose their actual row and message in the inherited Readiness table. Diagnostics deliberately retain missing-backup failures and do not authorize release. The incident fixture verifies a real original document read after reconnection; it does not claim a backup restore occurred.
-
-
-Eight further controls cover supplier unlink, location creation/name correction, the Stock screen’s signed adjustment, menu selling/group assignments, eligible local retry, mapping activation and read-only margin analysis. The direct adjustment is another actual UI route for the existing correction workflow, not another inventory engine. The latest calculation’s location and price alone are captured for its assigned task; other request bodies are not logged. Recipe-location loading can replace a select; the guide follows the retained replacement by semantic selector after the source form commits.
-
-## Verification evidence
-
-Local results on 26 November 2026 (Manila):
-
-- Existing Inventory backend suite: **307 passed, 5 skipped**. The skipped tests require capabilities not available in the local SQLite run; this is not a PostgreSQL certification.
-- Training backend suite: **530 passed**, including all lesson fixtures, real outcomes for ten receiving cases, blind masking, role/location boundaries, independent count approval, stock/production/procurement, concurrent users, resets, stale tabs, manager access, prerequisite enforcement, hint handling, configuration rejection and outbound-network denial. The capstone suite includes simulated counterpart interruption, repeated reconnects without duplicate posting, linked-quantity/valuation checks and fresh reset databases with preserved history.
-- Browser suite: **364 passed** in Chromium: desktop and Pixel 7 emulation. It performs actual selections, inputs, confirmations and postings. Every guided target and current instruction must be in the visible viewport; the coach must not overlap the target. Saved-count and catalogue-draft resume, reset draft isolation and incorrect-input correction pass. A deliberately aborted checkpoint request still recovers exact saved catalogue fields; a committed item resumes at assessment after its draft clears. Two-tab protection, created-count record/line recovery and review of prefilled decimal amounts also pass. Delayed asset rows reposition the target; manual scrolling can reach partial Save controls. A health-checked single initial GET retry survives an injected connection failure without creating another attempt. All 20 focused desktop/phone capstone, partial-count, delayed-layout and closed-disclosure recovery checks pass, followed by the complete 364-case rerun. New checks open every duty course, complete actual module/duty practicals, correct and retake a failed final, preserve multiple assignments and inspect trainer results on both viewports. Trainer-key checks disable traces so that the private key is not captured in browser artifacts.
-- The 18 new selling/cancellation/unit/fundamentals walkthroughs pass on desktop and phone. Four further checks verify cancellation validation inside its dialog, retained material details after a genuine stale-state refusal, and recovery from the actual committed state. The subsequent administration pass adds 38 desktop/phone walkthroughs, including genuine downloaded-file upload and original-job resume. The final complete 364-case source rerun passes in 7.5 minutes.
-- All 18 new desktop/phone checks pass, including every remaining writable control and a deliberately delayed recipe-costing response that replaces its select. The full 364-case rerun passes; metadata-only target additions and narrow calculation evidence do not change operational backend rules.
-- Axe checks report no serious/critical violations in the new onboarding area and guide/banner on both viewports. This is not a full WCAG audit of every inherited Inventory screen or a screen-reader certification.
-- Training Next standalone build and TypeScript checks pass. Compiled API proxy and opening route are verified before recording the package's training identity.
-- macOS arm64 native package built with PyInstaller 6.16.0 and checksum-verified official Node 22.23.5. The frozen API and complete launcher start successfully; interruption fixes are exercised through that package. The complete 70-case desktop/mobile walkthrough suite passed against the compiled macOS API and bundled standalone web server after release-specific recovery fixes. The verified milestone commit `334d0aa6735603addc4600dc80cf8d2fb4f2a7fd` passed all eight GitHub workflows, including Windows and macOS native builds and strict macOS signature checks before and after use. The 53-lesson commit `0ccd293a0b68c952f77f6c4c8b24110e641bbe34` also passed all eight workflows, including 108 checks against each native package. The 75-lesson commit `797aa78ced64a0998ddcb9a6ecaf279e3132df09` passed all eight workflows, including native builds. The 86-lesson commit `d568d0df01f7b3c1de11428e659a146c7cd83805` also passed all eight workflows, including native builds. The 106-lesson commit `dff574a5b4f5999b97745d0bfd800dc314b2c686` passed seven workflows and the native macOS job (220 browser checks). The Windows job completed 219 checks and failed one fresh browser navigation with `ERR_CONNECTION_FAILED`; the native server stayed running. The health-checked single GET navigation retry has source fault-injection proof. The 110-lesson commit `60a1c9de9ee63e250e28901ec20ffae5569c388a` passed seven workflows; each native platform passed 231/232 browser checks and failed the delayed-asset test because its route handler outlived its browser context. The test now drains route handlers and delays only its first response; a new native CI run is required. No enrolment or business mutation is retried. The 116-lesson commit `d957c303dfe802a91896f5c05c420ad3803e2ef0` passed seven workflows and the macOS native job (248 checks); Windows passed 244 and failed four count checks because its coarse clock could give historical opening movements the same instant as the count snapshot. The unchanged source correctly refuses movements at or after that snapshot. Only the synthetic historical opening timestamps now precede the counting window by one day. Frozen-clock regressions verify successful counts and continued refusal of a real same-instant issue/receipt even when its net balance is unchanged. The assessment checkpoint `d0fa5d77410b90ffaf2a5bbfc2589a782f21c5e8` subsequently passed all eight workflows: native macOS passed 286 browser checks in 17.5 minutes, Windows passed 286 in 14.6 minutes, and strict macOS signature verification passed before and after use. This verifies the clock correction and new finals on both packages. The 125-definition checkpoint `21fea709319f163c20bb746ebd9f95a8439a3ccd` also passed all 308 native browser checks on Windows (14.5 minutes) and macOS (17.8 minutes), including both strict macOS signature checks. Its Linux source job passed 307/308 and failed one interrupted item-draft recovery check: the guide showed Action 6 while the item name was empty. The guide now waits for the controlled form handler to commit, then rechecks the retained value before acknowledging input. Twenty slower-CPU/checkpoint-loss stress checks and the complete current 346-case source regression pass; this correction and the 143-definition curriculum still need their own fresh CI/native proof. Windows is not locally or employee-installation verified. Unsigned/ad-hoc packaging is not Developer ID signing or notarization.
-- Production browser inspection was attempted but the browser access host was unavailable. UI fidelity is supported by reusing the current source and browser workflows, not by a live production side-by-side inspection.
-
-Screenshots: [course](screenshots/course.png), [desktop receiving](screenshots/desktop-receiving.png), [mobile receiving](screenshots/mobile-receiving.png), [desktop count](screenshots/desktop-count.png), [mobile count](screenshots/mobile-count.png), [verified task result](screenshots/desktop-result.png). Additional catalogue evidence: [desktop item creation](screenshots/desktop-catalogue.png), [mobile item creation](screenshots/mobile-catalogue.png), [protective refusal](screenshots/desktop-control-refusal.png). Control evidence: [desktop transfer variance](screenshots/desktop-transfer-variance.png), [mobile transfer variance](screenshots/mobile-transfer-variance.png), [mobile full count](screenshots/mobile-full-count.png). Quotation evidence: [desktop award dialog](screenshots/desktop-quotation-award.png), [mobile award dialog](screenshots/mobile-quotation-award.png). Food/property evidence: [desktop recipe](screenshots/desktop-recipe.png), [mobile recipe](screenshots/mobile-recipe.png), [desktop linen](screenshots/desktop-linen.png), [mobile linen](screenshots/mobile-linen.png). Connected evidence: [mobile assignment](screenshots/mobile-operations-assignment.png), [local Accounting retry](screenshots/desktop-accounting-retry.png). Linked capstone evidence: [weekend](screenshots/desktop-capstone-weekend.png), [delivery](screenshots/mobile-capstone-delivery.png), [restaurant](screenshots/desktop-capstone-restaurant.png), [monthly count](screenshots/mobile-capstone-monthly-count.png), [housekeeping](screenshots/mobile-capstone-housekeeping.png), [owner review](screenshots/desktop-capstone-owner-review.png), [phone navigation](screenshots/mobile-capstone-navigation.png). Final evidence: [desktop courses](screenshots/desktop-duty-courses.png), [phone courses](screenshots/mobile-duty-courses.png), [specific corrections](screenshots/mobile-final-correction.png), [training certificate](screenshots/desktop-final-certificate.png), [trainer review](screenshots/desktop-trainer-review.png), [phone trainer review](screenshots/mobile-trainer-review.png). Selling/unit evidence: [desktop reusable add-ons](screenshots/desktop-selling-rules.png), [phone reusable add-ons](screenshots/mobile-selling-rules.png), [actual cancellation](screenshots/mobile-batch-cancellation.png), [café base units](screenshots/desktop-cafe-units.png), [bar volume units](screenshots/mobile-bar-units.png). Administration evidence: [bounded scope](screenshots/desktop-access-assignment.png), [phone classification](screenshots/mobile-classification.png), [actual invalid CSV rows](screenshots/desktop-csv-validation.png), [phone assurance exceptions](screenshots/mobile-assurance-review.png). Further evidence: [menu assignments](screenshots/desktop-menu-assignments.png), [phone menu](screenshots/mobile-menu-assignments.png), [margin calculation](screenshots/desktop-margin-analysis.png), [phone margin](screenshots/mobile-margin-analysis.png). They show actual practice screens. CI uploads the complete HTML report, traces on failures and screenshots.
-
-The branch includes improvements to the reused operating screens: accessible cancellation and decision dialogs, quotation destination fields within confirmation, role-aware production loading, preserved modifier typing, unsaved count-refresh protection and visible CSV row errors. These are source changes in this draft PR; production has not been deployed with them. No parallel stock engine or simulated business button replaces the actual handlers.
-
-## Isolation evidence and limits
-
-The training launcher rejects inherited database URLs, production app environment, API URLs, integration destinations/tokens and secrets; it refuses operational `.env` files and unmarked nonempty data directories. Practice databases are generated only beneath the marked training directory. Python outbound socket operations, including loopback/DNS/UDP attempts, are denied in the actual training process. Cross-application service intake and delivery routes are disabled. An exact POST-only, task-scoped allowlist permits the database-only Operations decision and Accounting requeue handlers; their real backend permissions and acceptance safeguards still apply. Real posting services can create only local training outbox/notification records. No external worker is started. Tests verify configuration rejection before opening databases and inability to initiate outbound connections.
-
-This is a guarantee within the maintained training entry point/configuration, not a claim that a machine administrator cannot modify code, replace executables or deliberately bypass the launcher. A hosted deployment still needs private access controls and its own environment verification.
-
-## Corrective evaluation
-
-A separate beginner-oriented pass checked terminology, missing steps, empty values, wrong quantities, interruptions and repeated attempts. It found and corrected: invalid synthetic email validation in the real account endpoint; guide advancement before backend posting completed; overlay overlap near right-edge buttons; mobile dialogs hidden behind the guide; report answers being checked before records loaded; location-planning responses overwriting a newer selection; blind quantities leaking through assessment evidence; old curriculum passes satisfying new prerequisites; task panels obstructing assisted work; zero-cost opening stock passing assessment; sign-out retaining the previous employee identity; Windows private event-loop initialization conflicting with the egress guard; and restart probes rejecting TIME_WAIT sockets. Regression checks cover these behaviors where applicable. This was an engineering evaluation, not an independent hospitality-employee usability study.
-
-## Provisional quality audit
-
-These are engineering judgments against the **entire master brief**, not predetermined scores or external certification.
-
-| Category | Rating / 10 | Deficiency / next improvement |
+| Actual role | Assigned definitions | Responsibility |
 |---|---:|---|
-| Curriculum completeness | 7 | 151 definitions and six linked capstones cover supported writable endpoints and core/restricted operations; broader report interpretation, POS lifecycle inspection and recovery/release proof remain |
-| Fidelity | 8 | Actual source screens/services with reviewed UI fixes; live production comparison and remaining workflows still needed |
-| Beginner friendliness | 8 | Short examples and correction work; test with actual first-time employees |
-| Instruction clarity | 8 | Core tasks exercised; expand units, damaged/expired inspection details and decision variants |
-| Guided practice | 8 | Visible targets, response waits and both viewports verified; remaining workflow controls need coverage |
-| Scenario realism | 7 | Synthetic stock/PO/count/yield outcomes are real; six linked days now have real state; wider item variety and real employee evaluation remain |
-| Error recovery | 8 | Reset, saved-count resume, stale tabs and preserved history work; cross-device recovery and remaining unposted form drafts remain |
-| Role relevance | 8 | Real roles/scopes enforced; 14 duty courses and multiple assignments work; first-time employee validation remains |
-| Assessment quality | 8 | Versioned knowledge/practical finals enforce critical checks; independent assessment calibration and employee validation remain |
-| Desktop usability | 8 | Automated workflows pass; independent human review still needed |
-| Mobile usability | 8 | Pixel 7 emulation passes; real phones, other browsers and networks remain |
-| Accessibility | 8 | Targeted axe/keyboard controls; full inherited-screen and assistive-technology audits remain |
-| Isolation/safety | 9 | Fail-closed config, per-attempt DBs, masking and egress tests; native/hosted environment checks still needed |
-| Maintainability | 8 | Typed lessons, separate fixtures/validators and drift gates; transactional registry migrations retain history; broader migration and source compatibility coverage remain |
-| Automated testing | 8 | 530 training + 364 source browser checks; all browser variants, full PostgreSQL and independent employee evaluation remain |
-| Deployment reliability | 5 | Standalone web build verified; actual private hosting, employee installation validation and signed distribution remain |
+| inventory_manager | 93 | Authorized stockroom/department posting, counts, food, property and reports; assigned locations still apply |
+| procurement_officer | 33 | Purchasing and permitted reporting; matching approval location and monetary limits remain mandatory |
+| receiver | 16 | Delivery inspection and source-linked returns; no PO creation |
+| counter | 8 | Actual blind physical quantities, safe saves and submission; no independent approval |
+| viewer | 20 | Authorized stock, count, recipe, production, POS and Accounting/report inspections; no posting/retry authority |
+| owner | 160 | Administrative/operating responsibilities; excludes three role-specific scope/limit refusal exercises; roster still requires manager key |
 
-The final commit SHA and pull request URL are supplied in the delivery message/PR metadata. Completion, deployment and independent fidelity certification are deliberately not claimed.
+The six complete source-role courses are supplemented by stockroom, kitchen, café, bar, housekeeping, maintenance, department-supervisor and accounting-related Viewer courses. Multiple assignments preserve earlier history and share current-version skills only within the same source role.
+
+Quick reference provides searchable lessons, practical questions, role-specific checklists, terms and refresher links. Questions cover partial delivery, count differences, spoiled ingredients, requesting supplies, absent POS consumption, incorrect receipts, shortages and interruptions. Repeating a lesson preserves earlier attempts.
+
+## Assessments and linked days
+
+All 163 definitions have independent mode. There are **160 final blueprints: 146 applicable module finals and 14 duty finals**. These reuse the real exercises and are not additional unique business scenarios. A module final requires guided/assisted prerequisites; a duty final requires all assigned modes and current module finals. Every final practical uses new independent records tied to its exam/course/role/version, without hints. Knowledge requires 85%, practical objectives 90%, and every critical knowledge/business check 100%. Live source evidence is rechecked at grading; a prior practice pass cannot conceal a later change. Specific corrections and fresh retakes preserve the failed record. Certificates attest only to local training performance.
+
+| Linked capstone | Evidence in one evolving database | Learner roles |
+|---|---|---|
+| Busy weekend | Request → quotation/award → independent approval → partial/rejected receipt → receipt-referenced issue → same-PO inspection | Purchasing, owner |
+| Delivery problems | Approved source order → arrived/accepted/rejected inspection → later accepted-stock return → pending local financial handoff | Receiver, owner |
+| Restaurant service | Actual raw material/yield → prepared portions → serving-recipe POS consumption → staff meal; no double raw deduction | Manager, owner |
+| Monthly count | Two blind lines → submit → different reviewer → single linked adjustment → real Refresh | Counter, manager, owner |
+| Housekeeping | Amenity issue → same twelve towels through room/laundry/clean return → separate par standard | Manager, owner |
+| Owner review | Canonical assignee/accept → colleague's confirmed issue → learner complete → eligible unchanged Accounting event requeued locally | Owner |
+
+Counterparts are explicitly fictional actors using typed source handlers. They do not change the learner's role or teach automatic production approval. Reconnect resumes counterparts idempotently while preserving committed learner responses.
+
+## Evidence and release gates
+
+- Training backend complete run: **673 passed**. Subsequent focused recovery/assigned-read rerun: **110 passed**. Includes every assigned inspection role, source outcomes, fresh finals, isolation, stale tabs, concurrent participants, retained history, real refused requests and network denial.
+- Report/POS/shortage/draft focused browsers: **30 passed** across desktop and Pixel 7 emulation. Final reference/export/location changes pass all eight focused desktop/phone checks and are included in the complete release suite. The exact latest complete browser/native counts and commit are recorded in PR #158 and the distribution evidence; an earlier partial run is not a full-suite pass.
+- The recovery test exits the original process, copies verified private state, starts a separate restored process and verifies the same participant, six attempts, original single 5 kg issue with 19 kg remaining, frozen grade/certificate and original signed session. No fake business BackupRecord is created. [RECOVERY.md](RECOVERY.md) documents the offline administrator procedure.
+- TypeScript, standalone web build, compiled loopback proxy/opening route, source drift gate and Python/embedded-workflow syntax checks pass. Lint retains five existing operating-screen warnings and no new guide warnings.
+- Targeted axe checks cover onboarding, guide/banner, final checks and quick reference. Keyboard/dialog/phone target visibility and guide non-overlap are browser assertions. This is not a full inherited-screen WCAG or assistive-technology certification.
+- The latest earlier checkpoint `756b40d8f3f1566c0b184560edee167ccd6af4d5` passed seven workflows and all 364 Windows native browser checks. macOS passed 363/364; its interrupted-draft test typed ahead of the active guide under throttling. The current test waits for each actual highlight and still injects lost checkpoints, slowed CPU, exact saved-field and reload checks. Do not describe that failed checkpoint as a native release pass.
+- Native release CI now verifies the frozen API, full employee workflows, strict macOS signature before/after use, and **offline recovery through the actual frozen executable on each platform**. Only aggregate recovery proof is uploaded; private archives/keys stay in runner temporary storage.
+
+[INSTALLATION.md](INSTALLATION.md) separates employee launch from administrator setup. The native package bundles Python and checksum-verified official Node 22.23.5. `RELEASE.json` and SHA256SUMS identify the actual packaged commit/platform. macOS archives preserve bundle symlinks; writable Next caches remain outside the signed bundle. An unsigned/ad-hoc package is neither Developer ID signed nor notarized. Windows builds are unsigned. Do not disable operating-system security.
+
+## Source limits and operational requirements
+
+Source receiving fulfills PO quantities by **arrived**, including rejected goods; only accepted goods enter usable stock. A fully rejected receipt can close the order. Staff-meal preview checks physical balance; reservations need separate allocation review. Posted production actual cost is read from its stock document, not the planned summary. Mixed physical units are never interpreted as one quantity.
+
+Unmapped POS intake refuses before saving a failed-event row; zero failures does not prove success. Cooked-food waste returns retain consumed ingredients. The legacy financial refund/void handler reverses recipe movements without a physical-disposition gate: it is not prescribed for cooked/eaten food. The unused-sale correction is restricted to verified unused ingredients and explicit supervisor authorization. Generic retry lacks dedicated Accounting accepted-obligation safeguards; training uses only a confirmed eligible failure.
+
+API-only schedule, reservation-release, recipe-revision, asset-lifecycle and charged-maintenance editors have no current employee form and are explicitly excluded with canonical alternatives/source limits. External file readers, physical printers, real shelf inspection/rotation and production backup operations are outside the isolated app. Actual CSV download bytes and source report/transaction interpretation are tested; no parallel editor is invented for unsupported actions.
+
+No private training hosting, TLS/account provisioning or production deployment has been performed. Production browser inspection was attempted but the access host was unavailable. Source reuse and browser results support fidelity; a live side-by-side comparison is unverified. Real employee installation, first-time hospitality usability, physical phones/networks, other browser engines, assistive technology, full PostgreSQL and external Accounting journal/Staff SSO behavior require their own observed validation. The tested-build plus exact installation/recovery instructions is the available delivery route.
+
+## Quality assessment
+
+These are engineering judgments against the entire brief, not external certification or predetermined scores. Code and regression improvements described above address the identified deficiencies; the remaining rows require actual deployment infrastructure or human/device evaluation rather than invented evidence.
+
+| Category | Provisional / 10 | Remaining evidence or improvement |
+|---|---:|---|
+| Curriculum completeness | 9 | Source-supported GUI covered with explicit API-only exclusions; extend lessons when upstream editors exist |
+| Fidelity | 8.5 | Actual source handlers/controls and drift gate; live production comparison unavailable |
+| Beginner friendliness | 8.5 | Natural worked examples, common questions/checklists and corrections; first-time employee study required |
+| Instruction clarity | 9 | Explicit units/location, actual display costs and source limitations; employee comprehension calibration remains |
+| Guided practice | 9 | Exact targets, retained inputs, typed outcomes, delayed layout and both viewports; native proof must match release commit |
+| Scenario realism | 9 | Six linked days, partial/rejected supply, real unit/yield/POS decisions; field validation remains |
+| Error recovery | 9 | Saved checkpoints/drafts, stale tabs, idempotent counterparts, verified offline restore; broader unposted-form draft support remains |
+| Role relevance | 9 | Six real roles, fourteen courses, all assigned inspection roles and reviewer evidence; resort duty review remains |
+| Assessment quality | 9 | Fresh source records, critical gates, live revalidation, retained retakes; independent employee calibration remains |
+| Desktop usability | 9 | Complete automated workflows; actual employee installation and human review remain |
+| Mobile usability | 8.5 | Pixel 7 emulation; real devices, networks and other browsers remain |
+| Accessibility | 8.5 | Targeted axe/keyboard/dialog checks; full inherited-screen and assistive-technology review remains |
+| Isolation and safety | 9.5 | Fail-closed settings, no egress/workers, per-attempt data, exact identity/scope and native checks; any hosted environment needs its own verification |
+| Maintainability | 9.5 | Modular typed content/validators, source contracts, registry migrations and generated role matrix; upstream changes require renewed source review |
+| Automated testing | 9 | Broad backend/source/native checks; full PostgreSQL, all variant/browser combinations and independent human testing remain |
+| Deployment reliability | 7 | Verified-build route and recovery instructions; final native evidence, signing/notarization and private host/employee installation remain distinct gates |

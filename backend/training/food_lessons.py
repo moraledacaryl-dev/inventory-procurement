@@ -11,6 +11,19 @@ def task(id,module,title,route,situation,concept,example,rule,question,steps,rol
 
 
 LESSONS=[
+    task("staff-meal-shortage","T","Stop an unprepared meal when ingredients are short","/fnb/staff-meals",
+        "The kitchen is considering a meal for 4 people requiring {meal_shortage} kg of chicken, but only {base} kg physically exists at Training stockroom. Nothing has been cooked or taken. Enter the proposed requirement, preview it, and in this isolated exercise confirm that posting is also refused. Keep the original stock unchanged and ask the supervisor to revise the plan or arrange a real authorized supply movement.",
+        "The source meal workflow refuses a quantity above physical stock when negative stock is prohibited. Servings do not create ingredients. Its preview uses physical balance, so separately check reservations before allocating supplies to another job.",
+        "If 24 kg exists and a proposed meal requires 25 kg, the shortage is 1 kg. Do not invent a receipt or adjustment to make the meal pass.",
+        "Resolve the actual supply or plan with the supervisor before cooking or recording consumption. Never pretend unavailable ingredients were used or restore stock from a meal people ate.",
+        "Should an invented stock receipt be used to bypass a meal shortage? yes or no",(
+            fill('[data-training="meal-name"]',"Name the proposed meal Training shortage check.","Training shortage check"),
+            choose('[data-training="meal-location"]',"Check Training stockroom.","{store}"),
+            fill('[data-training="meal-servings"]',"The proposed meal is for 4 people.","4"),
+            choose('#ingredient-0',"Choose Chicken (kg).","{chicken}"),
+            fill('#quantity-0',"Enter the proposed requirement {meal_shortage} kg; no ingredients have been used.","{meal_shortage}"),
+            act('[data-training="meal-preview"]',"Read the actual shortage refusal from Preview cost.","/staff-meals/preview",409),
+            act('[data-training="meal-post"]',"In this isolated check, verify that Post staff meal also refuses unavailable stock.","/staff-meals",409))),
     task("create-governed-recipe","P","Create a recipe with explicit units and preparation waste","/production",
         "Create draft TRAIN-TEST-RECIPE, named Training chicken portion, yielding 1 portion of Training Chicken Alfredo. Each portion requires 0.25 kg chicken before a 10% preparation allowance. Enter waste factor 0.1 and Notes {reference}. Leave the ingredient required. Do not approve your own formula.",
         "Recipe lines use the ingredient's base unit. The waste factor adds preparation allowance to the formula, not a second finished portion.",

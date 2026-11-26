@@ -9,6 +9,20 @@ const reading:Record<string,{answer:string;observations:string[]}>= {
   'catalogue-units':{answer:'1000',observations:['1000','1000','1000']},
   'supplier-profile':{answer:'no',observations:['3','3','3']},
   'expiry-rotation':{answer:'no',observations:['5','6','7']},
+  'recipe-cost':{answer:'1',observations:['50','50','50']},
+  'accounting-proof':{answer:'no',observations:['ready for review','ready for review','ready for review']},
+  'interpret-stock-valuation':{answer:'no',observations:['6000','6750','7750']},
+  'interpret-period-issues':{answer:'no',observations:['-6','-5','-4']},
+  'interpret-waste-value':{answer:'no',observations:['-1200','-1000','-800']},
+  'interpret-posted-count':{answer:'no',observations:['-3','-7','-12']},
+  'interpret-supplier-acceptance':{answer:'no',observations:['80','77.78','75']},
+  'interpret-actual-yield-cost':{answer:'no',observations:['60','66.67','75']},
+  'interpret-assurance-evidence':{answer:'no',observations:['failed','failed','failed']},
+  'sale-consumption':{answer:'no',observations:['-340','-255','-170']},
+  'inspect-pos-duplicate-delivery':{answer:'no',observations:['1','1','1']},
+  'inspect-unmapped-pos-refusal':{answer:'no',observations:['0','0','0']},
+  'inspect-cooked-sale-return':{answer:'no',observations:['2','2','2']},
+  'inspect-unused-sale-void':{answer:'no',observations:['170','85','85']},
   'management-review':{answer:'no',observations:['2000','2400','2800']},
 };
 const foundation={available:'20',unit:'0.25',value:'500',authority:'no'};
@@ -18,6 +32,13 @@ const topicAnswers:Record<string,string>={
   'C-case':'72','C-conversion':'no','C-deactivate':'no',
   'I-terms':'no','I-preferred':'no','I-orders':'no',
   'O-expiry':'no','O-lot':'no','O-trace':'yes',
+  'D-opening':'yes','D-cost':'no','D-duplicate':'no',
+  'G-truth':'8','G-zero':'no','G-approval':'no',
+  'H-waste':'yes','H-correction':'no','H-signed':'-3',
+  'P-yield':'3','P-allowance':'0.275','P-approve':'no',
+  'Q-plan':'no','Q-usable':'10','Q-actual':'no',
+  'S-raw':'no','S-retry':'no','S-refund':'no',
+  'W-delivery':'no','W-retry':'no','W-accepted':'no',
   'Y-cause':'no','Y-basis':'yes','Y-review':'no',
   'final-A-physical':'no','final-Y-cause':'no','final-B-restricted':'no','final-C-case':'72','final-I-terms':'no',
   'final-G-truth':'8','final-M-accepted':'6','final-K-deadline':'1','final-S-raw':'no','final-W-delivery':'no',
@@ -33,7 +54,9 @@ export async function readPractice(page:Page,id:string,mode='guided',exam_id?:st
   const started=await page.request.post('/api/v1/training/start',{headers:requestHeaders,data:{lesson_id:id,mode,exam_id}});expect(started.ok(),await started.text()).toBeTruthy();
   const data=await started.json() as {attempt_id:string;lesson:TrainingLesson};
   const headers={...requestHeaders,'X-Training-Attempt':data.attempt_id};
-  const record=await page.request.get(data.lesson.inspection_api_path!,{headers});expect(record.ok(),await record.text()).toBeTruthy();
+  const profile=await(await page.request.get('/api/v1/training/me',{headers})).json();
+  const params=profile.lesson.inspection_query||{};
+  const record=await page.request.get(profile.lesson.inspection_api_path!,{headers,params});expect(record.ok(),await record.text()).toBeTruthy();
   const result=await page.request.post('/api/v1/training/check',{headers,data:{answer:reading[id].answer,observation:reading[id].observations[['guided','assisted','independent'].indexOf(mode)]}});expect(result.ok(),await result.text()).toBeTruthy();expect((await result.json()).passed).toBeTruthy();
   return data;
 }

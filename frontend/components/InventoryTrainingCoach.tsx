@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { trainingEnabled, trainingOutcomeMatches, type TrainingLesson, type TrainingProfile } from "../lib/inventory-training";
+import { trainingEnabled, trainingInspectionMatches, trainingOutcomeMatches, type TrainingLesson, type TrainingProfile } from "../lib/inventory-training";
 import { readTrainingReceiptDraft } from "../lib/training-receiving-draft";
 import { restoreCatalogueCheckpoint } from "../lib/training-form-draft";
 import {rememberTrainingAttempt,trainingAttempt} from "../lib/training-session";
@@ -30,7 +30,7 @@ export function InventoryTrainingCoach() {
   const [navigationInstruction,setNavigationInstruction] = useState("");
   const [inputMessage,setInputMessage] = useState("");
   const [inspected,setInspected] = useState(false);
-  const readPaths = useRef(new Set<string>());
+  const readPaths = useRef(new Map<string,Set<string>>());
   const coachRef = useRef<HTMLElement>(null);
   const loadedAttempt=useRef<string|undefined>(undefined);
   const guideRef = useRef<TrainingLesson|null>(null);
@@ -64,7 +64,7 @@ export function InventoryTrainingCoach() {
       setStep(previous=>sameAttempt?Math.max(previous,checkpoint):checkpoint);
       loadedAttempt.current=result.attempt?.id;
       setPassed(result.attempt?.status==="passed");
-      setInspected(result.record_inspected || readPaths.current.has(result.lesson?.inspection_api_path||""));
+      setInspected(result.record_inspected || Array.from(readPaths.current.get(result.attempt?.id||"")||[]).some(path=>trainingInspectionMatches(result.lesson,path)));
       if(result.attempt)rememberTrainingAttempt(result.attempt.id);
       setError("");
     } catch(exception){setError((exception as Error).message)}
@@ -81,13 +81,15 @@ export function InventoryTrainingCoach() {
     const observe=(event:Event)=>{
       const detail=(event as CustomEvent<{path:string;method:string;status:number}>).detail;
       if(detail.method!=="GET"||detail.status!==200)return;
-      const path="/api/v1"+detail.path.split("?")[0];readPaths.current.add(path);
-      if(path===lesson?.inspection_api_path)setInspected(true);
+      const attempt=trainingAttempt();if(!attempt)return;
+      const path="/api/v1"+detail.path,reads=readPaths.current.get(attempt)||new Set<string>();
+      reads.add(path);readPaths.current.set(attempt,reads);
+      if(loadedAttempt.current===attempt&&trainingInspectionMatches(lesson,path))setInspected(true);
     };
     window.addEventListener("inventory-training-action",observe);
-    if(lesson?.inspection_api_path&&readPaths.current.has(lesson.inspection_api_path))setInspected(true);
+    if(Array.from(readPaths.current.get(profile?.attempt?.id||"")||[]).some(path=>trainingInspectionMatches(lesson,path)))setInspected(true);
     return()=>window.removeEventListener("inventory-training-action",observe);
-  },[visible,lesson?.inspection_api_path]);
+  },[visible,lesson,profile?.attempt?.id]);
 
   useEffect(()=>{
     if(!visible||!targetSelector||!expanded||passed){setRect(null);setPanel(null);return}
@@ -173,7 +175,9 @@ export function InventoryTrainingCoach() {
     function businessOutcome(event:Event){
       const detail=(event as CustomEvent<{path:string;method:string;status:number}>).detail;
       const expected=current?.outcome_status;
-      if(current?.outcome&&trainingOutcomeMatches(current.outcome,detail.path)&&(current.event==="read"?detail.method==="GET":detail.method!=="GET")&&(expected?detail.status===expected:detail.status>=200&&detail.status<300))advance();
+      const reading=current?.event==="read"||current?.outcome_method==="GET";
+      const scopedRead=!reading||!lesson?.inspection_query||trainingInspectionMatches(lesson,"/api/v1"+detail.path);
+      if(scopedRead&&current?.outcome&&trainingOutcomeMatches(current.outcome,detail.path)&&(reading?detail.method==="GET":detail.method!=="GET")&&(expected?detail.status===expected:detail.status>=200&&detail.status<300))advance();
     }
     function observe(event:Event){
       const target=event.target as HTMLElement;
@@ -219,7 +223,7 @@ export function InventoryTrainingCoach() {
     document.addEventListener("click",observe,true);document.addEventListener("input",observe,true);document.addEventListener("change",observe,true);document.addEventListener("focusout",observe,true);
     window.addEventListener("inventory-training-action",businessOutcome);
     return()=>{window.cancelAnimationFrame(inputFrame);inputObserver?.disconnect();window.removeEventListener("inventory-training-action",businessOutcome);document.removeEventListener("click",observe,true);document.removeEventListener("input",observe,true);document.removeEventListener("change",observe,true);document.removeEventListener("focusout",observe,true)}
-  },[current,profile?.attempt,visible,passed,step]);
+  },[current,lesson,profile?.attempt,visible,passed,step]);
 
   async function downloadInput(){if(!lesson?.practice_file_name)return;setBusy(true);setError("");try{const file=await api<{filename:string;content:string}>("/training/practice-file");if(file.filename!==lesson.practice_file_name)throw new Error("This practice changed. Return to your current training task.");const url=URL.createObjectURL(new Blob([file.content],{type:"text/csv;charset=utf-8"}));const anchor=document.createElement("a");anchor.href=url;anchor.download=file.filename;anchor.click();URL.revokeObjectURL(url)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}
   async function hint(){setBusy(true);try{const result=await api<{lesson:TrainingLesson}>("/training/hint",{method:"POST"});guideRef.current=result.lesson;setShowHint(true);setExpanded(true)}catch(exception){setError((exception as Error).message)}finally{setBusy(false)}}

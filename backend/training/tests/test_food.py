@@ -6,6 +6,10 @@ from training.food_lessons import LESSONS
 
 def perform(client,lesson,v):
     id=lesson.id
+    if id=="staff-meal-shortage":
+        payload={"meal_name":"Training shortage check","location_id":v["store"],"servings":4,"lines":[{"item_id":v["chicken"],"quantity":v["meal_shortage"]}]}
+        assert client.post("/api/v1/staff-meals/preview",json=payload).status_code==409
+        return client.post("/api/v1/staff-meals",json=payload)
     if id=="create-governed-recipe":return client.post("/api/v1/recipes",json={"code":"TRAIN-TEST-RECIPE","name":"Training chicken portion","output_item_id":v["alfredo"],"yield_quantity":1,"notes":v["reference"],"lines":[{"ingredient_item_id":v["chicken"],"quantity":"0.25","waste_factor":"0.1","optional":False}]})
     if id in {"approve-colleague-recipe","recipe-self-approval","retire-obsolete-recipe"}:return client.post("/api/v1/recipes/training-recipe/"+("retire" if id=="retire-obsolete-recipe" else "approve"))
     if id=="plan-production-batch":return client.post("/api/v1/production-batches",json={"recipe_id":v["recipe"],"location_id":v["store"],"planned_quantity":v["quantity"],"notes":v["reference"]})
@@ -28,7 +32,7 @@ def test_food_real_outcomes_all_modes(learner,lesson):
             learner.headers["X-Training-Attempt"]=response.json()["attempt_id"]
         assert not learner.post("/api/v1/training/check",json={"answer":"no"}).json()["passed"]
         response=perform(learner,lesson,values(lesson,mode))
-        expected=409 if lesson.id=="recipe-self-approval" else 201 if lesson.id in {"create-governed-recipe","plan-production-batch","create-menu-with-modifier","map-pos-product"} else 200
+        expected=409 if lesson.id in {"recipe-self-approval","staff-meal-shortage"} else 201 if lesson.id in {"create-governed-recipe","plan-production-batch","create-menu-with-modifier","map-pos-product"} else 200
         assert response.status_code==expected,response.text
         result=learner.post("/api/v1/training/check",json={"answer":"no"}).json()
         assert result["passed"],result

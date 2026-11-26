@@ -170,7 +170,7 @@ export default function Page() {
           </select>
         </label>
         <label className="field">Servings
-          <input type="number" min="1" max="500" value={servings} onChange={e => { setServings(e.target.value); setPreview(null); }} />
+          <input data-training="meal-servings" type="number" min="1" max="500" value={servings} onChange={e => { setServings(e.target.value); setPreview(null); }} />
         </label>
         <label className="field">Stock location
           <select data-training="meal-location" value={locationId} onChange={e => { setLocationId(e.target.value); setPreview(null); }}>

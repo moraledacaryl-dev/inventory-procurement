@@ -39,6 +39,8 @@ Reuse the Operations approach of the actual module UI, an isolated SQLite databa
 | Y | Balances, ledger, valuation/aging/expiry/waste, assurance/operating summary | /reports, /reports/operations, /reports/final-assurance | inventory_operations, final_assurance, pass6_controls | inventory_manager, procurement_officer, viewer, owner, subject to scope |
 | Z | Access, monetary limits, classifications, migration, readiness/rollout, incidents, backup awareness | /settings/access-scopes, /settings/classification, /readiness, /rollout | pass6_controls, readiness, stabilization, operations | owner for access; specific route permissions elsewhere |
 
+The complete current definition-to-role matrix is in [CURRICULUM.md](CURRICULUM.md), including all 14 duty courses.
+
 ## Role and location mapping
 
 - Stockroom / kitchen / café / bar / housekeeping / maintenance operators: `inventory_manager` only when their actual duties need posting. Department assignment does not confer this role. Apply location scopes.
@@ -58,7 +60,8 @@ Reuse the Operations approach of the actual module UI, an isolated SQLite databa
 5. Direct issues and transfers cannot consume stock reserved for another operation. Quantity and monetary valuation are separate.
 6. Accounting outbox completed means delivered to intake. Review acceptance and source-linked journal proof are separate. Neither proves supplier payment.
 7. POS reversal and refunds need the actual inventory disposition rules. Do not automatically restore consumed food.
-8. The source accepts expiry metadata but does not guarantee physical food inspection or automatic FEFO selection. Employees must inspect and rotate real goods.
+8. Staff-meal preview uses physical stock, so reservations require a separate allocation check. A shortage must not be bypassed with invented supplies.
+9. The source accepts expiry metadata but does not guarantee physical food inspection or automatic FEFO selection. Employees must inspect and rotate real goods.
 
 ## Verification boundaries
 

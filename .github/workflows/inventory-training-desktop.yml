@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
       - uses: actions/setup-node@v4
@@ -112,15 +114,28 @@ jobs:
             else:
               try: os.kill(pid,signal.SIGTERM)
               except ProcessLookupError: pass
+      - name: Verify native offline training recovery after employee workflows
+        shell: python
+        run: |
+          from pathlib import Path
+          import os, subprocess, sys
+          executable=Path('dist/Hidden Oasis Inventory Training/Hidden Oasis Inventory Training.exe') if os.name=='nt' else Path('dist/Hidden Oasis Inventory Training.app/Contents/MacOS/Hidden Oasis Inventory Training')
+          temp=Path(os.environ['RUNNER_TEMP'])
+          subprocess.run([sys.executable,'scripts/verify-training-recovery.py','--executable',str(executable),'--data',str(temp/'native-learner-state'/'HiddenOasis'/'inventory-training'),'--work',str(temp/'private-native-recovery')],check=True)
       - name: Archive native package preserving macOS bundle links
         shell: python
         run: |
           from pathlib import Path
-          import hashlib, os, platform, shutil, subprocess
+          import hashlib, json, os, platform, shutil, subprocess
           name='inventory-training-'+platform.system().lower()+'-'+platform.machine()+'-unsigned'
           archive=Path('dist')/(name+'.zip')
           if os.name=='nt': shutil.make_archive(str(archive.with_suffix('')),'zip','dist','Hidden Oasis Inventory Training')
           else: subprocess.run(['ditto','-c','-k','--keepParent','dist/Hidden Oasis Inventory Training.app',str(archive)],check=True)
+          import sys
+          sys.path.insert(0,'backend')
+          from training.curriculum import LESSONS, VERSION
+          release={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'curriculum_version':VERSION,'lesson_definitions':len(LESSONS),'platform':platform.system(),'architecture':platform.machine(),'signing':'unsigned; macOS ad-hoc signature only','package':archive.name,'sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'native_recovery':json.loads(Path('dist/TRAINING-RECOVERY-PROOF.json').read_text())}
+          Path('dist/RELEASE.json').write_text(json.dumps(release,indent=2)+'\n')
           Path('dist/SHA256SUMS.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+'  '+archive.name+'\n')
       - uses: actions/upload-artifact@v4
         if: always()
@@ -129,6 +144,8 @@ jobs:
           path: |
             dist/*.zip
             dist/SHA256SUMS.txt
+            dist/RELEASE.json
+            dist/TRAINING-RECOVERY-PROOF.json
             frontend/training-report/
             frontend/training-test-results/
             ${{ runner.temp }}/native-training.log

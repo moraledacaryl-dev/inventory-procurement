@@ -98,3 +98,22 @@ test('the new final-check page has no serious accessibility violations',async({p
   await expect(page.locator('[data-training-question="unit"]')).toBeVisible();
   const result=await new AxeBuilder({page}).include('.training-exams').analyze();expect(result.violations.filter(violation=>['serious','critical'].includes(violation.impact||''))).toEqual([]);
 });
+
+
+test('quick reference answers a real question and opens authorized refresher practice',async({page},info)=>{
+  await enrol(page,'Fictional refresher learner','role-owner');await page.goto('/training');
+  await page.getByRole('button',{name:'Quick reference',exact:true}).click();
+  await page.getByRole('searchbox',{name:'Find a lesson or situation',exact:true}).fill('incorrect receipt');
+  const reference=page.getByRole('region',{name:'Practical reference'});
+  await reference.locator('summary').filter({hasText:'How do I correct an incorrect receipt?'}).click();
+  await expect(reference).toContainText('another receipt is not an undo button');
+  await reference.getByRole('button',{name:'Review Return previously accepted goods',exact:true}).click();
+  const lesson=page.getByRole('dialog',{name:'Lesson overview'});
+  await expect(lesson.getByRole('heading',{name:'Return previously accepted goods',exact:true})).toBeVisible();
+  await lesson.getByRole('button',{name:'← Back to your course',exact:true}).click();
+  await page.getByRole('searchbox',{name:'Find a lesson or situation',exact:true}).fill('variance');
+  await reference.locator('summary').filter({hasText:'Words used in Inventory'}).click();
+  await expect(reference.getByText('The difference between a physical count and its recorded snapshot.',{exact:false})).toBeVisible();
+  const result=await new AxeBuilder({page}).include('.training-reference').analyze();expect(result.violations.filter(violation=>['serious','critical'].includes(violation.impact||''))).toEqual([]);
+  await page.screenshot({path:`training-test-results/${info.project.name}-quick-reference.png`});
+});

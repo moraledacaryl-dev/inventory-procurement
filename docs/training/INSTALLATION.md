@@ -33,14 +33,14 @@ The packaged frontend must contain `inventory-training-build.json`, produced onl
 - Frontend: `http://127.0.0.1:3400/training`.
 - Backend: `127.0.0.1:8400`, with outbound Python socket connections denied, including loopback.
 - Data: `%LOCALAPPDATA%/HiddenOasis/inventory-training` on Windows; `~/.local/share/HiddenOasis/inventory-training` on macOS/source installs.
-- `progress.sqlite` retains learners, immutable attempt history, hints, mistakes and checkpoints. Registry schema 1 migrates transactionally to schema 2, adding curriculum versions. Legacy attempts remain history and do not satisfy current-version prerequisites.
+- `progress.sqlite` retains learners, immutable attempt history, hints, mistakes and checkpoints. Registry schemas 1–3 migrate transactionally to schema 4, retaining curriculum versions, duty assignments, final records and answer-draft revisions. Legacy attempts remain history and do not satisfy current-version prerequisites.
 - `attempt-<uuid>.sqlite` is a separate complete Inventory schema for each practice attempt. A reset creates a fresh file and preserves the previous one and its audit history. The current application models create these disposable schemas; existing attempt schemas are not upgraded in place. Source drift requires review and a new attempt/curriculum version.
 - `session-key` signs participant cookies. `manager-key` protects cross-employee progress and assignments. Both are generated locally, must stay private, and must never enter a package, repository or screenshot.
 - `web-runtime-<build>` is a writable per-build copy of the bundled web server. Next route caches stay here so using training cannot change the signed application bundle. It is disposable while training is stopped; learner records remain in the registry and attempt databases.
 
 The trainer access code is the local `manager-key` value. An authorized administrator supplies it privately to the trainer. The employee role chooser, including Owner, cannot access the roster without that key. No actual staff messages, Accounting delivery or POS service intake is enabled.
 
-Back up the entire data directory while the application is stopped. Keep the session key with the backup or the previous browser cookie cannot be verified. Restore only into an isolated training installation. There is no production restore procedure in this training release.
+Use the stopped-process [training recovery procedure](RECOVERY.md). It preserves the registry, every practice database and both private keys; it verifies a separate restored session, original stock transaction and frozen certificate. Disposable web caches are recreated from the application package. There is no production restore procedure in this training release.
 
 ## Separate private browser deployment
 

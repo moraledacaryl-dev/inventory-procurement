@@ -54,6 +54,12 @@ def practical_results(store,root,learner,row):
                         read=registry.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1",(attempt["id"],inspection_endpoint(lesson,business))).fetchone()
                     untouched=read_only_unchanged(business,values(lesson,"independent")["actor"])
                     ok=bool(read and untouched and evidence.get("record_inspection") and normalize(evidence.get("observation",""))==normalize(answer))
+                    if lesson.workflow=="read_pos":
+                        from training.pos_review_scenarios import verify_pos_review
+                        valid,_=verify_pos_review(business,lesson,values(lesson,"independent"));ok=ok and valid
+                    if lesson.workflow=="read_report":
+                        from training.report_scenarios import verify_report
+                        valid,_=verify_report(business,lesson,values(lesson,"independent"));ok=ok and valid
                     if lesson.workflow=="read_procurement":
                         from training.procurement_scenarios import verify_procurement_inspection
                         valid,_=verify_procurement_inspection(business,lesson,"independent");ok=ok and valid

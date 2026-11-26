@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from training.curriculum import BY_ID, VERSION
 from training.paths import BY_PATH
 
-ASSESSMENT_VERSION="2026.11.26.2"
+ASSESSMENT_VERSION="2026.11.26.3"
 
 
 @dataclass(frozen=True)
@@ -91,6 +91,8 @@ def blueprint(path_id,module=None):
         actions=[id for id in applicable if not BY_ID[id].workflow.startswith("read_")]
         refusals=[id for id in actions if any(step.outcome_status for step in BY_ID[id].steps)]
         chosen=(caps[:1] or actions[:1] or list(applicable[:1]))+refusals[:1]
+        evidence={"Y":"interpret-supplier-acceptance","S":"sale-consumption","Q":"interpret-actual-yield-cost"}.get(module)
+        if evidence in applicable:chosen.append(evidence)
         practical=tuple(dict.fromkeys(chosen))
     return {"path_id":path_id,"path_title":path.title,"module":module,"title":(f"Module {module} final" if module else path.title+" final"),"version":VERSION,"assessment_version":ASSESSMENT_VERSION,"lessons":applicable,"practical_lessons":practical,"questions":questions(module,path_id),"thresholds":{"knowledge":85,"practical":90,"critical":100}}
 

@@ -1,3 +1,4 @@
+import {readFile} from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import type {TrainingLesson} from "../../lib/inventory-training";
 import AxeBuilder from "@axe-core/playwright";
@@ -155,9 +156,13 @@ test("an interrupted item draft restores its fields and acknowledged guide actio
     return route.continue();
   });
   await page.locator('[data-training="item-create-open"]').click();
+  await expect(page.locator('#item-workspace')).toHaveAttribute("data-inventory-training-focus","true");
   await page.locator('#item-workspace').selectOption(String(lesson.steps[1].value));
+  await expect(page.locator('#item-type')).toHaveAttribute("data-inventory-training-focus","true");
   await page.locator('#item-type').selectOption(String(lesson.steps[2].value));
+  await expect(page.locator('#item-sku')).toHaveAttribute("data-inventory-training-focus","true");
   await page.locator('#item-sku').fill("TRAIN-OIL");
+  await expect(page.locator('#item-name')).toHaveAttribute("data-inventory-training-focus","true");
   await page.locator('#item-name').fill("Training cooking oil");
   await expect(page.locator('#item-name')).toHaveValue("Training cooking oil");
   await expect(page.locator('.inventory-training-coach-label')).toContainText("Action 6 of");
@@ -468,7 +473,8 @@ for(const[id,role,answer,observation]of[
   test(`${role}: inspect ${id} in its actual workspace`,async({page},info)=>{
     const{lesson}=await prepare(page,id,role);
     const coach=page.getByRole("complementary",{name:"Your training task"});
-    await coach.getByRole("link",{name:"Open the record to inspect →",exact:true}).click();
+    if(lesson.steps.length)await guide(page,lesson);
+    else await coach.getByRole("link",{name:"Open the record to inspect →",exact:true}).click();
     if(id==="inspect-awarded-order")await page.getByRole("link",{name:"Open TRAIN-PO",exact:true}).click();
     if(id==="inspect-approved-order-lock"||id==="inspect-received-order-lock")await expect(page.locator('[data-training="po-amend-save"]')).toHaveCount(0);
     if(id==="inspect-received-order-lock")await expect(page.locator('[data-training="po-cancel"]')).toHaveCount(0);
@@ -616,4 +622,65 @@ test("a costing location change waits for its retained replacement control",asyn
   await page.getByRole('button',{name:'Check my work',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Task passed',exact:true})).toBeVisible();
   await page.unrouteAll({behavior:'wait'});
+});
+
+for(const[id,role,observation,visibleText]of[
+  ["interpret-stock-valuation","viewer","6000","Inventory value"],
+  ["interpret-period-issues","viewer","-6","TRAIN-PERIOD-ISSUE"],
+  ["interpret-waste-value","viewer","-1200","TRAIN-WASTE"],
+  ["interpret-posted-count","viewer","-3","TRAIN-COUNT"],
+  ["interpret-supplier-acceptance","viewer","80","80.00%"],
+  ["interpret-actual-yield-cost","viewer","60","TRAIN-ALFREDO"],
+  ["interpret-assurance-evidence","viewer","failed","Completed backup is within freshness limit"],
+  ["sale-consumption","viewer","-340","TRAIN-SPAGHETTI"],
+  ["inspect-pos-duplicate-delivery","viewer","1","TRAIN-SALE-COMPLETED"],
+  ["inspect-unmapped-pos-refusal","viewer","0","Failed events"],
+  ["inspect-cooked-sale-return","viewer","2","TRAIN-SALE-RETURNED"],
+  ["inspect-unused-sale-void","viewer","170","TRAIN-SPAGHETTI"],
+]as const){
+  test(`${role}: interpret source evidence for ${id}`,async({page},info)=>{
+    const{lesson}=await prepare(page,id,role);
+    if(lesson.steps.length)await guide(page,lesson,`${info.project.name}-${id}`);
+    const coach=page.getByRole("complementary",{name:"Your training task"});
+    if(id==="interpret-period-issues"){
+      await expect(page.locator('.ledger-summary')).toContainText("-6");
+      await expect(page.getByText("TRAIN-EARLIER-ISSUE",{exact:true})).toHaveCount(0);
+    }
+    if(id==="inspect-cooked-sale-return")await expect(page.locator('[data-training-pos-document="TRAIN-SALE-RETURNED"]')).toHaveCount(0);
+    await expect(page.locator('main').getByText(visibleText,{exact:false}).first()).toBeVisible();
+    if(id.startsWith("inspect-")||id==="sale-consumption")await expect(page.locator('[data-training^="pos-mapping-toggle-"]')).toHaveCount(0);
+    await coach.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+    await coach.getByRole("textbox",{name:lesson.practical_question,exact:true}).fill(observation);
+    await coach.getByRole("button",{name:"Check my work",exact:true}).click();
+    await expect(coach.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+    await page.screenshot({path:`training-test-results/${info.project.name}-${id}-passed.png`});
+  });
+}
+
+test("staff meal shortages preserve physical stock and the unposted proposal",async({page},info)=>{
+  const{lesson}=await prepare(page,"staff-meal-shortage","inventory_manager");
+  await guide(page,lesson,`${info.project.name}-staff-meal-shortage`);
+  await expect(page.getByText(/Insufficient stock for TRAIN-CHICKEN/)).toBeVisible();
+  await expect(page.locator('#quantity-0')).toHaveValue("25");
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+});
+
+
+test("the real report export controls download the current isolated catalogue and balances",async({page},info)=>{
+  const prepared=await prepare(page,"interpret-stock-valuation","viewer");
+  await expect(page.locator(".operations-metrics")).toContainText("₱6,000.00");
+  await page.goto('/reports');
+  for(const[label,filename,header,line]of[
+    ['Export items','items.csv','sku,name,category_id,base_unit_id,minimum_stock,standard_cost,is_active','TRAIN-CHICKEN,Chicken (kg)'],
+    ['Export balances','stock-balances.csv','item_id,location_id,quantity,average_cost','training-chicken,training-store,24.0000,200.0000'],
+  ]){
+    const downloading=page.waitForEvent('download');await page.getByRole('button',{name:label,exact:true}).click();
+    const file=await downloading;expect(file.suggestedFilename()).toBe(filename);
+    const saved=info.outputPath(filename);await file.saveAs(saved);const contents=await readFile(saved,'utf8');
+    expect(contents).toContain(header);expect(contents).toContain(line);
+  }
+  const result=await page.request.post('/api/v1/training/check',{headers:{...headers,'X-Training-Attempt':prepared.attempt_id},data:{answer:'no',observation:'6000'}});
+  expect(result.ok(),await result.text()).toBeTruthy();expect((await result.json()).passed).toBeTruthy();
 });

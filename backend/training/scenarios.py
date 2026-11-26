@@ -24,6 +24,8 @@ from training.extensions_scenarios import extension_values, prepare_extensions, 
 from training.admin_scenarios import admin_values, prepare_admin, after_prepare_admin, verify_admin
 from training.migration_scenarios import verify_migration, recover_migration_checkpoint
 from training.csv_fixtures import CSV_FILES
+from training.pos_review_scenarios import after_prepare_pos_reviews, pos_question, pos_endpoint
+from training.report_scenarios import after_prepare_reports, report_question, report_endpoint
 
 from training.steward_scenarios import steward_values, prepare_steward, verify_steward
 
@@ -42,6 +44,7 @@ def values(lesson: Lesson, mode: str):
         "practice_item": IDS["amenities"] if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
+        "meal_shortage":base+1,
         "base": 0 if lesson.id=="import-initial-balances" else {"guided": 24, "assisted": 27, "independent": 31}[mode],
         "reference": f"TRAIN-{lesson.id.upper()}-{mode.upper()}",
         "reject_reason": "wrong item delivered" if lesson.id == "wrong-item" else "unacceptable expiry" if lesson.id == "expired-delivery" else "damaged or unusable goods",
@@ -169,6 +172,8 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         after_prepare_capstone(db,lesson,v)
         after_prepare_extensions(db,lesson,v)
         after_prepare_admin(db,lesson,v)
+        after_prepare_reports(db,lesson,v)
+        after_prepare_pos_reviews(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -185,6 +190,8 @@ def balance(db, item="chicken", location="store"):
 
 def practical_question(lesson, mode):
     v = values(lesson, mode)
+    if lesson.workflow=="read_pos":return pos_question(lesson,mode,v)
+    if lesson.workflow=="read_report":return report_question(lesson,mode,v)
     if lesson.workflow=="read_procurement":return procurement_inspection(lesson,mode,v)
     tasks={
         "counter-foundations":("What unit is shown in the Chicken (kg) item name on TRAIN-COUNT?","kg",f"/counts/{IDS['count']}"),
@@ -210,6 +217,8 @@ def practical_question(lesson, mode):
 
 
 def inspection_endpoint(lesson, db=None):
+    if lesson.workflow=="read_pos":return pos_endpoint(lesson,db)
+    if lesson.workflow=="read_report":return report_endpoint(lesson,db)
     if lesson.workflow=="read_procurement":
         if lesson.id=="inspect-awarded-order":
             po=db.scalar(select(PurchaseOrder).where(PurchaseOrder.quotation_id=="training-quote-fast")) if db is not None else None
@@ -304,7 +313,7 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
         ok = len(rows) == 1 and rows[0].location_id == IDS["store"] and rows[0].status == "submitted" and len(rows[0].lines) == 1 and rows[0].lines[0].item_id == IDS["chicken"] and rows[0].lines[0].quantity == q and actual == start
     elif workflow == "staff_meal":
         rows = list(db.scalars(select(StaffMeal).where(StaffMeal.created_by_user_id == IDS["actor"])).all())
-        ok = len(rows) == 1 and rows[0].status == "posted" and rows[0].location_id == IDS["store"] and len(rows[0].lines) == 1 and rows[0].lines[0].item_id == IDS["chicken"] and rows[0].lines[0].quantity == q and actual == start - q
+        ok = len(rows) == 1 and rows[0].status == "posted" and rows[0].servings == 4 and rows[0].location_id == IDS["store"] and len(rows[0].lines) == 1 and rows[0].lines[0].item_id == IDS["chicken"] and rows[0].lines[0].quantity == q and actual == start - q
     elif workflow == "production":
         batch = db.get(ProductionBatch, IDS["batch"])
         ok = batch.status == "completed" and batch.actual_quantity == q and bool(batch.stock_document_id) and balance(db, "alfredo") == q and actual == start - Decimal(3)
@@ -361,5 +370,7 @@ def public_lesson(lesson: Lesson, mode="guided"):
     row["reference"] = v["reference"]
     row["steps"] = [{**asdict(step), "instruction": step.instruction.format(**v), "value": (step.value.format(**v) if step.value and "{" in step.value else step.value)} for step in lesson.steps]
     row["practical_question"], _, row["inspection_route"] = practical_question(lesson, mode)
+    from training.report_scenarios import PERIOD_FILTERS
+    row["inspection_query"] = PERIOD_FILTERS if lesson.id=="interpret-period-issues" else {"location_id":IDS["store"]} if lesson.id=="recipe-cost" else None
     row["inspection_api_path"] = inspection_endpoint(lesson) if lesson.workflow.startswith("read_") else None
     return row

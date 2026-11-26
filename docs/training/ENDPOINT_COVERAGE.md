@@ -238,3 +238,12 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /stock/documents/{document_id}` | `stock_ledger.py` | inventory.read | Supporting UI / record inspection |
 | `GET /suppliers/{supplier_id}/detail` | `supplier_360.py` | suppliers.read | Supporting UI / record inspection |
 | `PATCH /suppliers/{supplier_id}` | `supplier_360.py` | suppliers.* | Assessed real outcome; relevant lifecycle refusals also exercised |
+
+
+## Report interpretation and local lifecycle evidence
+
+Actual record-inspection tasks now assess `/reports/valuation`, `/stock/ledger` (including exact item/location/type/date criteria), posted `/counts/{count_id}/detail`, `/supplier-performance`, actual production `/stock/documents/{document_id}`, and `/reports/final-assurance`. POS service intake is exercised only by typed fictional local counterparts, with inspection in the real POS workspace and stock-document pages. No employee sale-posting control or simulated failed-event row is added. The original concept-only POS task is replaced, not counted twice.
+
+The training-state recovery utility is outside the production backup API and has its own stopped-process verification. Production BackupRecord creation has no employee control and remains excluded; a training snapshot does not justify a green production-backup check.
+
+Print/export endpoints and client-side table exports are supporting document retrieval, not separately certified business posting skills. Real item/balance export buttons have desktop/phone download checks with actual CSV bytes, current attempt binding and unchanged stock. External file-reader behavior and production printer/PDF drivers are excluded; the relevant source transaction and report interpretation remain assessed. Schedule editors, reservation release, recipe revision, asset lifecycle and charged-maintenance editors remain explicitly excluded where the current source exposes no employee control. Source limitations are taught rather than replaced by parallel forms.

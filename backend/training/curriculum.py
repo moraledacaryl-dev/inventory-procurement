@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Literal
 from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.26.11"
+VERSION = "2026.11.26.12"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
@@ -160,11 +160,11 @@ LESSONS = [
         "Inspect, separate unsafe supplies and record appropriate waste or rejection. Do not assume automatic FEFO enforcement.",
         "Does a software expiry report physically move goods on a shelf? yes or no", "no", "Employees must inspect and rotate goods physically.", ("inventory_operations.py",)),
     Lesson("recipe-cost", "P", "Check a recipe's ingredients and yield", STOCK, "/production/recipes/{recipe}", "read_recipe",
-        "Training Chicken Alfredo uses 0.25 kg of chicken for one serving. Check recipe quantity, unit and yield.",
+        "At Training stockroom, Training Chicken Alfredo uses 0.25 kg of chicken for one serving. Choose Training stockroom in the recipe costing location, then check quantity, unit, yield and cost.",
         "A recipe describes ingredients needed for an output. Yield is how much usable output the recipe produces. Waste factors and ingredient prices affect cost.",
         "At PHP 200 per kg, 0.25 kg of chicken costs PHP 50. Four servings require 1 kg before any applicable waste factor.",
         "Check ingredient units and output yield before approving or revising recipes. Training menu names are fictional fixtures.",
-        "How many kg are needed for four portions at 0.25 kg each?", "1", "4 × 0.25 kg = 1 kg.", ("production.py", "recipe_costing.py")),
+        "How many kg are needed for four portions at 0.25 kg each?", "1", "4 × 0.25 kg = 1 kg.", ("production.py", "recipe_costing.py"), (Step('[aria-label="Recipe costing location"]', "Choose Training stockroom and read the actual recipe cost at that location.", "{store}", "change", "/recipes/training-recipe/costing-detail", outcome_method="GET"),)),
     Lesson("batch-production", "Q", "Record actual batch yield", STOCK, "/production/batches/{batch}", "production",
         "A planned batch of 12 portions produced only {quantity} usable portions. Record actual ingredient use and actual yield.",
         "Batch production consumes raw ingredients and creates finished stock. Planned output and actual output can differ; the actual result affects cost per portion.",
@@ -273,11 +273,12 @@ EXTRA_STEPS = {
         s('[aria-label="Actual quantity for training-chicken"]', "The batch used 3 kg of chicken. Enter 3.", "3", "input"),
         s('[aria-label="Actual total output"]', "The usable output is {quantity} portions with no output rejects. Enter {quantity}.", "{quantity}", "input"),
         s('[data-training="production-post"]', "Check actual ingredients and output, then complete and post.")),
-    "staff_meal": (s('[data-training="meal-name"]', "Name this meal Training staff lunch.", "Training staff lunch", "input"),
+    "staff_meal": (s('[data-training="meal-name"]', "Name this meal Training staff lunch for four people.", "Training staff lunch", "input"),
         s('[data-training="meal-location"]', "Choose Training stockroom.", '{store}', "change"),
+        s('[data-training="meal-servings"]', "The meal served 4 people. Enter 4.", "4", "input"),
         s('#ingredient-0', "Choose Chicken (kg).", '{chicken}', "change"),
         s('#quantity-0', "Enter the {quantity} kg actually used.", "{quantity}", "input"),
-        s('[data-training="meal-preview"]', "Preview the stock and meal cost."),
+        Step('[data-training="meal-preview"]', "Preview the actual ingredient value and cost per serving for four people.", outcome="/staff-meals/preview"),
         s('[data-training="meal-post"]', "Review the preview and post the meal once.")),
     "requisition": (s('[aria-label="Reorder planning location"]', "Choose Training stockroom and review available stock and on-order quantities.", '{store}', "change"),
         s('[aria-label="Select TRAIN-CHICKEN for replenishment"]', "Select the chicken replenishment line."),
@@ -343,6 +344,16 @@ LESSONS.extend(CSV_LESSONS)
 
 from training.steward_lessons import LESSONS as STEWARD_LESSONS
 LESSONS.extend(STEWARD_LESSONS)
+
+from training.report_lessons import LESSONS as REPORT_LESSONS
+LESSONS.extend(REPORT_LESSONS)
+
+from training.pos_review_lessons import LESSONS as POS_REVIEW_LESSONS
+LESSONS=[next(row for row in POS_REVIEW_LESSONS if row.id=="sale-consumption") if lesson.id=="sale-consumption" else lesson for lesson in LESSONS]
+LESSONS.extend(row for row in POS_REVIEW_LESSONS if row.id!="sale-consumption")
+
+# Read-only evidence is available to the source Viewer role.
+LESSONS=[replace(lesson,roles=lesson.roles+("viewer",)) if lesson.id in {"recipe-cost","accounting-proof"} and "viewer" not in lesson.roles else lesson for lesson in LESSONS]
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)

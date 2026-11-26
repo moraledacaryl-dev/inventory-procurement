@@ -8,11 +8,11 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /integrations/accounting/receipts` | `accounting_integration.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
 | `POST /integrations/accounting/events/{event_id}/requeue` | `accounting_integration.py` | integrations.* | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /assets` | `assets.py` | inventory.read | Supporting UI / record inspection |
-| `POST /assets` | `assets.py` | inventory.* | Further practical lesson required |
-| `POST /assets/{asset_id}/events` | `assets.py` | inventory.* | Further practical lesson required |
+| `POST /assets` | `assets.py` | inventory.* | Assessed: unique physical tag, classification, location, dates, cost and useful life |
+| `POST /assets/{asset_id}/events` | `assets.py` | inventory.* | Excluded from employee GUI practice: lifecycle API has no event action form in current Assets screen; steward process required |
 | `GET /depreciation-runs` | `assets.py` | reports.read | Supporting UI / record inspection |
-| `POST /depreciation-runs` | `assets.py` | inventory.* | Further practical lesson required |
-| `POST /depreciation-runs/{run_id}/post` | `assets.py` | inventory.* | Further practical lesson required |
+| `POST /depreciation-runs` | `assets.py` | inventory.* | Assessed: correct period and draft amount; unchanged accumulated depreciation |
+| `POST /depreciation-runs/{run_id}/post` | `assets.py` | inventory.* | Assessed: reviewed run posts once with exact book value effect and pending local Accounting handoff |
 | `POST /auth/login` | `auth.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
 | `POST /auth/logout` | `auth.py` | Service/session boundary | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /auth/me` | `auth.py` | Service/session boundary | Supporting UI / record inspection |
@@ -106,7 +106,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /locations/{location_id}` | `location_controls.py` | locations.read | Supporting UI / record inspection |
 | `PATCH /locations/{location_id}` | `location_controls.py` | locations.* | Further practical lesson required |
 | `GET /fnb/menu` | `menu.py` | items.read | Supporting UI / record inspection |
-| `POST /fnb/menu` | `menu.py` | items.* | Further practical lesson required |
+| `POST /fnb/menu` | `menu.py` | items.* | Assessed: actual variant, station, availability and optional priced modifier |
 | `PUT /fnb/menu/{item_id}` | `menu.py` | items.* | Further practical lesson required |
 | `POST /integrations/operations/requests` | `operational_integrations.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /integrations/operations/workspace` | `operational_integrations.py` | integrations.read | Supporting UI / record inspection |
@@ -123,11 +123,11 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /imports/items.csv` | `operations.py` | items.* | Further practical lesson required |
 | `GET /backups` | `operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /maintenance/plans` | `pass5_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /maintenance/plans` | `pass5_operations.py` | inventory.* | Further practical lesson required |
+| `POST /maintenance/plans` | `pass5_operations.py` | inventory.* | Assessed: exact asset, interval, checklist and first due date |
 | `GET /maintenance/work-orders` | `pass5_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /maintenance/work-orders` | `pass5_operations.py` | inventory.* | Further practical lesson required |
-| `POST /maintenance/work-orders/{work_order_id}/start` | `pass5_operations.py` | inventory.* | Further practical lesson required |
-| `POST /maintenance/work-orders/{work_order_id}/complete` | `pass5_operations.py` | inventory.* | Further practical lesson required |
+| `POST /maintenance/work-orders` | `pass5_operations.py` | inventory.* | Assessed: one-off job, asset, priority and schedule; current UI has no parts entry |
+| `POST /maintenance/work-orders/{work_order_id}/start` | `pass5_operations.py` | inventory.* | Assessed: existing actual work enters in_progress |
+| `POST /maintenance/work-orders/{work_order_id}/complete` | `pass5_operations.py` | inventory.* | Assessed: completed zero-charge work advances linked plan and local handoff; current button has no non-zero cost/parts editor |
 | `GET /purchase-line-treatments` | `pass5_operations.py` | inventory.read | Supporting UI / record inspection |
 | `POST /purchase-line-treatments` | `pass5_operations.py` | inventory.* | Further practical lesson required |
 | `GET /accounting-mappings` | `pass5_operations.py` | reports.read | Supporting UI / record inspection |
@@ -147,7 +147,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /integrations/pos/catalog` | `pos_sync.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /integrations/pos/workspace` | `pos_sync.py` | integrations.read | Supporting UI / record inspection |
 | `POST /pos-mappings/{mapping_id}/activate` | `pos_sync.py` | integrations.* | Further practical lesson required |
-| `POST /pos-mappings/{mapping_id}/deactivate` | `pos_sync.py` | integrations.* | Further practical lesson required |
+| `POST /pos-mappings/{mapping_id}/deactivate` | `pos_sync.py` | integrations.* | Assessed: disable confirmed stale recipe mapping without reversing old sales |
 | `GET /suppliers` | `procurement.py` | suppliers.read | Supporting UI / record inspection |
 | `POST /suppliers` | `procurement.py` | suppliers.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /suppliers/{supplier_id}/items` | `procurement.py` | suppliers.read | Supporting UI / record inspection |
@@ -173,14 +173,14 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /procurement/requisitions/workspace` | `procurement_planning.py` | procurement.read | Supporting UI / record inspection |
 | `GET /recipes/item-options` | `production.py` | inventory.read | Supporting UI / record inspection |
 | `GET /recipes` | `production.py` | inventory.read | Supporting UI / record inspection |
-| `POST /recipes` | `production.py` | inventory.* | Further practical lesson required |
-| `POST /recipes/{recipe_id}/approve` | `production.py` | inventory.* | Further practical lesson required |
+| `POST /recipes` | `production.py` | inventory.* | Assessed: base-unit formula, yield, waste allowance and required ingredient |
+| `POST /recipes/{recipe_id}/approve` | `production.py` | inventory.* | Assessed: independent formula approval and creator refusal |
 | `GET /recipes/{recipe_id}/cost` | `production.py` | reports.read | Supporting UI / record inspection |
 | `GET /production-batches` | `production.py` | inventory.read | Supporting UI / record inspection |
-| `POST /production-batches` | `production.py` | inventory.* | Further practical lesson required |
+| `POST /production-batches` | `production.py` | inventory.* | Assessed: plan from approved recipe without prematurely moving stock |
 | `POST /production-batches/{batch_id}/complete` | `production.py` | inventory.* | Further practical lesson required |
 | `GET /pos-mappings` | `production.py` | integrations.read | Supporting UI / record inspection |
-| `POST /pos-mappings` | `production.py` | integrations.* | Further practical lesson required |
+| `POST /pos-mappings` | `production.py` | integrations.* | Assessed: exact external product, approved recipe and consumption location |
 | `POST /integrations/pos/events` | `production.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /integrations/reconciliation` | `production.py` | integrations.read | Supporting UI / record inspection |
 | `GET /production-batches/{batch_id}/execution-detail` | `production_execution.py` | inventory.read | Supporting UI / record inspection |
@@ -189,9 +189,9 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /production-batches/{batch_id}/cancel` | `production_execution.py` | inventory.* | Further practical lesson required |
 | `GET /property/balances` | `property_operations.py` | inventory.read | Supporting UI / record inspection |
 | `GET /property/movements` | `property_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /property/movements` | `property_operations.py` | inventory.* | Further practical lesson required |
+| `POST /property/movements` | `property_operations.py` | inventory.* | Assessed: clean issue, used-linen laundry handover and verified clean return; conserve condition/location totals |
 | `GET /hotel/par-profiles` | `property_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /hotel/par-profiles` | `property_operations.py` | inventory.* | Further practical lesson required |
+| `POST /hotel/par-profiles` | `property_operations.py` | inventory.* | Assessed: approved room standard with location; no physical issuance |
 | `GET /procurement/quotation-workspace` | `quotation_po_workspace.py` | procurement.read | Supporting UI / record inspection |
 | `POST /requisitions/{requisition_id}/award-quotation` | `quotation_po_workspace.py` | procurement.* | Assessed: justified offer award creates one linked draft PO |
 | `GET /purchase-orders/{po_id}/detail` | `quotation_po_workspace.py` | procurement.read | Assessed: linked awarded draft, approval limit, amendment lock and receipt cancellation lock |
@@ -213,8 +213,8 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /recipes/costing/workspace` | `recipe_costing.py` | reports.read | Supporting UI / record inspection |
 | `GET /recipes/{recipe_id}/costing-detail` | `recipe_costing.py` | reports.read | Supporting UI / record inspection |
 | `POST /recipes/{recipe_id}/margin-scenario` | `recipe_costing.py` | reports.read | Further practical lesson required |
-| `POST /recipes/{recipe_id}/revise` | `recipe_costing.py` | inventory.* | Further practical lesson required |
-| `POST /recipes/{recipe_id}/retire` | `recipe_costing.py` | inventory.* | Further practical lesson required |
+| `POST /recipes/{recipe_id}/revise` | `recipe_costing.py` | inventory.* | Excluded from employee GUI practice: API has no revision editor in current Recipe screens; ask authorized recipe steward |
+| `POST /recipes/{recipe_id}/retire` | `recipe_costing.py` | inventory.* | Assessed: authorized retirement retains version/history |
 | `GET /shared-identities` | `shared_master_data.py` | users.read | Supporting UI / record inspection |
 | `GET /shared-identities/{canonical_user_id}` | `shared_master_data.py` | users.read | Supporting UI / record inspection |
 | `GET /shared-identities/resolve/by-email` | `shared_master_data.py` | users.read | Supporting UI / record inspection |
@@ -233,7 +233,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /staff-meals/{meal_id}` | `staff_meals.py` | inventory.read | Supporting UI / record inspection |
 | `POST /staff-meals/preview` | `staff_meals.py` | inventory.read | Further practical lesson required |
 | `POST /staff-meals` | `staff_meals.py` | inventory.* | Assessed business outcome |
-| `POST /staff-meals/{meal_id}/reverse` | `staff_meals.py` | inventory.* | Further practical lesson required |
+| `POST /staff-meals/{meal_id}/reverse` | `staff_meals.py` | inventory.* | Assessed: authorized duplicate reversal, linked original and idempotent correction |
 | `GET /stock/ledger` | `stock_ledger.py` | inventory.read | Supporting UI / record inspection |
 | `GET /stock/documents/{document_id}` | `stock_ledger.py` | inventory.read | Supporting UI / record inspection |
 | `GET /suppliers/{supplier_id}/detail` | `supplier_360.py` | suppliers.read | Supporting UI / record inspection |

@@ -36,8 +36,12 @@ async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,st
       await expect(page.getByRole("alertdialog").locator(step.target)).toBeVisible();
       if(screenshotPrefix)await page.screenshot({path:`training-test-results/${screenshotPrefix}-dialog.png`});
     }
+    if(screenshotPrefix&&((lesson.id==="send-used-linen-to-laundry"&&index===6)||(lesson.id==="create-governed-recipe"&&index===7)))await page.screenshot({path:`training-test-results/${screenshotPrefix}-detail.png`});
     if(step.event==="change")await target.selectOption(String(step.value));
-    else if(step.event==="input")await target.fill(String(step.value));
+    else if(step.event==="input"){
+      if(lesson.id==="create-menu-with-modifier"&&step.target.includes("options")){await target.fill("");await target.pressSequentially(String(step.value));await expect(target).toHaveValue(String(step.value));}
+      else await target.fill(String(step.value));
+    }
     else await target.click();
   }
   await expect(page.getByRole("button",{name:"Check my work",exact:true})).toBeVisible();
@@ -73,6 +77,10 @@ test("signing out returns to onboarding and separates the next employee",async({
 test("an interrupted item draft restores its fields and acknowledged guide action",async({page})=>{
   page.on("dialog",dialog=>dialog.accept());
   const{lesson}=await prepare(page,"create-item","inventory_manager");
+  await page.route("**/api/v1/training/checkpoint",route=>{
+    if(Number(route.request().postDataJSON()?.step)>=4)return route.abort();
+    return route.continue();
+  });
   await page.locator('[data-training="item-create-open"]').click();
   await page.locator('#item-workspace').selectOption(String(lesson.steps[1].value));
   await page.locator('#item-type').selectOption(String(lesson.steps[2].value));
@@ -80,6 +88,7 @@ test("an interrupted item draft restores its fields and acknowledged guide actio
   await page.locator('#item-name').fill("Training cooking oil");
   await expect(page.locator('.inventory-training-coach-label')).toContainText("Action 6 of");
   await expect.poll(()=>page.evaluate(()=>Object.entries(localStorage).some(([key,value])=>key.startsWith("inventory-training:draft:")&&JSON.parse(value).name==="Training cooking oil"))).toBeTruthy();
+  await page.unroute("**/api/v1/training/checkpoint");
   await page.reload();
   await expect(page.locator('#item-name')).toHaveValue("Training cooking oil");
   await guide(page,lesson,undefined,5);
@@ -99,6 +108,16 @@ test("resetting a supplier practice cannot restore another attempt's draft",asyn
   await expect(page.locator('#supplier-code')).toHaveValue("");
   const me=await(await page.request.get("/api/v1/training/me")).json();
   expect(me.history.some((row:{id:string;status:string})=>row.id===first.attempt_id&&row.status==="reset")).toBeTruthy();
+});
+
+test("a committed catalogue item resumes at assessment after its draft clears",async({page})=>{
+  const{lesson}=await prepare(page,"create-item","inventory_manager");
+  await guide(page,lesson);
+  await page.reload();
+  await expect(page.locator('.inventory-training-current-instruction')).toHaveCount(0);
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
 });
 
 test("an older tab cannot post into practice started in a different tab",async({page,context})=>{
@@ -158,6 +177,26 @@ test("a correctly prefilled transfer amount can be reviewed without retyping",as
 });
 
 for(const[lesson,role,answer]of[
+  ["issue-clean-linen","inventory_manager","no"],
+  ["send-used-linen-to-laundry","inventory_manager","no"],
+  ["return-clean-linen","inventory_manager","no"],
+  ["configure-room-par","inventory_manager","no"],
+  ["register-fixed-asset","inventory_manager","no"],
+  ["create-maintenance-plan","inventory_manager","no"],
+  ["create-maintenance-work-order","inventory_manager","no"],
+  ["start-maintenance-work","inventory_manager","no"],
+  ["complete-maintenance-work","inventory_manager","no"],
+  ["prepare-depreciation-run","inventory_manager","no"],
+  ["post-reviewed-depreciation","inventory_manager","no"],
+  ["create-governed-recipe","inventory_manager","no"],
+  ["approve-colleague-recipe","inventory_manager","no"],
+  ["recipe-self-approval","inventory_manager","no"],
+  ["retire-obsolete-recipe","inventory_manager","no"],
+  ["plan-production-batch","inventory_manager","no"],
+  ["reverse-duplicate-staff-meal","inventory_manager","no"],
+  ["create-menu-with-modifier","inventory_manager","no"],
+  ["map-pos-product","owner","no"],
+  ["disable-stale-pos-mapping","owner","no"],
   ["approve-purchase-request","procurement_officer","no"],
   ["reject-duplicate-request","procurement_officer","no"],
   ["request-self-approval","procurement_officer","no"],
@@ -223,6 +262,7 @@ for(const[lesson,role,answer]of[
   ["housekeeping-supplies","inventory_manager","12"],
 ] as const){
   test(`${role}: perform ${lesson} using actual controls`,async({page},info)=>{
+    if(lesson==="reverse-duplicate-staff-meal")page.on("dialog",dialog=>dialog.accept());
     const{lesson:task}=await prepare(page,lesson,role);
     await guide(page,task,`${info.project.name}-${lesson}`);
     const coach=page.getByRole("complementary",{name:"Your training task"});

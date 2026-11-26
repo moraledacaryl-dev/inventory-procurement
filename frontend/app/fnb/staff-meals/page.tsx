@@ -250,7 +250,7 @@ export default function Page() {
                 <td>{locationById[meal.location_id]?.name || "Unknown location"}</td>
                 <td>{new Date(meal.created_at).toLocaleString()}</td>
                 <td><StatusBadge status={meal.status} /></td>
-                <td>{meal.status === "posted" ? <button className="secondary compact" type="button" onClick={() => void reverse(meal)}>Reverse</button> : null}</td>
+                <td>{meal.status === "posted" ? <button aria-label={`Reverse staff meal ${meal.meal_name}`} className="secondary compact" type="button" onClick={() => void reverse(meal)}>Reverse</button> : null}</td>
               </tr>)}
               {meals.length === 0 ? <tr><td colSpan={7}><div className="empty-state"><strong>No staff meals yet</strong><span>Post the first staff meal above.</span></div></td></tr> : null}
             </tbody>

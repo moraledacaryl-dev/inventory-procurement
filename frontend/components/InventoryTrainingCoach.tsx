@@ -42,7 +42,7 @@ export function InventoryTrainingCoach() {
       if(bound&&result.attempt&&bound!==result.attempt.id)throw new Error("This practice changed in another tab. Return to Training to continue the current task.");
       setProfile(result);
       let checkpoint=result.attempt?.checkpoint||0;
-      if(result.lesson&&result.attempt?.status!=="passed")checkpoint=restoreCatalogueCheckpoint(result.lesson,checkpoint);
+      if(result.lesson&&result.attempt?.status!=="passed"&&checkpoint<result.lesson.steps.length)checkpoint=restoreCatalogueCheckpoint(result.lesson,checkpoint);
       if(result.lesson?.workflow==="receiving"&&checkpoint<result.lesson.steps.length){
         const draft=readTrainingReceiptDraft(),steps=result.lesson.steps;
         const index=(target:string)=>Math.max(0,steps.findIndex(row=>row.target===target));

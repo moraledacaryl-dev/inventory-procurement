@@ -14,6 +14,8 @@ from training.curriculum import Lesson, VERSION
 from training.catalogue_scenarios import catalogue_values, prepare_catalogue, verify_catalogue
 from training.control_scenarios import control_values, prepare_controls, after_prepare_controls, verify_controls, resolve_control_route, recover_control_checkpoint
 from training.procurement_scenarios import prepare_procurement, after_prepare_procurement, verify_procurement, procurement_inspection
+from training.food_scenarios import prepare_food, after_prepare_food, verify_food
+from training.property_scenarios import property_values, prepare_property, after_prepare_property, verify_property
 
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
@@ -26,7 +28,7 @@ def values(lesson: Lesson, mode: str):
         quantity = max(1, quantity - 2)
     rejected = min(lesson.rejected, quantity)
     base={"guided":24,"assisted":27,"independent":31}[mode]
-    return {**IDS, **catalogue_values(mode), **control_values(lesson,mode,quantity,base), "quantity": quantity, "rejected": rejected,
+    return {**IDS, **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), "quantity": quantity, "rejected": rejected,
         "practice_item": IDS["amenities"] if lesson.id == "housekeeping-supplies" else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id == "housekeeping-supplies" else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id == "housekeeping-supplies" else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
@@ -130,9 +132,13 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         prepare_catalogue(db,lesson,v)
         prepare_controls(db,lesson,v)
         prepare_procurement(db,lesson,v)
+        prepare_food(db,lesson,v)
+        prepare_property(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
         after_prepare_procurement(db,lesson,v)
+        after_prepare_food(db,lesson,v)
+        after_prepare_property(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -191,6 +197,10 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
         return verify_controls(db,lesson,v,business_actions)
     if lesson.workflow.startswith("procurement_"):
         return verify_procurement(db,lesson,v,business_actions)
+    if lesson.workflow.startswith("food_"):
+        return verify_food(db,lesson,v,business_actions)
+    if lesson.workflow.startswith("property_"):
+        return verify_property(db,lesson,v,business_actions)
     q = Decimal(v["quantity"])
     start = Decimal(v["base"])
     workflow = lesson.workflow

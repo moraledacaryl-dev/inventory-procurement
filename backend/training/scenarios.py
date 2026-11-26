@@ -12,6 +12,7 @@ from app.services.inventory import post_document
 from app.services.classification_defaults import ensure_operating_structure_defaults
 from training.curriculum import Lesson, VERSION
 from training.catalogue_scenarios import catalogue_values, prepare_catalogue, verify_catalogue
+from training.control_scenarios import control_values, prepare_controls, after_prepare_controls, verify_controls, resolve_control_route, recover_control_checkpoint
 
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
@@ -23,7 +24,8 @@ def values(lesson: Lesson, mode: str):
     if mode == "independent" and quantity > 1:
         quantity = max(1, quantity - 2)
     rejected = min(lesson.rejected, quantity)
-    return {**IDS, **catalogue_values(mode), "quantity": quantity, "rejected": rejected,
+    base={"guided":24,"assisted":27,"independent":31}[mode]
+    return {**IDS, **catalogue_values(mode), **control_values(lesson,mode,quantity,base), "quantity": quantity, "rejected": rejected,
         "practice_item": IDS["amenities"] if lesson.id == "housekeeping-supplies" else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id == "housekeeping-supplies" else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id == "housekeeping-supplies" else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
@@ -125,7 +127,9 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
             db.add(FixedAsset(asset_tag="TRAIN-FRIDGE-01",item_id=asset_item.id,asset_class_id=asset_class.id,depreciation_method_id=method.id,location_id=IDS["store"],acquisition_date=date(2026,1,1),acquisition_cost={"guided":20000,"assisted":22000,"independent":24000}[mode],status="active",created_by_user_id=IDS["colleague"]))
         db.add(ProductionBatch(id=IDS["batch"], batch_number="TRAIN-BATCH", recipe_id=recipe.id, location_id=IDS["store"], planned_quantity=12, created_by_user_id=IDS["actor"]))
         prepare_catalogue(db,lesson,v)
+        prepare_controls(db,lesson,v)
         db.commit()
+        after_prepare_controls(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -174,6 +178,8 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
     v = values(lesson, mode)
     if lesson.workflow.startswith("catalogue_"):
         return verify_catalogue(db,lesson,v,business_actions)
+    if lesson.workflow.startswith("control_"):
+        return verify_controls(db,lesson,v,business_actions)
     q = Decimal(v["quantity"])
     start = Decimal(v["base"])
     workflow = lesson.workflow
@@ -246,6 +252,8 @@ def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int, 
     A browser can close after Save commits but before its checkpoint request
     arrives. Never leave the trainee pointing at a disabled Save button.
     """
+    if lesson.workflow.startswith("control_"):
+        return recover_control_checkpoint(db,lesson,values(lesson,mode),checkpoint,business_actions)
     if lesson.workflow == "count":
         count = db.get(CountSession, IDS["count"])
         quantity = Decimal(values(lesson, mode)["quantity"])
@@ -264,6 +272,10 @@ def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int, 
     return checkpoint
 
 
+def resolve_practice_route(db,lesson,mode):
+    return resolve_control_route(db,lesson,values(lesson,mode))
+
+
 def public_lesson(lesson: Lesson, mode="guided"):
     v = values(lesson, mode)
     row = asdict(lesson)
@@ -274,7 +286,7 @@ def public_lesson(lesson: Lesson, mode="guided"):
     row["quantity"] = v["quantity"]
     row["rejected"] = v["rejected"]
     row["reference"] = v["reference"]
-    row["steps"] = [{**asdict(step), "instruction": step.instruction.format(**v), "value": (step.value.format(**v) if step.value and "{" in step.value else v.get(step.value, step.value))} for step in lesson.steps]
+    row["steps"] = [{**asdict(step), "instruction": step.instruction.format(**v), "value": (step.value.format(**v) if step.value and "{" in step.value else step.value)} for step in lesson.steps]
     row["practical_question"], _, row["inspection_route"] = practical_question(lesson, mode)
     row["inspection_api_path"] = inspection_endpoint(lesson) if lesson.workflow.startswith("read_") else None
     return row

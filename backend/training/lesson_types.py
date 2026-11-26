@@ -32,3 +32,15 @@ class Lesson:
     quantity: int = 0
     rejected: int = 0
     global_access: bool = False
+
+
+def input_step(target, instruction, value):
+    return Step(target, instruction, value, "input")
+
+
+def select_step(target, instruction, value):
+    return Step(target, instruction, value, "change")
+
+
+def action_step(target, instruction, endpoint=None, status=None):
+    return Step(target, instruction, outcome=endpoint, outcome_status=status)

@@ -1,20 +1,8 @@
 """Catalogue and supplier maintenance, including genuine refusal outcomes."""
-from training.lesson_types import Lesson, Step
+from training.lesson_types import Lesson, Step, input_step, select_step, action_step as save
 
 STOCK = ("inventory_manager", "owner")
 BUY = ("procurement_officer", "owner")
-
-
-def input_step(target, instruction, value):
-    return Step(target, instruction, value, "input")
-
-
-def select_step(target, instruction, value):
-    return Step(target, instruction, value, "change")
-
-
-def save(target, instruction, endpoint, status=None):
-    return Step(target, instruction, outcome=endpoint, outcome_status=status)
 
 
 def lesson(id, module, title, roles, route, situation, concept, example, rule,
@@ -33,13 +21,13 @@ LESSONS = [
         "Check classification and base unit before the first stock transaction. Creating a catalogue item never establishes an opening balance.",
         "Does creating an item add physical stock? yes or no","no","Create the catalogue record only. An opening balance or real receipt is a separate authorized transaction.",(
             Step('[data-training="item-create-open"]',"Open Add item."),
-            select_step('#item-workspace',"Choose F&B.","fnb"),
-            select_step('#item-type',"Choose Ingredient.","ingredient"),
+            select_step('#item-workspace',"Choose F&B.",'{fnb}'),
+            select_step('#item-type',"Choose Ingredient.",'{ingredient}'),
             input_step('#item-sku',"Use the unique SKU TRAIN-OIL.","TRAIN-OIL"),
             input_step('#item-name',"Enter Training cooking oil.","Training cooking oil"),
-            select_step('#item-category',"Choose Training food.","category"),
-            select_step('#item-unit',"Choose TRAIN-L, the litre base unit.","litre"),
-            select_step('#item-location',"Choose Training stockroom.","store"),
+            select_step('#item-category',"Choose Training food.",'{category}'),
+            select_step('#item-unit',"Choose TRAIN-L, the litre base unit.",'{litre}'),
+            select_step('#item-location',"Choose Training stockroom.",'{store}'),
             input_step('#item-minimum',"Set the minimum to {quantity} litres.","{quantity}"),
             input_step('#item-cost',"Enter PHP 150 for one litre, not the value of all stock.","150"),
             save('[data-training="item-create-save"]',"Review the unit and classification, then create the item.","/items")),quantity=12),
@@ -73,9 +61,9 @@ LESSONS = [
         "One kg is 1,000 g. One g is 0.001 kg. Swapping the direction without changing the multiplier can create a million-fold error.",
         "Read a conversion as a full sentence before saving: one From unit equals multiplier To units.",
         "How many grams are in one kilogram?","1000","1 kg equals 1,000 g. The reverse is 1 g equals 0.001 kg.",(
-            select_step('[data-training="conversion-form"] [name="from_unit_id"]',"Choose {conversion_from_name} as the From unit.","conversion_from"),
+            select_step('[data-training="conversion-form"] [name="from_unit_id"]',"Choose {conversion_from_name} as the From unit.",'{conversion_from}'),
             input_step('[data-training="conversion-form"] [name="multiplier"]',"Enter {conversion_multiplier} as the multiplier.","{conversion_multiplier}"),
-            select_step('[data-training="conversion-form"] [name="to_unit_id"]',"Choose {conversion_to_name} as the To unit.","conversion_to"),
+            select_step('[data-training="conversion-form"] [name="to_unit_id"]',"Choose {conversion_to_name} as the To unit.",'{conversion_to}'),
             save('[data-training="conversion-save"]',"Read the direction again, then add the conversion.","/items/training-chicken/conversions"))),
     lesson("set-location-policy","C","Set a stockroom-specific replenishment policy",STOCK,"/items/{chicken}",
         "For the training stockroom, set chicken minimum to {quantity} kg, reorder quantity to 20 kg, maximum to 60 kg and count interval to 7 days. Leave supplier override blank. Your location assignment permits this stockroom.",
@@ -83,7 +71,7 @@ LESSONS = [
         "A kitchen can have a lower minimum than the main stockroom. Changing the kitchen policy should not silently change the stockroom's policy.",
         "Check the location and units. A replenishment policy never creates a purchase order or changes physical stock by itself.",
         "Does saving a location policy automatically order supplies? yes or no","no","The policy supports planning. A purchase still needs the actual request and approval workflow.",(
-            select_step('[data-training="policy-form"] [name="location_id"]',"Choose Training stockroom.","store"),
+            select_step('[data-training="policy-form"] [name="location_id"]',"Choose Training stockroom.",'{store}'),
             input_step('[data-training="policy-form"] [name="minimum_stock"]',"Enter a minimum of {quantity} kg.","{quantity}"),
             input_step('[data-training="policy-form"] [name="reorder_quantity"]',"Enter a reorder quantity of 20 kg.","20"),
             input_step('[data-training="policy-form"] [name="maximum_stock"]',"Enter a maximum of 60 kg.","60"),
@@ -149,7 +137,7 @@ LESSONS = [
         "A lead time of 3 days is a planning estimate. MOQ 2 means the supplier's minimum order quantity, not the amount currently in stock.",
         "Check the intended item, supplier, units and price. Save commercial references without inventing stock.",
         "Does a preferred supplier remove purchase approval requirements? yes or no","no","Preferred is a planning preference. Actual approval and quantity controls still apply.",(
-            select_step('[data-training="supplier-link-form"] [name="supplier_id"]',"Choose Training Valley Foods.","supplier"),
+            select_step('[data-training="supplier-link-form"] [name="supplier_id"]',"Choose Training Valley Foods.",'{supplier}'),
             input_step('[data-training="supplier-link-form"] [name="supplier_sku"]',"Enter TRAIN-KIT as the supplier item code.","TRAIN-KIT"),
             input_step('[data-training="supplier-link-form"] [name="last_price"]',"Enter PHP 50 for one kit.","50"),
             input_step('[data-training="supplier-link-form"] [name="lead_time_days"]',"Enter 3 delivery days.","3"),

@@ -19,6 +19,8 @@ async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,st
   for(let index=startIndex;index<lesson.steps.length;index++){
     const step=lesson.steps[index];
     await expect(page.locator(".inventory-training-coach-label")).toContainText(`Action ${index+1} of`);
+    await expect(page.locator('.inventory-training-current-instruction')).toHaveText(step.instruction);
+    await expect(page.locator('.inventory-training-current-instruction')).toBeInViewport({ratio:0.95});
     const target=page.locator(step.target).first();
     await expect(target).toBeVisible();
     await expect(target).toHaveAttribute("data-inventory-training-focus","true");
@@ -115,7 +117,65 @@ test("an older tab cannot post into practice started in a different tab",async({
   await other.close();
 });
 
+test("a newly created blind count resumes its real record and unfinished line",async({page})=>{
+  const{lesson}=await prepare(page,"start-full-count","counter");
+  await page.locator('[data-training="count-create-open"]').click();
+  await page.locator('#count-location').selectOption("training-store");
+  await page.locator('#count-notes').fill(lesson.reference);
+  await page.locator('[data-training="count-create-save"]').click();
+  await expect(page).toHaveURL(/\/counts\/[a-f0-9-]{36}$/);
+  const record=new URL(page.url()).pathname;
+  await page.getByRole("spinbutton",{name:"Counted quantity for Chicken (kg)",exact:true}).fill(String(lesson.quantity));
+  await Promise.all([page.waitForResponse(response=>response.url().endsWith('/entries')&&response.status()===200),page.locator('[data-training="count-save"]').click()]);
+  await page.getByRole("link",{name:"← Training course",exact:true}).click();
+  const resume=page.getByRole("link",{name:"Continue practice →",exact:true});
+  await expect(resume).toHaveAttribute("href",record);
+  await resume.click();
+  await expect(page).toHaveURL(new RegExp(record+'$'));
+  await expect(page.getByRole("columnheader",{name:"Snapshot",exact:true})).toHaveCount(0);
+  await guide(page,lesson,undefined,5);
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+  await expect(page.getByRole("columnheader",{name:"Snapshot",exact:true})).toHaveCount(0);
+});
+
+test("a correctly prefilled transfer amount can be reviewed without retyping",async({page})=>{
+  const{lesson}=await prepare(page,"receive-controlled-transfer","inventory_manager");
+  await page.locator('[data-training="transfer-receive-training-transfer"]').click();
+  const amount=page.getByRole("spinbutton",{name:"Accepted transfer quantity for Chicken (kg)",exact:true});
+  await amount.focus();
+  await amount.press("Tab");
+  await expect(page.locator('.inventory-training-coach-label')).toContainText("Action 3 of");
+  await page.locator('[data-training="transfer-receipt-save"]').click();
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+});
+
 for(const[lesson,role,answer]of[
+  ["reserve-event-stock","inventory_manager","no"],
+  ["reservation-shortage","inventory_manager","no"],
+  ["create-controlled-transfer","inventory_manager","no"],
+  ["dispatch-controlled-transfer","inventory_manager","no"],
+  ["receive-controlled-transfer","inventory_manager","no"],
+  ["transfer-receipt-variance","inventory_manager","no"],
+  ["cancel-draft-transfer","inventory_manager","no"],
+  ["correct-transfer-destination","inventory_manager","no"],
+  ["transfer-stock-became-unavailable","inventory_manager","no"],
+  ["transfer-transit-scope-required","inventory_manager","no"],
+  ["count-multiple-units","counter","2.5"],
+  ["start-full-count","counter","no"],
+  ["save-incomplete-count","counter","no"],
+  ["request-count-recheck","inventory_manager","no"],
+  ["stale-count-snapshot","counter","no"],
+  ["cancel-unused-count","inventory_manager","no"],
+  ["approved-opening-correction","inventory_manager","no"],
+  ["create-traceable-lot","inventory_manager","no"],
+  ["tracked-opening-receipt","inventory_manager","no"],
+  ["issue-specific-lot","inventory_manager","no"],
+  ["expired-lot-writeoff","inventory_manager","no"],
+  ["lot-quantity-shortage","inventory_manager","no"],
   ["create-item","inventory_manager","no"],
   ["edit-item-reorder","inventory_manager","no"],
   ["add-item-barcode","inventory_manager","no"],
@@ -158,6 +218,10 @@ for(const[lesson,role,answer]of[
     await coach.getByRole("button",{name:"Check my work",exact:true}).click();
     await expect(coach.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
     await page.screenshot({path:`training-test-results/${info.project.name}-${lesson}-passed.png`});
+    if(lesson==="transfer-receipt-variance"){
+      await page.getByRole("button",{name:"Hide guide",exact:true}).click();
+      await page.getByRole("link",{name:"TRAIN-TRANSFER",exact:true}).locator("xpath=ancestor::tr").screenshot({path:`training-test-results/${info.project.name}-transfer-variance-record.png`});
+    }
   });
 }
 

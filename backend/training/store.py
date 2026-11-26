@@ -1,6 +1,7 @@
 """Small versioned registry; transactional updates preserve attempt history."""
 from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import sqlite3
 
@@ -36,6 +37,11 @@ class Store:
                 versions = [2]
             if versions != [2]:
                 raise RuntimeError("Unsupported training registry schema; migration required")
+            db.executescript('''
+              CREATE INDEX IF NOT EXISTS training_event_attempt_kind ON events(attempt_id,kind,id);
+              CREATE INDEX IF NOT EXISTS training_history_learner ON attempts(learner_id,started_at);
+            ''')
+        if os.name=="posix":self.path.chmod(0o600)
 
     @contextmanager
     def connect(self):

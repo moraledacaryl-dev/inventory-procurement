@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import { trainingEnabled, type TrainingLesson, type TrainingProfile } from "../lib/inventory-training";
+import { trainingEnabled, trainingOutcomeMatches, type TrainingLesson, type TrainingProfile } from "../lib/inventory-training";
 import { readTrainingReceiptDraft } from "../lib/training-receiving-draft";
 import { restoreCatalogueCheckpoint } from "../lib/training-form-draft";
 import {rememberTrainingAttempt,trainingAttempt} from "../lib/training-session";
@@ -69,6 +69,8 @@ export function InventoryTrainingCoach() {
   const lesson=profile?.lesson;
   const guided=profile?.attempt?.mode==="guided"||showHint;
   const current=guided?lesson?.steps[step]:undefined;
+  const showTaskAmount=lesson&&["issue","receipt","transfer","count","approve_count","receiving","return","waste","purchase_order","approve_po","production","staff_meal","requisition"].includes(lesson.workflow);
+  useEffect(()=>{coachRef.current?.scrollTo({top:0,behavior:"instant"})},[current?.instruction]);
   const targetSelector=current?.target;
   useEffect(()=>{
     if(!visible)return;
@@ -141,20 +143,24 @@ export function InventoryTrainingCoach() {
     function businessOutcome(event:Event){
       const detail=(event as CustomEvent<{path:string;method:string;status:number}>).detail;
       const expected=current?.outcome_status;
-      if(current?.outcome&&detail.path===current.outcome&&detail.method!=="GET"&&(expected?detail.status===expected:detail.status>=200&&detail.status<300))advance();
+      if(current?.outcome&&trainingOutcomeMatches(current.outcome,detail.path)&&detail.method!=="GET"&&(expected?detail.status===expected:detail.status>=200&&detail.status<300))advance();
     }
     function observe(event:Event){
       const target=event.target as HTMLElement;
       const node=target?.closest?.(current!.target);
       if(!node||node instanceof HTMLButtonElement&&node.disabled)return;
-      if(event.type==="focusout"&&current!.value!==null){
+      const matchesValue=()=>{
         const input=node as HTMLInputElement;
-        if(input.value!==String(current!.value))setInputMessage(current!.instruction+" Check the value and unit or code in this task before continuing.");
+        if(input instanceof HTMLInputElement&&input.type==="number")return input.value.trim()!==""&&Number.isFinite(Number(input.value))&&Number(input.value)===Number(current!.value);
+        return input.value===String(current!.value);
+      };
+      if(event.type==="focusout"&&current!.value!==null){
+        if(!matchesValue())setInputMessage(current!.instruction+" Check the value and unit or code in this task before continuing.");
         else if(!current!.outcome)advance();
         return;
       }
       if(event.type!==current!.event)return;
-      if(current!.value!==null&&(node as HTMLInputElement).value!==String(current!.value))return;
+      if(current!.value!==null&&!matchesValue())return;
       if(!current!.outcome)advance();
     }
     document.addEventListener("click",observe,true);document.addEventListener("input",observe,true);document.addEventListener("change",observe,true);document.addEventListener("focusout",observe,true);
@@ -176,11 +182,11 @@ export function InventoryTrainingCoach() {
       {error&&<div role="alert"><p>{error}</p><button onClick={()=>void load()}>Reconnect to practice</button></div>}
       {!lesson&&<Link href="/training">Open your training course</Link>}
       {lesson&&!passed&&<>
-        <p className="inventory-training-situation">{lesson.situation}</p>
-        {current?<><h3>Your turn</h3><p>{current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. Progress saves after each action; the server checks the final result.</p></>:<>
+        {!current&&<p className="inventory-training-situation">{lesson.situation}</p>}
+        {current?<><h3>Your turn</h3><p className="inventory-training-current-instruction">{current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<details key={step} className="inventory-training-context"><summary>Review the situation</summary><p>{lesson.situation}</p></details><button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. If an entered value is already correct, review it and move to the next field. Progress saves after each action; the server checks the final result.</p></>:<>
           <p>{lesson.practical_question?"Inspect the record in the application, then enter what it shows.":"Complete the task in the application, then check your saved result below."}</p>
           {lesson.practical_question&&<><Link href={lesson.inspection_route}>Open the record to inspect →</Link><label>{lesson.practical_question}<input value={observation} onChange={event=>setObservation(event.target.value)} autoComplete="off"/></label></>}
-          {!lesson.practical_question&&<p>Task amount: {lesson.quantity}{lesson.workflow==="receiving"?` arrived; ${lesson.rejected} rejected`:""}. {lesson.workflow==="production"?"Use 3 kg of chicken; record the actual usable output.":""}{lesson.workflow==="purchase_order"?"Use Training Valley Foods, Training stockroom and PHP 200 per kg.":""}{lesson.workflow==="receiving"?`Delivery reference: ${lesson.reference}`:""}</p>}
+          {!lesson.practical_question&&showTaskAmount&&<p>Task amount: {lesson.quantity}{lesson.workflow==="receiving"?` arrived; ${lesson.rejected} rejected`:""}. {lesson.workflow==="production"?"Use 3 kg of chicken; record the actual usable output.":""}{lesson.workflow==="purchase_order"?"Use Training Valley Foods, Training stockroom and PHP 200 per kg.":""}{lesson.workflow==="receiving"?`Delivery reference: ${lesson.reference}`:""}</p>}
           <label>{lesson.question}<input value={answer} onChange={event=>setAnswer(event.target.value)} autoComplete="off" placeholder="Type your answer"/></label>
           {!!lesson.practical_question&&!inspected&&<p role="status">Open the record and wait for it to finish loading before checking your answer.</p>}
           <button className="inventory-training-check" disabled={busy||!answer.trim()||!!lesson.practical_question&&(!observation.trim()||!inspected)} onClick={()=>void check()}>{busy?"Checking saved result…":"Check my work"}</button>

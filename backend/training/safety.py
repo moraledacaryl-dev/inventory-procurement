@@ -28,6 +28,7 @@ def configure(root: Path) -> Path:
     # An adjacent production .env must never be read by BaseSettings.
     from app.core.config import Settings
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name=="posix":root.chmod(0o700)
     marker = root / "training-only.json"
     expected = {"application": "hidden-oasis-inventory-training", "schema": 1}
     if marker.exists():

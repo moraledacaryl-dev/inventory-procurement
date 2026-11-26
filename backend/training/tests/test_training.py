@@ -29,6 +29,26 @@ def check(client, lesson):
     return client.post("/api/v1/training/check", json={"answer": BY_ID[lesson].answer}).json()
 
 
+def test_literal_stock_movement_option_is_not_replaced_by_a_fixture_id():
+    from training.curriculum import BY_ID
+    from training.scenarios import public_lesson
+    lesson=public_lesson(BY_ID["transfer-stock"])
+    assert next(step["value"] for step in lesson["steps"] if step["target"]=="#stock-kind")=="transfer"
+    assert next(step["value"] for step in lesson["steps"] if step["target"]=='[name="destination"]')=="training-kitchen"
+
+
+@pytest.mark.skipif(os.name!="posix",reason="POSIX mode bits; Windows uses its user-profile ACLs")
+def test_precreated_training_directory_and_progress_are_private(tmp_path):
+    root=tmp_path/"inventory-training"
+    root.mkdir(mode=0o755)
+    root.chmod(0o755)
+    script="from pathlib import Path; from training.safety import configure; from training.store import Store; root=configure(Path("+repr(str(root))+")); Store(root); assert root.stat().st_mode & 0o777 == 0o700; assert (root/'progress.sqlite').stat().st_mode & 0o777 == 0o600; assert (root/'session-key').stat().st_mode & 0o777 == 0o600"
+    env={k:v for k,v in os.environ.items() if k not in {"DATABASE_URL","JWT_SECRET","BOOTSTRAP_OWNER_PASSWORD","INTERNAL_API_URL","NEXT_PUBLIC_API_URL"} and "INTEGRATION" not in k and not k.startswith(("PGHOST","PGDATABASE","PGUSER","PGPASSWORD"))}
+    env["APP_ENV"]="training"
+    result=subprocess.run([sys.executable,"-c",script],capture_output=True,text=True,env=env)
+    assert result.returncode==0,result.stderr
+
+
 @pytest.mark.parametrize("lesson", ["full-delivery", "partial-delivery", "damaged-delivery", "expired-delivery", "fully-rejected", "quantity-discrepancy", "wrong-item", "later-delivery", "check-order", "resume-delivery"])
 def test_receiving_outcomes(learner, lesson):
     result = begin(learner, lesson, "receiver")

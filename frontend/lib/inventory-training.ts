@@ -28,3 +28,11 @@ export function mastery(history: TrainingAttempt[], lesson: TrainingLesson, role
 }
 
 export const trainingEnabled = process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1";
+
+export function trainingOutcomeMatches(expected:string,actual:string) {
+  if(!expected.includes("*"))return expected===actual;
+  const parts=expected.split("*");
+  if(parts.length!==2||!actual.startsWith(parts[0])||!actual.endsWith(parts[1]))return false;
+  const id=actual.slice(parts[0].length,actual.length-parts[1].length);
+  return /^[a-f0-9-]{36}$/.test(id);
+}

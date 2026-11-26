@@ -31,15 +31,15 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `PATCH /classification/items/{item_id}` | `classification.py` | items.* | Further practical lesson required |
 | `POST /classification/items/bulk-assign` | `classification.py` | items.* | Further practical lesson required |
 | `GET /inventory-controls/adjustments` | `controlled_inventory.py` | inventory.read | Supporting UI / record inspection |
-| `POST /inventory-controls/adjustments` | `controlled_inventory.py` | inventory.* | Further practical lesson required |
+| `POST /inventory-controls/adjustments` | `controlled_inventory.py` | inventory.* | Assessed real business/control outcome |
 | `GET /inventory-controls/waste` | `controlled_inventory.py` | inventory.read | Supporting UI / record inspection |
 | `POST /inventory-controls/waste` | `controlled_inventory.py` | inventory.* | Assessed business outcome |
 | `GET /transfer-orders/workspace` | `controlled_inventory.py` | inventory.read | Supporting UI / record inspection |
 | `GET /transfer-orders/{transfer_id}/detail` | `controlled_inventory.py` | inventory.read | Supporting UI / record inspection |
-| `POST /transfer-orders/{transfer_id}/dispatch` | `controlled_inventory.py` | inventory.* | Further practical lesson required |
-| `POST /transfer-orders/{transfer_id}/receive` | `controlled_inventory.py` | inventory.* | Further practical lesson required |
-| `POST /transfer-orders/{transfer_id}/cancel` | `controlled_inventory.py` | inventory.* | Further practical lesson required |
-| `POST /transfer-orders/{transfer_id}/receive` | `controlled_inventory_compat.py` | inventory.* | Further practical lesson required |
+| `POST /transfer-orders/{transfer_id}/dispatch` | `controlled_inventory.py` | inventory.* | Assessed real business/control outcome |
+| `POST /transfer-orders/{transfer_id}/receive` | `controlled_inventory.py` | inventory.* | Assessed real business/control outcome |
+| `POST /transfer-orders/{transfer_id}/cancel` | `controlled_inventory.py` | inventory.* | Assessed real business/control outcome |
+| `POST /transfer-orders/{transfer_id}/receive` | `controlled_inventory_compat.py` | inventory.* | Assessed real business/control outcome |
 | `GET /dashboard/summary` | `dashboard.py` | inventory.read | Supporting UI / record inspection |
 | `GET /dashboard/valuation-history` | `dashboard.py` | inventory.read | Supporting UI / record inspection |
 | `GET /dashboard/exceptions` | `dashboard_exceptions.py` | inventory.read | Supporting UI / record inspection |
@@ -51,9 +51,9 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /counts/{count_id}/detail` | `guided_counts.py` | counts.read | Supporting UI / record inspection |
 | `PUT /counts/{count_id}/entries` | `guided_counts.py` | counts.create | Assessed business outcome |
 | `POST /counts/{count_id}/submit` | `guided_counts.py` | counts.submit | Assessed business outcome |
-| `POST /counts/{count_id}/recount` | `guided_counts.py` | counts.approve | Further practical lesson required |
+| `POST /counts/{count_id}/recount` | `guided_counts.py` | counts.approve | Assessed real business/control outcome |
 | `POST /counts/{count_id}/approve-guided` | `guided_counts.py` | counts.approve | Assessed business outcome |
-| `POST /counts/{count_id}/cancel-guided` | `guided_counts.py` | counts.approve | Further practical lesson required |
+| `POST /counts/{count_id}/cancel-guided` | `guided_counts.py` | counts.approve | Assessed real business/control outcome |
 | `GET /health` | `health.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /ready` | `health.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /categories` | `inventory.py` | items.read | Supporting UI / record inspection |
@@ -73,7 +73,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /stock/issues` | `inventory.py` | inventory.* | Assessed business outcome |
 | `POST /stock/transfers` | `inventory.py` | inventory.* | Assessed business outcome |
 | `POST /stock/adjustments` | `inventory.py` | inventory.* | Further practical lesson required |
-| `POST /counts` | `inventory.py` | counts.create | Further practical lesson required |
+| `POST /counts` | `inventory.py` | counts.create | Assessed real business/control outcome |
 | `GET /counts` | `inventory.py` | counts.read | Supporting UI / record inspection |
 | `GET /counts/{count_id}/worksheet` | `inventory.py` | counts.read | Supporting UI / record inspection |
 | `POST /counts/{count_id}/post` | `inventory.py` | counts.submit | Further practical lesson required |
@@ -87,18 +87,18 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /item-location-settings` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
 | `POST /item-location-settings` | `inventory_operations.py` | inventory.* | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /lots` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /lots` | `inventory_operations.py` | inventory.* | Further practical lesson required |
+| `POST /lots` | `inventory_operations.py` | inventory.* | Assessed real business/control outcome |
 | `GET /lot-balances` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /lot-transactions` | `inventory_operations.py` | inventory.* | Further practical lesson required |
+| `POST /lot-transactions` | `inventory_operations.py` | inventory.* | Assessed real business/control outcome |
 | `GET /availability` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /reservations` | `inventory_operations.py` | inventory.* | Further practical lesson required |
-| `POST /reservations/{reservation_id}/release` | `inventory_operations.py` | inventory.* | Further practical lesson required |
+| `POST /reservations` | `inventory_operations.py` | inventory.* | Assessed real business/control outcome |
+| `POST /reservations/{reservation_id}/release` | `inventory_operations.py` | inventory.* | API-only; no employee UI in current source. Explicit exclusion until upstream UI exists |
 | `GET /transfer-orders` | `inventory_operations.py` | inventory.read | Supporting UI / record inspection |
-| `POST /transfer-orders` | `inventory_operations.py` | inventory.* | Further practical lesson required |
-| `POST /transfer-orders/{transfer_id}/dispatch` | `inventory_operations.py` | inventory.* | Further practical lesson required |
-| `POST /transfer-orders/{transfer_id}/receive` | `inventory_operations.py` | inventory.* | Further practical lesson required |
+| `POST /transfer-orders` | `inventory_operations.py` | inventory.* | Assessed real business/control outcome |
+| `POST /transfer-orders/{transfer_id}/dispatch` | `inventory_operations.py` | inventory.* | Assessed real business/control outcome |
+| `POST /transfer-orders/{transfer_id}/receive` | `inventory_operations.py` | inventory.* | Assessed real business/control outcome |
 | `GET /cycle-count-schedules` | `inventory_operations.py` | counts.create | Supporting UI / record inspection |
-| `POST /cycle-count-schedules` | `inventory_operations.py` | counts.create | Further practical lesson required |
+| `POST /cycle-count-schedules` | `inventory_operations.py` | counts.create | API-only; no current employee schedule editor. Item policy interval is taught separately |
 | `GET /reports/valuation` | `inventory_operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /reports/aging` | `inventory_operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /reports/expiry` | `inventory_operations.py` | reports.read | Supporting UI / record inspection |

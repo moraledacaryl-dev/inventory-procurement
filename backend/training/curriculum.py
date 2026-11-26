@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Literal
 from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.26.3"
+VERSION = "2026.11.26.4"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
@@ -31,8 +31,8 @@ def stock_steps(action="issue"):
     steps = [
         s('[data-training="stock-open"]', "Open Record a stock movement."),
         s('#stock-kind', "Choose {action_label}.", action, "change"),
-        s('[name="location"]', "Choose TRAIN-STORE — Training stockroom.", "store", "change"),
-        s('[name="item"]', "Choose {practice_name}.", "practice_item", "change"),
+        s('[name="location"]', "Choose TRAIN-STORE — Training stockroom.", '{store}', "change"),
+        s('[name="item"]', "Choose {practice_name}.", '{practice_item}', "change"),
         s('[name="quantity"]', "Enter {quantity} kg. Use the amount in the situation.", "{quantity}", "input"),
         s('[name="reason"]', "Enter {movement_reason} as the reason.", "{movement_reason}", "input"),
         s('[data-training="stock-review"]', "Check the item, location and quantity before posting."),
@@ -44,7 +44,7 @@ def stock_steps(action="issue"):
 
 
 RECEIPT_STEPS = (
-    s('[aria-label="Purchase order"]', "Choose TRAIN-PO — the order from Training Valley Foods.", "po", "change"),
+    s('[aria-label="Purchase order"]', "Choose TRAIN-PO — the order from Training Valley Foods.", '{po}', "change"),
     s('[data-training="receive-next"]', "Continue to count the delivery."),
     s('[aria-label="Arrived today for Chicken (kg)"]', "Enter {quantity} for the chicken that arrived today.", "{quantity}", "input"),
     s('[aria-label="Rejected quantity for Chicken (kg)"]', "Enter {rejected} rejected. Accepted is arrived minus rejected.", "{rejected}", "input"),
@@ -251,20 +251,20 @@ for ident, title, qty, rejected, situation in _deliveries:
 
 EXTRA_STEPS = {
     "waste": (s('[data-training="waste-open"]', "Open Waste and spoilage."),
-        s('#waste-item', "Choose the chicken item.", "chicken", "change"),
-        s('#waste-location', "Choose Training stockroom.", "store", "change"),
+        s('#waste-item', "Choose the chicken item.", '{chicken}', "change"),
+        s('#waste-location', "Choose Training stockroom.", '{store}', "change"),
         s('#waste-reason', "Choose Spoilage as the cause.", "spoilage", "change"),
         s('#waste-quantity', "Enter the {quantity} kg that spoiled.", "{quantity}", "input"),
         s('[data-training="waste-post"]', "Check the cause and quantity, then record the write-off.")),
     "purchase_order": (s('#purchase-tab-manual', "For this exercise, your manager authorized a manual order. Open Manual order."),
-        s('[aria-label="Supplier"]', "Choose Training Valley Foods.", "supplier", "change"),
-        s('[aria-label="Delivery location"]', "Choose Training stockroom.", "store", "change"),
-        s('[aria-label="Purchase order line 1 item"]', "Choose Chicken (kg).", "chicken", "change"),
+        s('[aria-label="Supplier"]', "Choose Training Valley Foods.", '{supplier}', "change"),
+        s('[aria-label="Delivery location"]', "Choose Training stockroom.", '{store}', "change"),
+        s('[aria-label="Purchase order line 1 item"]', "Choose Chicken (kg).", '{chicken}', "change"),
         s('[aria-label="Purchase order line 1 quantity"]', "Order {quantity} kg.", "{quantity}", "input"),
         s('[aria-label="Purchase order line 1 unit price"]', "Enter PHP 200 per kg.", "200", "input"),
         s('[data-training="po-save"]', "Review the order and save the draft. This does not add stock.")),
     "return": (s('[data-training="return-open"]', "Open Return accepted stock to supplier."),
-        s('[data-training="return-po"]', "Choose TRAIN-PO, the original order.", "po", "change"),
+        s('[data-training="return-po"]', "Choose TRAIN-PO, the original order.", '{po}', "change"),
         s('[data-training="return-reason"]', "Explain the later quality failure.", "quality failure", "input"),
         s('[aria-label="Quantity to return for Chicken (kg)"]', "Return {quantity} kg of previously accepted stock.", "{quantity}", "input"),
         s('[data-training="return-review"]', "Review the quantity, source order and reason."),
@@ -274,12 +274,12 @@ EXTRA_STEPS = {
         s('[aria-label="Actual total output"]', "The usable output is {quantity} portions with no output rejects. Enter {quantity}.", "{quantity}", "input"),
         s('[data-training="production-post"]', "Check actual ingredients and output, then complete and post.")),
     "staff_meal": (s('[data-training="meal-name"]', "Name this meal Training staff lunch.", "Training staff lunch", "input"),
-        s('[data-training="meal-location"]', "Choose Training stockroom.", "store", "change"),
-        s('#ingredient-0', "Choose Chicken (kg).", "chicken", "change"),
+        s('[data-training="meal-location"]', "Choose Training stockroom.", '{store}', "change"),
+        s('#ingredient-0', "Choose Chicken (kg).", '{chicken}', "change"),
         s('#quantity-0', "Enter the {quantity} kg actually used.", "{quantity}", "input"),
         s('[data-training="meal-preview"]', "Preview the stock and meal cost."),
         s('[data-training="meal-post"]', "Review the preview and post the meal once.")),
-    "requisition": (s('[aria-label="Reorder planning location"]', "Choose Training stockroom and review available stock and on-order quantities.", "store", "change"),
+    "requisition": (s('[aria-label="Reorder planning location"]', "Choose Training stockroom and review available stock and on-order quantities.", '{store}', "change"),
         s('[aria-label="Select TRAIN-CHICKEN for replenishment"]', "Select the chicken replenishment line."),
         s('[data-training="request-department"]', "Enter Kitchen as the requesting department.", "Kitchen", "input"),
         s('[data-training="request-reason"]', "Explain the need: busy weekend.", "busy weekend", "input"),
@@ -295,7 +295,7 @@ for index, lesson in enumerate(LESSONS):
             LESSONS[index] = replace(LESSONS[index], route="/purchasing/orders/{po}")
     elif lesson.workflow == "transfer":
         steps = list(lesson.steps)
-        steps.insert(3, s('[name="destination"]', "Choose Training kitchen as the destination.", "kitchen", "change"))
+        steps.insert(3, s('[name="destination"]', "Choose Training kitchen as the destination.", '{kitchen}', "change"))
         LESSONS[index] = replace(lesson, steps=tuple(steps))
     if lesson.id == "housekeeping-supplies":
         LESSONS[index] = replace(LESSONS[index], steps=tuple(replace(step,instruction=step.instruction.replace(" kg", " kits")) for step in LESSONS[index].steps))
@@ -319,6 +319,8 @@ for index, lesson in enumerate(LESSONS):
 
 from training.catalogue_lessons import LESSONS as CATALOGUE_LESSONS
 LESSONS.extend(CATALOGUE_LESSONS)
+from training.control_lessons import LESSONS as CONTROL_LESSONS
+LESSONS.extend(CONTROL_LESSONS)
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)

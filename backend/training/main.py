@@ -26,7 +26,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     from app.api.deps import SESSION_COOKIE_NAME
     from training.store import Store
     from training.curriculum import BY_ID, LESSONS, VERSION, ROLES, ROLE_NAMES, CAPSTONES
-    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, recover_checkpoint, verify
+    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, recover_checkpoint, resolve_practice_route, verify
 
     store = Store(root)
     app.title = "Hidden Oasis Inventory Training — isolated practice"
@@ -179,6 +179,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         attempt = store.attempt(learner["id"])
         if attempt and attempt["curriculum_version"] != VERSION:
             attempt = None
+        lesson_payload=public_lesson(BY_ID[attempt["lesson_id"]],attempt["mode"]) if attempt and attempt["lesson_id"] in BY_ID else None
         inspected = False
         if attempt and attempt["lesson_id"] in BY_ID:
             path=root / f"attempt-{attempt['id']}.sqlite"
@@ -187,6 +188,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 try:
                     with Session(engine) as business:
                         recovered=recover_checkpoint(business,BY_ID[attempt["lesson_id"]],attempt["mode"],attempt["checkpoint"],store.business_actions(attempt["id"]))
+                        lesson_payload["route"]=resolve_practice_route(business,BY_ID[attempt["lesson_id"]],attempt["mode"])
                     if recovered != attempt["checkpoint"]:
                         attempt["checkpoint"]=recovered
                         with store.connect() as db:
@@ -196,7 +198,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
             with store.connect() as db:
                 inspected = bool(db.execute("SELECT 1 FROM events WHERE attempt_id=? AND kind='record_read' AND json_extract(detail,'$.path')=? LIMIT 1", (attempt["id"], inspection_endpoint(BY_ID[attempt["lesson_id"]]))).fetchone())
         return {"learner": learner, "attempt": attempt,
-            "lesson": public_lesson(BY_ID[attempt["lesson_id"]], attempt["mode"]) if attempt and attempt["lesson_id"] in BY_ID else None,
+            "lesson": lesson_payload,
             "history": store.history(learner["id"]), "version": VERSION, "record_inspected": inspected}
 
     @router.post("/start")
@@ -285,7 +287,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         elif not practical:
             message = evidence.get("correction") or "Check the situation again: use the correct item, location and actual quantities. The saved business result does not yet match. Correct any unposted entries, or reset this practice if an incorrect transaction was already posted."
         else:
-            message = "Your saved result matches the task. " + lesson.rule
+            message = "The application refused the action as expected. Your result matches the task." if lesson.steps and lesson.steps[-1].outcome_status else "Your result matches the task."
         evidence.update(knowledge=knowledge, practical=practical, curriculum_version=VERSION)
         with store.connect() as db:
             if passed:

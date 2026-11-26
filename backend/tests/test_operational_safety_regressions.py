@@ -150,6 +150,8 @@ def test_rejected_delivery_remains_open_until_accepted_replacement(client, legac
     detail = client.get(f"/api/v1/purchase-orders/{po['id']}/detail", headers=headers)
     assert detail.status_code == 200, detail.text
     assert Decimal(detail.json()['summary']['outstanding_value']) == (5 - accepted) * 20
+    assert Decimal(detail.json()['lines'][0]['accepted_quantity']) == accepted
+    assert Decimal(detail.json()['lines'][0]['rejected_quantity']) == 5 - accepted
     # Replay does not double rejected quantity or reduce the replacement need.
     assert client.post(path, headers=headers, json=payload).status_code == 201
     replacement = {'delivery_reference': 'replacement', 'idempotency_key': 'replacement', 'lines': [{

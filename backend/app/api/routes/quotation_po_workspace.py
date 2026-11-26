@@ -355,6 +355,8 @@ def purchase_order_detail(po_id: str, db: Session = Depends(get_db), user: User 
                 "item_name": items[line.item_id].name if line.item_id in items else "Unknown item",
                 "ordered_quantity": str(line.ordered_quantity),
                 "received_quantity": str(line.received_quantity),
+                "accepted_quantity": str(line.fulfilled_quantity),
+                "rejected_quantity": str(line.rejected_quantity),
                 "returned_quantity": str(line.returned_quantity),
                 "outstanding_quantity": str(line.outstanding_quantity),
                 "unit_price": str(line.unit_price),

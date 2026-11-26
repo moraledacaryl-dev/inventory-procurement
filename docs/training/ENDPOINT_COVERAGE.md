@@ -48,7 +48,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /reports/final-assurance.csv` | `final_assurance.py` | reports.read | Supporting UI / record inspection |
 | `GET /counts/workspace` | `guided_counts.py` | counts.read | Supporting UI / record inspection |
 | `GET /counts/locations` | `guided_counts.py` | counts.read | Supporting UI / record inspection |
-| `GET /counts/{count_id}/detail` | `guided_counts.py` | counts.read | Supporting UI / record inspection |
+| `GET /counts/{count_id}/detail` | `guided_counts.py` | counts.read | Assessed: counter fundamentals, blind observations, saved-line recovery, independent approval and posted history; no invented inventory-read permission |
 | `PUT /counts/{count_id}/entries` | `guided_counts.py` | counts.create | Assessed business outcome |
 | `POST /counts/{count_id}/submit` | `guided_counts.py` | counts.submit | Assessed business outcome |
 | `POST /counts/{count_id}/recount` | `guided_counts.py` | counts.approve | Assessed real business/control outcome |
@@ -140,10 +140,10 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /reports/operating-summary` | `pass6_controls.py` | reports.read | Supporting UI / record inspection |
 | `GET /classification/migration-review` | `pass6_controls.py` | inventory.read | Supporting UI / record inspection |
 | `GET /fnb/pos-rules` | `pos_rules.py` | items.read | Supporting UI / record inspection |
-| `POST /fnb/pos-rules/pricing` | `pos_rules.py` | items.* | Further practical lesson required |
-| `PUT /fnb/pos-rules/pricing/{rule_id}` | `pos_rules.py` | items.* | Further practical lesson required |
-| `POST /fnb/pos-rules/modifiers` | `pos_rules.py` | items.* | Further practical lesson required |
-| `PUT /fnb/pos-rules/modifiers/{template_id}` | `pos_rules.py` | items.* | Further practical lesson required |
+| `POST /fnb/pos-rules/pricing` | `pos_rules.py` | items.* | Assessed: approved qualifying/discounted group relationship; unchanged stock and no invented POS synchronization |
+| `PUT /fnb/pos-rules/pricing/{rule_id}` | `pos_rules.py` | items.* | Assessed: deactivate expired rule while retaining its groups, priority and history |
+| `POST /fnb/pos-rules/modifiers` | `pos_rules.py` | items.* | Assessed: reusable optional multi-select pizza add-ons with exact independent prices |
+| `PUT /fnb/pos-rules/modifiers/{template_id}` | `pos_rules.py` | items.* | Assessed: correct approved shared add-on price while preserving option identities and other prices |
 | `GET /integrations/pos/catalog` | `pos_sync.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /integrations/pos/workspace` | `pos_sync.py` | integrations.read | Supporting UI / record inspection |
 | `POST /pos-mappings/{mapping_id}/activate` | `pos_sync.py` | integrations.* | Further practical lesson required |
@@ -186,7 +186,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /production-batches/{batch_id}/execution-detail` | `production_execution.py` | inventory.read | Supporting UI / record inspection |
 | `POST /production-batches/{batch_id}/start` | `production_execution.py` | inventory.* | Assessed business outcome |
 | `POST /production-batches/{batch_id}/execute` | `production_execution.py` | inventory.* | Assessed business outcome |
-| `POST /production-batches/{batch_id}/cancel` | `production_execution.py` | inventory.* | Further practical lesson required |
+| `POST /production-batches/{batch_id}/cancel` | `production_execution.py` | inventory.* | Assessed: planned and started cancellation, required actual material disposition and unchanged stock; dialog retains errors and entries |
 | `GET /property/balances` | `property_operations.py` | inventory.read | Supporting UI / record inspection |
 | `GET /property/movements` | `property_operations.py` | inventory.read | Supporting UI / record inspection |
 | `POST /property/movements` | `property_operations.py` | inventory.* | Assessed: clean issue, used-linen laundry handover and verified clean return; conserve condition/location totals |
@@ -231,7 +231,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /integrations/staff/employees` | `staff_identity_integration.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /staff-meals` | `staff_meals.py` | inventory.read | Supporting UI / record inspection |
 | `GET /staff-meals/{meal_id}` | `staff_meals.py` | inventory.read | Supporting UI / record inspection |
-| `POST /staff-meals/preview` | `staff_meals.py` | inventory.read | Further practical lesson required |
+| `POST /staff-meals/preview` | `staff_meals.py` | inventory.read | Assessed supporting step: actual ingredient/cost preview before staff-meal posting; linked preparation capstone prevents double raw consumption |
 | `POST /staff-meals` | `staff_meals.py` | inventory.* | Assessed business outcome |
 | `POST /staff-meals/{meal_id}/reverse` | `staff_meals.py` | inventory.* | Assessed: authorized duplicate reversal, linked original and idempotent correction |
 | `GET /stock/ledger` | `stock_ledger.py` | inventory.read | Supporting UI / record inspection |

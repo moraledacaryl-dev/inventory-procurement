@@ -19,6 +19,8 @@ from training.property_scenarios import property_values, prepare_property, after
 from training.connected_scenarios import prepare_connected, after_prepare_connected, verify_connected
 from training.capstone_scenarios import capstone_values, prepare_capstone, after_prepare_capstone, verify_capstone, recover_capstone_checkpoint, resolve_capstone_route
 
+from training.extensions_scenarios import extension_values, prepare_extensions, after_prepare_extensions, verify_extensions
+
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "reviewer", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "each", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
 
@@ -30,7 +32,7 @@ def values(lesson: Lesson, mode: str):
         quantity = max(1, quantity - 2)
     rejected = min(lesson.rejected, quantity)
     base={"guided":24,"assisted":27,"independent":31}[mode]
-    return {**IDS, **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), **capstone_values(lesson,mode), "quantity": quantity, "rejected": rejected,
+    return {**IDS, **extension_values(lesson,mode), **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), **capstone_values(lesson,mode), "quantity": quantity, "rejected": rejected,
         "practice_item": IDS["amenities"] if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
@@ -149,6 +151,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         prepare_property(db,lesson,v)
         prepare_connected(db,lesson,v)
         prepare_capstone(db,lesson,v)
+        prepare_extensions(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
         after_prepare_procurement(db,lesson,v)
@@ -156,6 +159,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         after_prepare_property(db,lesson,v)
         after_prepare_connected(db,lesson,v)
         after_prepare_capstone(db,lesson,v)
+        after_prepare_extensions(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -174,6 +178,7 @@ def practical_question(lesson, mode):
     v = values(lesson, mode)
     if lesson.workflow=="read_procurement":return procurement_inspection(lesson,mode,v)
     tasks={
+        "counter-foundations":("What unit is shown in the Chicken (kg) item name on TRAIN-COUNT?","kg",f"/counts/{IDS['count']}"),
         "find-your-work":("On Home, how many pending purchase orders are shown?","1","/dashboard"),
         "catalogue-units":("In this item's conversions, what multiplier converts kilograms to grams?","1000",f"/items/{IDS['chicken']}"),
         "expiry-rotation":("In the expiry queue, how many kg are shown for TRAIN-EXPIRY?",str({"guided":5,"assisted":6,"independent":7}[mode]),"/inventory-operations"),
@@ -201,7 +206,7 @@ def inspection_endpoint(lesson, db=None):
             po=db.scalar(select(PurchaseOrder).where(PurchaseOrder.quotation_id=="training-quote-fast")) if db is not None else None
             return f"/api/v1/purchase-orders/{po.id}/detail" if po else "/api/v1/procurement/quotation-workspace"
         return "/api/v1/purchase-orders/training-po/detail"
-    endpoints={"find-your-work":"/api/v1/dashboard/summary", "catalogue-units":f"/api/v1/items/{IDS['chicken']}/configuration", "expiry-rotation":"/api/v1/reports/expiry", "menu-mapping":"/api/v1/fnb/menu", "asset-maintenance":"/api/v1/assets", "accounting-proof":"/api/v1/integrations/accounting/workspace", "connected-work":"/api/v1/integrations/operations/workspace", "management-review":"/api/v1/supplier-performance", "admin-controls":"/api/v1/access-scopes"}
+    endpoints={"counter-foundations":"/api/v1/counts/training-count/detail", "find-your-work":"/api/v1/dashboard/summary", "catalogue-units":f"/api/v1/items/{IDS['chicken']}/configuration", "expiry-rotation":"/api/v1/reports/expiry", "menu-mapping":"/api/v1/fnb/menu", "asset-maintenance":"/api/v1/assets", "accounting-proof":"/api/v1/integrations/accounting/workspace", "connected-work":"/api/v1/integrations/operations/workspace", "management-review":"/api/v1/supplier-performance", "admin-controls":"/api/v1/access-scopes"}
     if lesson.id in endpoints:return endpoints[lesson.id]
     return {"read_stock":"/api/v1/availability", "read_supplier":f"/api/v1/suppliers/{IDS['supplier']}/detail", "read_recipe":f"/api/v1/recipes/{IDS['recipe']}/costing-detail"}.get(lesson.workflow)
 
@@ -212,6 +217,8 @@ def read_only_unchanged(db,actor_id):
 
 def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple[bool, dict]:
     v = values(lesson, mode)
+    if lesson.workflow.startswith("extended_"):
+        return verify_extensions(db,lesson,v,business_actions)
     if lesson.workflow.startswith("catalogue_"):
         return verify_catalogue(db,lesson,v,business_actions)
     if lesson.workflow.startswith("control_"):

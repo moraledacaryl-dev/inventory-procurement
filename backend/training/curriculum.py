@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Literal
 from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.26.8"
+VERSION = "2026.11.26.9"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
@@ -331,6 +331,10 @@ from training.connected_lessons import LESSONS as CONNECTED_LESSONS
 LESSONS.extend(CONNECTED_LESSONS)
 from training.capstone_lessons import build_capstones
 LESSONS.extend(build_capstones({lesson.id:lesson for lesson in LESSONS}))
+
+from training.extensions_lessons import LESSONS as EXTENSION_LESSONS
+LESSONS.insert(1,next(lesson for lesson in EXTENSION_LESSONS if lesson.id=="counter-foundations"))
+LESSONS.extend(lesson for lesson in EXTENSION_LESSONS if lesson.id!="counter-foundations")
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)

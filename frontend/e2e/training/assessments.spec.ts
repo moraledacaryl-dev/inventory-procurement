@@ -24,17 +24,19 @@ for(const path_id of ['stockroom','kitchen','cafe','bar','housekeeping','mainten
 }
 
 test('shared skills and multiple duty assignments survive changing courses',async({page},info)=>{
-  await enrol(page,'Fictional multi-duty colleague','housekeeping');await study(page,['available-stock']);
+  const {catalogue}=await enrol(page,'Fictional multi-duty colleague','housekeeping');await study(page,['available-stock']);
+  const housekeeping=catalogue.paths.find(path=>path.id==='housekeeping')!.lessons.length;
+  const kitchen=catalogue.paths.find(path=>path.id==='kitchen')!.lessons.length;
   await page.goto('/training');
-  await expect(page.locator('.training-progress strong')).toHaveText('1 / 9');
+  await expect(page.locator('.training-progress strong')).toHaveText(`1 / ${housekeeping}`);
   await page.locator('summary').filter({hasText:'Practise another training path'}).click();
   await page.getByRole('combobox',{name:'Responsibilities',exact:true}).selectOption('kitchen');
   await page.getByRole('button',{name:'Use this training path',exact:true}).click();
   await expect(page.locator('.training-overview .training-eyebrow')).toHaveText('Kitchen preparation');
-  await expect(page.locator('.training-progress strong')).toHaveText('1 / 14');
-  await page.getByRole('button',{name:'Housekeeping and linen · 1/9',exact:true}).click();
+  await expect(page.locator('.training-progress strong')).toHaveText(`1 / ${kitchen}`);
+  await page.getByRole('button',{name:`Housekeeping and linen · 1/${housekeeping}`,exact:true}).click();
   await expect(page.locator('.training-overview .training-eyebrow')).toHaveText('Housekeeping and linen');
-  await expect(page.locator('.training-progress strong')).toHaveText('1 / 9');
+  await expect(page.locator('.training-progress strong')).toHaveText(`1 / ${housekeeping}`);
   await page.screenshot({path:`training-test-results/${info.project.name}-multiple-duty-courses.png`,fullPage:true});
 });
 

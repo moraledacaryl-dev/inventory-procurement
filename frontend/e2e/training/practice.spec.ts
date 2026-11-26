@@ -268,6 +268,15 @@ for(const[lesson,role,answer]of[
   ["recipe-self-approval","inventory_manager","no"],
   ["retire-obsolete-recipe","inventory_manager","no"],
   ["plan-production-batch","inventory_manager","no"],
+  ["create-conditional-price-rule","inventory_manager","no"],
+  ["deactivate-conditional-price-rule","inventory_manager","no"],
+  ["create-reusable-add-ons","inventory_manager","no"],
+  ["correct-reusable-add-on-price","inventory_manager","no"],
+  ["cancel-unstarted-production","inventory_manager","no"],
+  ["cancel-started-production","inventory_manager","no"],
+  ["issue-cafe-case","inventory_manager","no"],
+  ["issue-bar-volume","inventory_manager","no"],
+
   ["reverse-duplicate-staff-meal","inventory_manager","no"],
   ["create-menu-with-modifier","inventory_manager","no"],
   ["map-pos-product","owner","no"],
@@ -397,6 +406,7 @@ test("an interrupted receiving draft restores quantities and the correct guide c
 });
 
 for(const[id,role,answer,observation]of[
+  ["counter-foundations","counter","no","kg"],
   ["inspect-awarded-order","procurement_officer","no","draft"],
   ["inspect-approved-order-lock","procurement_officer","no","approved"],
   ["inspect-received-order-lock","procurement_officer","no","5"],
@@ -490,4 +500,42 @@ test("linked linen resumes the next handover with its disclosure closed",async({
   await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
   await page.getByRole("button",{name:"Check my work",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+});
+
+
+test("batch cancellation explains missing details inside its dialog",async({page})=>{
+  const {lesson}=await prepare(page,"cancel-started-production","inventory_manager");
+  await page.locator('[data-training="production-cancel"]').click();
+  await page.getByRole("button",{name:"Hide guide",exact:true}).click();
+  const dialog=page.getByRole("alertdialog",{name:"Cancel this production batch?",exact:true});
+  await dialog.getByRole("button",{name:"Cancel batch",exact:true}).click();
+  await expect(dialog.getByRole("alert")).toContainText("Explain the cancellation");
+  await dialog.getByLabel("Batch cancellation reason",{exact:true}).fill("Service plan changed");
+  await dialog.getByRole("button",{name:"Cancel batch",exact:true}).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(dialog.getByLabel("Batch cancellation reason",{exact:true})).toHaveValue("Service plan changed");
+  await dialog.getByLabel("Batch material disposition",{exact:true}).fill("No materials issued; ingredients remain in storage");
+  await dialog.getByRole("button",{name:"Cancel batch",exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+});
+
+test("a stale batch cancellation retains details and shows the actual refusal",async({page})=>{
+  const prepared=await prepare(page,"cancel-started-production","inventory_manager");
+  await page.locator('[data-training="production-cancel"]').click();
+  await page.getByRole("button",{name:"Hide guide",exact:true}).click();
+  const dialog=page.getByRole("alertdialog",{name:"Cancel this production batch?",exact:true});
+  await dialog.getByLabel("Batch cancellation reason",{exact:true}).fill("Service plan changed");
+  await dialog.getByLabel("Batch material disposition",{exact:true}).fill("No materials issued; ingredients remain in storage");
+  const response=await page.request.post("/api/v1/production-batches/training-batch/cancel",{headers:{...headers,"X-Training-Attempt":prepared.attempt_id},data:{reason:"Service plan changed",material_disposition:"No materials issued; ingredients remain in storage"}});
+  expect(response.ok(),await response.text()).toBeTruthy();
+  await dialog.getByRole("button",{name:"Cancel batch",exact:true}).click();
+  await expect(dialog.getByRole("alert")).toContainText("Only open batches can be cancelled");
+  await expect(dialog.getByLabel("Batch material disposition",{exact:true})).toHaveValue("No materials issued; ingredients remain in storage");
+  await dialog.getByRole("button",{name:"Keep batch",exact:true}).click();
+  await page.reload();
+  await expect(page.locator('[data-training="production-cancel"]')).toHaveCount(0);
 });

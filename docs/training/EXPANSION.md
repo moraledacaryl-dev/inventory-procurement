@@ -167,3 +167,10 @@ Staff meals now record four actual servings and inspect cost per serving. A new 
 The administrator-only recovery utility verifies a stopped training-state copy and restores only into an absent isolated target. A separate process proves preservation of the original posted issue, six attempts, signed session, frozen grade and certificate. It rejects corrupt or unexpected files and creates no fake business BackupRecord. See RECOVERY.md for the exact private-storage procedure and platform verification limits.
 
 GitHub checkpoint 756b40d passed seven complete workflows and all 364 native Windows browser checks. Its macOS job passed 363/364 and the pre-use signature check; the interrupted draft test typed later fields before their guide actions were active under CPU throttling. The test now waits for each actual highlighted field before typing, retains slower CPU and lost-checkpoint fault injection, and still verifies the exact saved name before reload. This correction requires its own complete native run; no failed run is described as a release pass.
+
+
+## Receiving scope and native Windows recovery correction — 27 November
+
+The similar-order fixture previously placed its decoy in another location, so the receiver could not see both choices as instructed. Both approved synthetic orders now use the authorized stockroom. Receiver/owner tests perform a valid receipt against the wrong order and verify the lesson refuses that result with a specific source-linked correction. All ten required receiving situations now have desktop/phone browser walkthroughs.
+
+Checkpoint 85979f4 passed all 394 browser checks on each native OS. macOS also passed strict bundle checks and native offline recovery. Windows recovery revealed that `with sqlite3.connect(...)` commits/rolls back but does not close the connection. Directory publication could therefore retain a Windows file lock. Explicit `contextlib.closing` now closes all validation handles before publication; a regression retains connection references to prevent accidental garbage collection from hiding the defect. The corrected version requires fresh native proof on both platforms.

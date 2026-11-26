@@ -1,6 +1,6 @@
 # Inventory Training curriculum and role matrix
 
-Curriculum version: `2026.11.26.12`. Generated from the typed definitions; review alongside source-contract.json and ENDPOINT_COVERAGE.md.
+Curriculum version: `2026.11.27.1`. Generated from the typed definitions; review alongside source-contract.json and ENDPOINT_COVERAGE.md.
 
 Each row is one definition with guided, assisted and independent variants. Item/quantity variants do not create additional unique business workflows. A check mark means the real source role is assigned the lesson; production location and monetary limits still apply.
 

@@ -1,5 +1,6 @@
 """CI/admin native offline-recovery proof; never uploads the private archive."""
 import argparse
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -40,7 +41,7 @@ def main():
         manifest=json.loads(source.read('recovery-manifest.json'))
     for name,expected in manifest['files'].items():
         if hashlib.sha256((data/name).read_bytes()).hexdigest()!=expected or hashlib.sha256((target/name).read_bytes()).hexdigest()!=expected:raise RuntimeError('Native recovery did not preserve original state')
-    with sqlite3.connect(target/'progress.sqlite') as db:
+    with closing(sqlite3.connect(target/'progress.sqlite')) as db:
         attempts=db.execute('SELECT count(*) FROM attempts').fetchone()[0]
         finals=db.execute("SELECT count(*) FROM exams WHERE status='passed'").fetchone()[0]
         certificates=db.execute("SELECT count(*) FROM exams WHERE status='passed' AND module IS NULL").fetchone()[0]

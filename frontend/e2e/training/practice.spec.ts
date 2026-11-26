@@ -375,6 +375,13 @@ for(const[lesson,role,answer]of[
   ["deactivate-unused-supplier","procurement_officer","no"],
   ["reactivate-supplier","procurement_officer","no"],
   ["open-orders-block-deactivation","procurement_officer","no"],
+  ["full-delivery","receiver","no"],
+  ["expired-delivery","receiver","no"],
+  ["quantity-discrepancy","receiver","no"],
+  ["wrong-item","receiver","no"],
+  ["later-delivery","receiver","no"],
+  ["check-order","receiver","no"],
+  ["resume-delivery","receiver","no"],
   ["partial-delivery","receiver","no"],
   ["damaged-delivery","receiver","no"],
   ["fully-rejected","receiver","no"],
@@ -396,6 +403,11 @@ for(const[lesson,role,answer]of[
   test(`${role}: perform ${lesson} using actual controls`,async({page},info)=>{
     if(lesson==="reverse-duplicate-staff-meal")page.on("dialog",dialog=>dialog.accept());
     const{lesson:task}=await prepare(page,lesson,role);
+    if(lesson==="check-order"){
+      const choices=page.getByRole("combobox",{name:"Purchase order",exact:true});
+      await expect(choices.locator('option').filter({hasText:'TRAIN-PO-WRONG'})).toHaveCount(1);
+      await expect(choices.locator('option').filter({hasText:'TRAIN-PO —'})).toHaveCount(1);
+    }
     await guide(page,task,`${info.project.name}-${lesson}`);
     const coach=page.getByRole("complementary",{name:"Your training task"});
     await coach.getByRole("textbox",{name:task.question,exact:true}).fill(answer);

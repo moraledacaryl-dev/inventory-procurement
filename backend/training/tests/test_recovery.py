@@ -53,3 +53,23 @@ def test_stopped_recovery_retains_original_transaction_history_final_grade_and_c
         out.writestr("recovery-manifest.json",json.dumps({"format":"hidden-oasis-training-recovery-v1","files":{"../session-key":"fake"}}));out.writestr("../session-key","bad")
     with pytest.raises(ValueError,match="unexpected path"):restore(malicious,target,stopped=True)
     assert not target.exists()
+
+
+def test_recovery_closes_every_sqlite_validation_handle_before_directory_publication(tmp_path,monkeypatch):
+    # Retain connection references deliberately: garbage collection must not be
+    # what releases Windows file locks before the staging directory is renamed.
+    import sqlite3
+    from training.recovery import validate_state
+    root=tmp_path/"inventory-training";root.mkdir()
+    (root/"training-only.json").write_text(json.dumps({"application":"hidden-oasis-inventory-training","schema":1}))
+    (root/"session-key").write_text("a"*96);(root/"manager-key").write_text("b"*43)
+    with sqlite3.connect(root/"progress.sqlite") as db:db.execute("CREATE TABLE attempts (id TEXT)")
+    db.close()
+    original=sqlite3.connect;connections=[]
+    def tracked(*args,**kwargs):
+        connection=original(*args,**kwargs);connections.append(connection);return connection
+    monkeypatch.setattr(sqlite3,"connect",tracked)
+    validate_state(root)
+    assert connections
+    for connection in connections:
+        with pytest.raises(sqlite3.ProgrammingError,match="closed database"):connection.execute("SELECT 1")

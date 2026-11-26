@@ -4,6 +4,7 @@ No business backup-status row is created. The archive contains private local
 session/trainer keys and employee history; it is never a distribution package.
 """
 import argparse
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -45,10 +46,10 @@ def validate_state(root):
     rows=files(root)
     for name,path in rows.items():
         if name.endswith(".sqlite"):
-            with sqlite3.connect(path.as_uri()+"?mode=ro",uri=True) as db:
+            with closing(sqlite3.connect(path.as_uri()+"?mode=ro",uri=True)) as db:
                 if db.execute("PRAGMA integrity_check").fetchone()!=("ok",):raise ValueError("Training database integrity check failed")
                 if db.execute("PRAGMA foreign_key_check").fetchone():raise ValueError("Training database relationship check failed")
-    with sqlite3.connect((root/"progress.sqlite").as_uri()+"?mode=ro",uri=True) as db:
+    with closing(sqlite3.connect((root/"progress.sqlite").as_uri()+"?mode=ro",uri=True)) as db:
         for (id,) in db.execute("SELECT id FROM attempts"):
             if f"attempt-{id}.sqlite" not in rows:raise ValueError("A saved practice database is missing; repair before backing up")
     if len((root/"session-key").read_text().strip())<64 or len((root/"manager-key").read_text().strip())<32:raise ValueError("Private training keys are incomplete")

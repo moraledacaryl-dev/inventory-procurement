@@ -336,3 +336,19 @@ main()
         except subprocess.TimeoutExpired:
             child.kill()
             child.wait(timeout=5)
+
+
+@pytest.mark.parametrize("role",["receiver","owner"])
+def test_similar_receiving_orders_are_both_authorized_but_wrong_order_never_passes(learner,role):
+    prepared=begin(learner,"check-order",role)
+    workspace=learner.get("/api/v1/receiving/workspace")
+    assert workspace.status_code==200,workspace.text
+    orders={row["purchase_order_number"]:row for row in workspace.json()["purchase_orders"]}
+    assert set(orders)=={"TRAIN-PO","TRAIN-PO-WRONG"}
+    assert {row["delivery_location_id"] for row in orders.values()}=={"training-store"}
+    wrong=orders["TRAIN-PO-WRONG"]
+    response=learner.post("/api/v1/receiving/purchase-orders/"+wrong["id"],json={"delivery_reference":prepared["lesson"]["reference"],"lines":[{"purchase_order_line_id":wrong["lines"][0]["id"],"received_quantity":8,"accepted_quantity":8,"rejected_quantity":0}]})
+    assert response.status_code==201,response.text # valid source posting, wrong task relationship
+    result=check(learner,"check-order")
+    assert not result["passed"] and "different order" in result["message"]
+    assert learner.get("/api/v1/purchase-orders/training-po/detail").json()["lines"][0]["received_quantity"]=="0.0000"

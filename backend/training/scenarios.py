@@ -111,7 +111,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         po.lines = [PurchaseOrderLine(id=IDS["po-line"], item_id=IDS["chicken"], ordered_quantity=order_quantity, unit_price=200, received_quantity=0, returned_quantity=0)]
         db.add(po)
         if lesson.id == "check-order":
-            decoy = PurchaseOrder(purchase_order_number="TRAIN-PO-WRONG", supplier_id=IDS["supplier"], delivery_location_id=IDS["kitchen"], status="approved", created_by_user_id=IDS["colleague"])
+            decoy = PurchaseOrder(purchase_order_number="TRAIN-PO-WRONG", supplier_id=IDS["supplier"], delivery_location_id=IDS["store"], status="approved", created_by_user_id=IDS["colleague"], approved_by_user_id=IDS["reviewer"], approved_at=datetime(2026,11,20,tzinfo=timezone.utc))
             decoy.lines = [PurchaseOrderLine(item_id=IDS["chicken"], ordered_quantity=10, unit_price=200)]
             db.add(decoy)
         count = CountSession(id=IDS["count"], count_number="TRAIN-COUNT", location_id=IDS["store"], blind_count=True, approval_threshold=1,
@@ -285,6 +285,8 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
         result.update(expected_quantity=str(expected), purchase_order_status=po.status, received_quantity=str(po.lines[0].received_quantity), receipt_ids=[row.id for row in receipts])
         if not ok:
             result["correction"] = f"This situation has {q} kg arrived and {v['rejected']} kg rejected. Record the actual delivery, not the original order quantity. " + ("No delivery is posted yet. Finish the confirmation." if not receipts else "The posted receipt does not match. Reset this practice and record only the goods in the situation.")
+        if lesson.id=="check-order" and receipts and any(row.purchase_order_id!=IDS["po"] for row in receipts):
+            result["correction"]="This receipt was posted against a different order. Preserve its evidence and tell the supervisor which order and delivery were used. Reset this isolated practice and choose TRAIN-PO; do not post another production receipt to hide the mistake."
     elif workflow in {"count", "approve_count"}:
         count = db.get(CountSession, IDS["count"])
         expected_status = "posted" if workflow == "approve_count" or q == start else "pending_approval"

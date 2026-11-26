@@ -41,10 +41,12 @@ test("a transient initial navigation preserves one prepared attempt",async({page
 });
 
 test("the guide follows a target moved by late asset rows",async({page})=>{
+  let delayed=false;
   await page.route("**/api/v1/assets",async route=>{
     const response=await route.fetch();
-    await new Promise(resolve=>setTimeout(resolve,400));
-    await route.fulfill({response});
+    const body=await response.body();
+    if(!delayed){delayed=true;await new Promise(resolve=>setTimeout(resolve,400))}
+    await route.fulfill({status:response.status(),headers:response.headers(),body});
   });
   const{lesson}=await prepare(page,"prepare-depreciation-run","inventory_manager");
   await expect(page.getByText("TRAIN-FAN-01",{exact:true})).toBeVisible();
@@ -52,12 +54,29 @@ test("the guide follows a target moved by late asset rows",async({page})=>{
   await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
   await page.getByRole("button",{name:"Check my work",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+  await page.unrouteAll({behavior:"wait"});
 });
 
-async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,startIndex=0){
-  for(let index=startIndex;index<lesson.steps.length;index++){
+async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,startIndex=0,endIndex=lesson.steps.length){
+  for(let index=startIndex;index<endIndex;index++){
     const step=lesson.steps[index];
     await expect(page.locator(".inventory-training-coach-label")).toContainText(`Action ${index+1} of`);
+    for(let opening=0;opening<3;opening++){
+      await expect.poll(()=>page.evaluate(selector=>{
+        const focused=document.querySelector<HTMLElement>('[data-inventory-training-focus="true"]');
+        const target=document.querySelector(selector);
+        return !!focused&&(focused.matches(selector)||focused.getAttribute('aria-label')==='Open navigation'||focused.tagName==='SUMMARY'&&!!target&&!!focused.parentElement?.contains(target));
+      },step.target)).toBeTruthy();
+      if(await page.locator(step.target).first().getAttribute('data-inventory-training-focus')==="true")break;
+      const helper=page.locator('[data-inventory-training-focus="true"]');
+      await expect(helper).toBeInViewport({ratio:0.95});
+      const openedControl=await helper.elementHandle();
+      await openedControl!.click();
+      // Opening the menu/disclosure updates the target on the next frame.
+      // Wait for this exact control to lose focus before resolving another;
+      // a live locator could otherwise click the obscured menu button twice.
+      await expect.poll(()=>openedControl!.getAttribute('data-inventory-training-focus')).not.toBe('true');
+    }
     await expect(page.locator('.inventory-training-current-instruction')).toHaveText(step.instruction);
     await expect(page.locator('.inventory-training-current-instruction')).toBeInViewport({ratio:0.95});
     const target=page.locator(step.target).first();
@@ -70,6 +89,7 @@ async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,st
       if(!t||!c)return -1;
       return Math.max(0,Math.min(t.x+t.width,c.x+c.width)-Math.max(t.x,c.x))*Math.max(0,Math.min(t.y+t.height,c.y+c.height)-Math.max(t.y,c.y));
     }).toBe(0);
+    if(screenshotPrefix&&lesson.id.startsWith('cap-')&&(step.target.startsWith('.nav-link')||step.target==='[data-training="integrations-accounting"]'))await page.screenshot({path:`training-test-results/${screenshotPrefix}-handover-${index}.png`});
     if(index===0&&screenshotPrefix)await page.screenshot({path:`training-test-results/${screenshotPrefix}-start.png`});
     if(lesson.id==="award-timely-quotation"&&index===1){
       await expect(page.getByRole("alertdialog").locator(step.target)).toBeVisible();
@@ -83,7 +103,7 @@ async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,st
     }
     else await target.click();
   }
-  await expect(page.getByRole("button",{name:"Check my work",exact:true})).toBeVisible();
+  if(endIndex===lesson.steps.length)await expect(page.getByRole("button",{name:"Check my work",exact:true})).toBeVisible();
 }
 
 test("a new employee starts training with a clear role and next lesson",async({page},info)=>{
@@ -179,15 +199,21 @@ test("an older tab cannot post into practice started in a different tab",async({
   await other.close();
 });
 
-test("a newly created blind count resumes its real record and unfinished line",async({page})=>{
+test("a newly created blind count resumes its real record and unfinished line",async({page,isMobile})=>{
   const{lesson}=await prepare(page,"start-full-count","counter");
   await page.locator('[data-training="count-create-open"]').click();
   await page.locator('#count-location').selectOption("training-store");
+  await page.locator('#count-threshold').fill("1");
   await page.locator('#count-notes').fill(lesson.reference);
   await page.locator('[data-training="count-create-save"]').click();
   await expect(page).toHaveURL(/\/counts\/[a-f0-9-]{36}$/);
   const record=new URL(page.url()).pathname;
   await page.getByRole("spinbutton",{name:"Counted quantity for Chicken (kg)",exact:true}).fill(String(lesson.quantity));
+  if(isMobile){
+    // A partial Save is outside the next guided field. Scroll the real page,
+    // as an employee does when pausing before finishing the remaining lines.
+    await page.mouse.move(8,350);await page.mouse.wheel(0,400);
+  }
   await Promise.all([page.waitForResponse(response=>response.url().endsWith('/entries')&&response.status()===200),page.locator('[data-training="count-save"]').click()]);
   await page.getByRole("link",{name:"← Training course",exact:true}).click();
   const resume=page.getByRole("link",{name:"Continue practice →",exact:true});
@@ -195,7 +221,7 @@ test("a newly created blind count resumes its real record and unfinished line",a
   await resume.click();
   await expect(page).toHaveURL(new RegExp(record+'$'));
   await expect(page.getByRole("columnheader",{name:"Snapshot",exact:true})).toHaveCount(0);
-  await guide(page,lesson,undefined,5);
+  await guide(page,lesson,undefined,6);
   await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
   await page.getByRole("button",{name:"Check my work",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
@@ -216,6 +242,12 @@ test("a correctly prefilled transfer amount can be reviewed without retyping",as
 });
 
 for(const[lesson,role,answer]of[
+  ["cap-busy-weekend","procurement_officer","no"],
+  ["cap-restaurant-service","inventory_manager","no"],
+  ["cap-housekeeping","inventory_manager","no"],
+  ["cap-owner-review","owner","no"],
+  ["cap-monthly-count","counter","no"],
+  ["cap-delivery-recovery","receiver","no"],
   ["accept-accountable-operations-work","owner","no"],
   ["reject-duplicate-operations-work","owner","no"],
   ["complete-evidenced-operations-work","owner","no"],
@@ -436,4 +468,26 @@ test("new training pages and guidance have no serious accessibility violations",
   await prepare(page,"blind-count","counter");
   result=await new AxeBuilder({page}).include(".inventory-training-coach").include(".inventory-training-banner").analyze();
   expect(result.violations.filter(row=>["serious","critical"].includes(row.impact||""))).toEqual([]);
+});
+
+
+test("an unfinished monthly count cannot be refreshed over unsaved observations",async({page})=>{
+  const{lesson}=await prepare(page,"cap-monthly-count","counter");
+  const field=page.getByRole("spinbutton",{name:"Counted quantity for Chicken (kg)",exact:true});
+  await field.fill(String(lesson.quantity));
+  await expect(page.locator('[data-training="count-refresh"]')).toBeDisabled();
+  await page.reload();
+  await expect(field).toHaveValue("");
+  await expect(page.locator('.inventory-training-coach-label')).toContainText("Action 1 of");
+});
+
+test("linked linen resumes the next handover with its disclosure closed",async({page})=>{
+  const{lesson}=await prepare(page,"cap-housekeeping","inventory_manager");
+  await guide(page,lesson,undefined,0,19);
+  await page.reload();
+  await expect(page).toHaveURL(/hotel\/property/);
+  await guide(page,lesson,undefined,19);
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
 });

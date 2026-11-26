@@ -1,6 +1,6 @@
 """Deterministic fixtures and read-only outcome verification of real business data."""
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from dataclasses import asdict
 from sqlalchemy import create_engine, select
@@ -17,8 +17,9 @@ from training.procurement_scenarios import prepare_procurement, after_prepare_pr
 from training.food_scenarios import prepare_food, after_prepare_food, verify_food
 from training.property_scenarios import property_values, prepare_property, after_prepare_property, verify_property
 from training.connected_scenarios import prepare_connected, after_prepare_connected, verify_connected
+from training.capstone_scenarios import capstone_values, prepare_capstone, after_prepare_capstone, verify_capstone, recover_capstone_checkpoint, resolve_capstone_route
 
-IDS = {key: f"training-{key}" for key in ["actor", "colleague", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "each", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
+IDS = {key: f"training-{key}" for key in ["actor", "colleague", "reviewer", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "each", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
 
 def values(lesson: Lesson, mode: str):
@@ -29,14 +30,14 @@ def values(lesson: Lesson, mode: str):
         quantity = max(1, quantity - 2)
     rejected = min(lesson.rejected, quantity)
     base={"guided":24,"assisted":27,"independent":31}[mode]
-    return {**IDS, **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), "quantity": quantity, "rejected": rejected,
-        "practice_item": IDS["amenities"] if lesson.id == "housekeeping-supplies" else IDS["chicken"],
-        "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id == "housekeeping-supplies" else "TRAIN-CHICKEN — Chicken (kg)",
-        "movement_reason": "Room preparation" if lesson.id == "housekeeping-supplies" else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
+    return {**IDS, **catalogue_values(mode), **control_values(lesson,mode,quantity,base), **property_values(lesson,mode), **capstone_values(lesson,mode), "quantity": quantity, "rejected": rejected,
+        "practice_item": IDS["amenities"] if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else IDS["chicken"],
+        "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else "TRAIN-CHICKEN — Chicken (kg)",
+        "movement_reason": "Room preparation" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
         "base": {"guided": 24, "assisted": 27, "independent": 31}[mode],
         "reference": f"TRAIN-{lesson.id.upper()}-{mode.upper()}",
         "reject_reason": "wrong item delivered" if lesson.id == "wrong-item" else "unacceptable expiry" if lesson.id == "expired-delivery" else "damaged or unusable goods",
-        "action_label": {"issue": "Used or issued stock", "receipt": "Received stock (no PO)", "transfer": "Moved between locations"}.get(lesson.workflow, lesson.workflow)}
+        "action_label": "Used or issued stock" if lesson.id=="cap-housekeeping" else {"issue": "Used or issued stock", "receipt": "Received stock (no PO)", "transfer": "Moved between locations"}.get(lesson.workflow, lesson.workflow)}
 
 
 def engine_for(path: Path):
@@ -56,6 +57,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         db.add_all([
             User(id=IDS["actor"], email="inventory-learner@example.com", full_name="Training participant", role=role, password_hash=hash_password("unusable-training-password")),
             User(id=IDS["colleague"], email="inventory-colleague@example.com", full_name="Fictional colleague", role="owner", password_hash=hash_password("unusable-training-password")),
+            User(id=IDS["reviewer"], email="inventory-reviewer@example.com", full_name="Fictional reviewer", role="owner", password_hash=hash_password("unusable-training-password")),
             Category(id=IDS["category"], name="Training food"),
             UnitOfMeasure(id=IDS["kg"], code="TRAIN-KG", name="Kilogram", precision=4),
             UnitOfMeasure(id=IDS["gram"], code="TRAIN-G", name="Gram", precision=4),
@@ -85,6 +87,8 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         if lesson.workflow == "requisition":
             db.add(ItemLocationSetting(item_id=IDS["chicken"], location_id=IDS["store"], minimum_stock=v["base"] + 6 + v["quantity"], reorder_quantity=0, preferred_supplier_id=IDS["supplier"]))
         po = PurchaseOrder(id=IDS["po"], purchase_order_number="TRAIN-PO", supplier_id=IDS["supplier"], delivery_location_id=IDS["store"], status="draft" if lesson.workflow == "approve_po" else "approved", created_by_user_id=IDS["colleague"])
+        if po.status=="approved":
+            po.approved_by_user_id=IDS["reviewer"];po.approved_at=datetime(2026,11,20,tzinfo=timezone.utc)
         order_quantity = v["quantity"] if lesson.workflow == "approve_po" else {"guided":10,"assisted":12,"independent":14}[mode] if lesson.id == "management-review" else 10
         po.lines = [PurchaseOrderLine(id=IDS["po-line"], item_id=IDS["chicken"], ordered_quantity=order_quantity, unit_price=200, received_quantity=0, returned_quantity=0)]
         db.add(po)
@@ -96,7 +100,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
             created_by_user_id=IDS["colleague"] if lesson.workflow == "approve_count" else IDS["actor"], status="pending_approval" if lesson.workflow == "approve_count" else "open")
         count.lines = [CountLine(item_id=IDS["chicken"], system_quantity=v["base"], counted_quantity=v["quantity"] if lesson.workflow == "approve_count" else None)]
         db.add(count)
-        recipe = Recipe(id=IDS["recipe"], code="TRAIN-ALFREDO", name="Training Chicken Alfredo", output_item_id=IDS["alfredo"], yield_quantity=1, status="approved", created_by_user_id=IDS["colleague"], approved_by_user_id=IDS["colleague"])
+        recipe = Recipe(id=IDS["recipe"], code="TRAIN-ALFREDO", name="Training Chicken Alfredo", output_item_id=IDS["alfredo"], yield_quantity=1, status="approved", created_by_user_id=IDS["colleague"], approved_by_user_id=IDS["reviewer"],approved_at=datetime(2026,11,20,tzinfo=timezone.utc))
         recipe.lines = [RecipeLine(ingredient_item_id=IDS["chicken"], quantity=Decimal("0.25"), waste_factor=0)]
         db.add(recipe)
         db.flush()
@@ -137,12 +141,14 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         prepare_food(db,lesson,v)
         prepare_property(db,lesson,v)
         prepare_connected(db,lesson,v)
+        prepare_capstone(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
         after_prepare_procurement(db,lesson,v)
         after_prepare_food(db,lesson,v)
         after_prepare_property(db,lesson,v)
         after_prepare_connected(db,lesson,v)
+        after_prepare_capstone(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -207,6 +213,8 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
         return verify_property(db,lesson,v,business_actions)
     if lesson.workflow.startswith("connected_"):
         return verify_connected(db,lesson,v,business_actions)
+    if lesson.workflow.startswith("capstone_"):
+        return verify_capstone(db,lesson,v,business_actions)
     q = Decimal(v["quantity"])
     start = Decimal(v["base"])
     workflow = lesson.workflow
@@ -279,6 +287,8 @@ def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int, 
     A browser can close after Save commits but before its checkpoint request
     arrives. Never leave the trainee pointing at a disabled Save button.
     """
+    if lesson.workflow.startswith("capstone_"):
+        return recover_capstone_checkpoint(db,lesson,values(lesson,mode),checkpoint,business_actions)
     if lesson.workflow.startswith("control_"):
         return recover_control_checkpoint(db,lesson,values(lesson,mode),checkpoint,business_actions)
     if lesson.workflow == "count":
@@ -300,6 +310,7 @@ def recover_checkpoint(db: Session, lesson: Lesson, mode: str, checkpoint: int, 
 
 
 def resolve_practice_route(db,lesson,mode):
+    if lesson.workflow.startswith("capstone_"):return resolve_capstone_route(db,lesson,values(lesson,mode))
     return resolve_control_route(db,lesson,values(lesson,mode))
 
 

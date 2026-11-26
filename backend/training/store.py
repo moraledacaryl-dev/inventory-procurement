@@ -77,4 +77,4 @@ class Store:
 
     def business_actions(self, attempt_id):
         with self.connect() as db:
-            return [json.loads(row[0]) for row in db.execute("SELECT detail FROM events WHERE attempt_id=? AND kind='business_action' ORDER BY id", (attempt_id,))]
+            return [json.loads(row[0]) for row in db.execute("SELECT detail FROM events WHERE attempt_id=? AND kind IN ('business_action','record_read') ORDER BY id", (attempt_id,))]

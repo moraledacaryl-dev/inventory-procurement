@@ -61,7 +61,7 @@ export default function Page() {
         <div className="card">
           <h2>Accounting integration</h2>
           <p>Review journal intent, delivery status, queued value, external acknowledgements, failures, and dead-letter events.</p>
-          <Link className="primary compact" href="/integrations/accounting">Open accounting workspace</Link>
+          <Link data-training="integrations-accounting" className="primary compact" href="/integrations/accounting">Open accounting workspace</Link>
         </div>
         <div className="card">
           <h2>Staff & Command Center</h2>

@@ -44,7 +44,10 @@ def validate():
         assert all((ROOT / "backend/app/api/routes" / source).exists() for source in lesson.sources)
     for capstone in CAPSTONES:
         assert all(any(lesson.id == ident for lesson in LESSONS) for ident in capstone["lessons"])
-    print(f"Verified {len(LESSONS)} lesson definitions, 26 modules, 6 roles, {len(actual)} operational source contracts and {len(CAPSTONES)} task sequences")
+        if capstone.get("linked"):
+            assert len(capstone["lessons"])==1 and next(lesson for lesson in LESSONS if lesson.id==capstone["lessons"][0]).workflow.startswith("capstone_")
+    linked=sum(bool(row.get("linked")) for row in CAPSTONES)
+    print(f"Verified {len(LESSONS)} lesson definitions, 26 modules, 6 roles, {len(actual)} operational source contracts, {linked} linked capstones and {len(CAPSTONES)-linked} task sequences")
 
 
 if __name__ == "__main__":

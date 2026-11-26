@@ -27,10 +27,12 @@ export function InventoryTrainingCoach() {
   const [showHint,setShowHint] = useState(false);
   const [expanded,setExpanded] = useState(true);
   const [missing,setMissing] = useState(false);
+  const [navigationInstruction,setNavigationInstruction] = useState("");
   const [inputMessage,setInputMessage] = useState("");
   const [inspected,setInspected] = useState(false);
   const readPaths = useRef(new Set<string>());
   const coachRef = useRef<HTMLElement>(null);
+  const loadedAttempt=useRef<string|undefined>(undefined);
   const guideRef = useRef<TrainingLesson|null>(null);
   const visible = trainingEnabled && !pathname.startsWith("/training");
 
@@ -43,7 +45,7 @@ export function InventoryTrainingCoach() {
       setProfile(result);
       let checkpoint=result.attempt?.checkpoint||0;
       if(result.lesson&&result.attempt?.status!=="passed"&&checkpoint<result.lesson.steps.length)checkpoint=restoreCatalogueCheckpoint(result.lesson,checkpoint);
-      if(result.lesson?.workflow==="receiving"&&checkpoint<result.lesson.steps.length){
+      if(result.lesson&&(result.lesson.workflow==="receiving"||result.lesson.workflow==="capstone_delivery"&&checkpoint<9)&&checkpoint<result.lesson.steps.length){
         const draft=readTrainingReceiptDraft(),steps=result.lesson.steps;
         const index=(target:string)=>Math.max(0,steps.findIndex(row=>row.target===target));
         if(!draft)checkpoint=0;
@@ -58,14 +60,16 @@ export function InventoryTrainingCoach() {
           else if(draft.reference!==result.lesson.reference)checkpoint=index('[aria-label="Delivery reference"]');
         }
       }
-      setStep(checkpoint);
+      const sameAttempt=loadedAttempt.current===result.attempt?.id;
+      setStep(previous=>sameAttempt?Math.max(previous,checkpoint):checkpoint);
+      loadedAttempt.current=result.attempt?.id;
       setPassed(result.attempt?.status==="passed");
       setInspected(result.record_inspected || readPaths.current.has(result.lesson?.inspection_api_path||""));
       if(result.attempt)rememberTrainingAttempt(result.attempt.id);
       setError("");
     } catch(exception){setError((exception as Error).message)}
   },[visible]);
-  useEffect(()=>{void load()},[load]);
+  useEffect(()=>{void load()},[load,pathname]);
   const lesson=profile?.lesson;
   const guided=profile?.attempt?.mode==="guided"||showHint;
   const current=guided?lesson?.steps[step]:undefined;
@@ -94,7 +98,20 @@ export function InventoryTrainingCoach() {
     const missingTimer=window.setTimeout(()=>setMissing(true),5000);
     function refresh(){
       let shouldScroll=reposition;reposition=false;
-      const found=Array.from(document.querySelectorAll<HTMLElement>(targetSelector!)).find(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0})||null;
+      const candidates=Array.from(document.querySelectorAll<HTMLElement>(targetSelector!));
+      let found=candidates.find(node=>{const r=node.getBoundingClientRect();return node.checkVisibility({checkVisibilityCSS:true})&&r.width>0&&r.height>0})||null;
+      let navigation="";
+      const nav=candidates[0]?.closest<HTMLElement>('[aria-label="Primary navigation"]');
+      if(nav){
+        const box=nav.getBoundingClientRect();
+        if(box.right<=0||box.left>=window.innerWidth){found=document.querySelector<HTMLElement>('[aria-label="Open navigation"]');navigation="Open navigation to find the next workspace."}
+        else{const closed=candidates[0].closest<HTMLDetailsElement>('details:not([open])');if(closed){found=closed.querySelector<HTMLElement>('summary');navigation="Open "+(found?.textContent?.trim()||"this navigation group")+" in navigation."}}
+      }
+      if(!nav&&candidates[0]&&candidates[0].tagName!=="SUMMARY"){
+        const closed=candidates[0].closest<HTMLDetailsElement>('details:not([open])');
+        if(closed){found=closed.querySelector<HTMLElement>('summary');navigation="Open "+(found?.querySelector('h2')?.textContent?.trim()||"this form")+" to continue the saved task."}
+      }
+      setNavigationInstruction(previous=>previous===navigation?previous:navigation);
       if(marked!==found){
         shouldScroll=true;
         marked?.removeAttribute("data-inventory-training-focus");observer?.disconnect();
@@ -108,6 +125,7 @@ export function InventoryTrainingCoach() {
       }
       if(!found){setRect(null);return}
       const r=found.getBoundingClientRect();
+      const scrollBy=(top:number)=>{const region=found.closest<HTMLElement>('[aria-label="Primary navigation"]');if(region)region.scrollBy({top,behavior:"instant"});else window.scrollBy({top,behavior:"instant"})};
       const box={top:r.top,left:r.left,width:r.width,height:r.height};
       setRect(previous=>JSON.stringify(previous)===JSON.stringify(box)?previous:box);
       const bannerBottom=document.querySelector(".inventory-training-banner")?.getBoundingClientRect().bottom||54;
@@ -117,12 +135,15 @@ export function InventoryTrainingCoach() {
       let y=r.bottom+18;
       if(window.innerWidth<760){
         x=12;y=window.innerHeight-Math.min(h,window.innerHeight*.42)-12;
-        if(shouldScroll&&!found.closest('[role="alertdialog"]')&&(r.bottom>y-24||r.top<bannerBottom+3)){window.scrollBy({top:r.top-Math.max(70,(y-r.height)/2),behavior:"instant"})}
+        // A short sidebar cannot always scroll a low link above a bottom panel.
+        // Put the guide above that link when the upper space can hold it.
+        if(found.closest('[aria-label="Primary navigation"]')&&r.bottom>y-24&&r.top>bannerBottom+h+28)y=r.top-h-18;
+        if(shouldScroll&&!found.closest('[role="alertdialog"]')&&(r.bottom>y-24||r.top<bannerBottom+3)){scrollBy(r.top-Math.max(70,(y-r.height)/2))}
       }else if(r.right+w+34<window.innerWidth){x=r.right+22;y=Math.max(bannerBottom+12,Math.min(r.top,window.innerHeight-h-15))}
       else if(r.left-w-24>=12){x=r.left-w-22;y=Math.max(bannerBottom+12,Math.min(r.top,window.innerHeight-h-15))}
       else if(y+h>window.innerHeight-15){
         y=r.top-h-18;
-        if(y<bannerBottom+8){y=window.innerHeight-h-15;if(shouldScroll&&r.bottom>y-20)window.scrollBy({top:r.top-75,behavior:"instant"})}
+        if(y<bannerBottom+8){y=window.innerHeight-h-15;if(shouldScroll&&r.bottom>y-20)scrollBy(r.top-75)}
       }
       const pos={top:Math.max(12,y),left:x,width:w,height:h};
       setPanel(previous=>JSON.stringify(previous)===JSON.stringify(pos)?previous:pos);
@@ -131,10 +152,12 @@ export function InventoryTrainingCoach() {
     function layoutSchedule(){reposition=true;schedule()}
     const mutation=new MutationObserver(layoutSchedule);mutation.observe(document.body,{childList:true,subtree:true});
     const panelResize=new ResizeObserver(layoutSchedule);if(coachRef.current)panelResize.observe(coachRef.current);
+    document.addEventListener("toggle",layoutSchedule,true);
+    document.addEventListener("transitionend",layoutSchedule,true);
     window.addEventListener("resize",layoutSchedule);window.addEventListener("scroll",schedule,true);
     window.visualViewport?.addEventListener("resize",layoutSchedule);
     schedule();
-    return()=>{window.clearTimeout(missingTimer);window.cancelAnimationFrame(frame);mutation.disconnect();observer?.disconnect();panelResize.disconnect();window.removeEventListener("resize",layoutSchedule);window.removeEventListener("scroll",schedule,true);window.visualViewport?.removeEventListener("resize",layoutSchedule);marked?.removeAttribute("data-inventory-training-focus")}
+    return()=>{document.removeEventListener("toggle",layoutSchedule,true);document.removeEventListener("transitionend",layoutSchedule,true);setNavigationInstruction("");window.clearTimeout(missingTimer);window.cancelAnimationFrame(frame);mutation.disconnect();observer?.disconnect();panelResize.disconnect();window.removeEventListener("resize",layoutSchedule);window.removeEventListener("scroll",schedule,true);window.visualViewport?.removeEventListener("resize",layoutSchedule);marked?.removeAttribute("data-inventory-training-focus")}
   },[visible,targetSelector,expanded,passed,pathname]);
 
   useEffect(()=>{
@@ -148,7 +171,7 @@ export function InventoryTrainingCoach() {
     function businessOutcome(event:Event){
       const detail=(event as CustomEvent<{path:string;method:string;status:number}>).detail;
       const expected=current?.outcome_status;
-      if(current?.outcome&&trainingOutcomeMatches(current.outcome,detail.path)&&detail.method!=="GET"&&(expected?detail.status===expected:detail.status>=200&&detail.status<300))advance();
+      if(current?.outcome&&trainingOutcomeMatches(current.outcome,detail.path)&&(current.event==="read"?detail.method==="GET":detail.method!=="GET")&&(expected?detail.status===expected:detail.status>=200&&detail.status<300))advance();
     }
     function observe(event:Event){
       const target=event.target as HTMLElement;
@@ -188,7 +211,7 @@ export function InventoryTrainingCoach() {
       {!lesson&&<Link href="/training">Open your training course</Link>}
       {lesson&&!passed&&<>
         {!current&&<p className="inventory-training-situation">{lesson.situation}</p>}
-        {current?<><h3>Your turn</h3><p className="inventory-training-current-instruction">{current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<details key={step} className="inventory-training-context"><summary>Review the situation</summary><p>{lesson.situation}</p></details><button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. If an entered value is already correct, review it and move to the next field. Progress saves after each action; the server checks the final result.</p></>:<>
+        {current?<><h3>Your turn</h3><p className="inventory-training-current-instruction">{navigationInstruction||current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<details key={step} className="inventory-training-context"><summary>Review the situation</summary><p>{lesson.situation}</p></details><button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. If an entered value is already correct, review it and move to the next field. Progress saves after each action; the server checks the final result.</p></>:<>
           <p>{lesson.practical_question?"Inspect the record in the application, then enter what it shows.":"Complete the task in the application, then check your saved result below."}</p>
           {lesson.practical_question&&<><Link href={lesson.inspection_route}>Open the record to inspect →</Link><label>{lesson.practical_question}<input value={observation} onChange={event=>setObservation(event.target.value)} autoComplete="off"/></label></>}
           {!lesson.practical_question&&showTaskAmount&&<p>Task amount: {lesson.quantity}{lesson.workflow==="receiving"?` arrived; ${lesson.rejected} rejected`:""}. {lesson.workflow==="production"?"Use 3 kg of chicken; record the actual usable output.":""}{lesson.workflow==="purchase_order"?"Use Training Valley Foods, Training stockroom and PHP 200 per kg.":""}{lesson.workflow==="receiving"?`Delivery reference: ${lesson.reference}`:""}</p>}

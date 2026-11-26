@@ -26,8 +26,9 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     from app.api.deps import SESSION_COOKIE_NAME
     from training.store import Store
     from training.curriculum import BY_ID, LESSONS, VERSION, ROLES, ROLE_NAMES, CAPSTONES
-    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, recover_checkpoint, resolve_practice_route, verify
+    from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, recover_checkpoint, resolve_practice_route, verify, values
     from training.connected_scenarios import local_control_allowed
+    from training.capstone_scenarios import run_capstone_counterparts
 
     store = Store(root)
     app.title = "Hidden Oasis Inventory Training — isolated practice"
@@ -106,10 +107,21 @@ def create_training_app(root: Path, *, guard_network: bool = True):
             if blocked:
                 return JSONResponse(status_code=403, content={"detail": "External services and integration delivery are disabled in training."})
             response = await call_next(request)
+            if request.method!="GET" and 200<=response.status_code<300 and BY_ID[attempt["lesson_id"]].workflow.startswith("capstone_"):
+                engine=engine_for(root/f"attempt-{attempt['id']}.sqlite")
+                try:
+                    with Session(engine) as business:
+                        run_capstone_counterparts(business,BY_ID[attempt["lesson_id"]],values(BY_ID[attempt["lesson_id"]],attempt["mode"]))
+                except Exception:
+                    # The trainee's transaction already committed. Preserve its
+                    # real response; resume retries only the colleague's work.
+                    logging.exception("The isolated capstone colleague needs recovery")
+                    store.event(attempt["id"],"counterparty_recovery_required",{})
+                finally:engine.dispose()
             if request.method == "GET" and response.status_code == 200:
-                store.event(attempt["id"], "record_read", {"path": path})
+                store.event(attempt["id"], "record_read", {"path": path,"method":"GET","status":200})
             elif request.method != "GET":
-                store.event(attempt["id"], "business_action", {"path": path, "status": response.status_code})
+                store.event(attempt["id"], "business_action", {"path": path,"method":request.method,"status": response.status_code})
                 expected_refusal=any(step.outcome==path.removeprefix("/api/v1") and step.outcome_status==response.status_code for step in BY_ID[attempt["lesson_id"]].steps)
                 if response.status_code >= 400 and not expected_refusal:
                     with store.connect() as db:
@@ -188,6 +200,10 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 engine=engine_for(path)
                 try:
                     with Session(engine) as business:
+                        if BY_ID[attempt["lesson_id"]].workflow.startswith("capstone_"):
+                            try:run_capstone_counterparts(business,BY_ID[attempt["lesson_id"]],values(BY_ID[attempt["lesson_id"]],attempt["mode"]))
+                            except Exception as exc:
+                                raise HTTPException(503,"The simulated colleague could not finish review. Your saved work is safe. Reconnect to practice, or reset this capstone if the problem continues.") from exc
                         recovered=recover_checkpoint(business,BY_ID[attempt["lesson_id"]],attempt["mode"],attempt["checkpoint"],store.business_actions(attempt["id"]))
                         lesson_payload["route"]=resolve_practice_route(business,BY_ID[attempt["lesson_id"]],attempt["mode"])
                         lesson_payload["inspection_api_path"]=inspection_endpoint(BY_ID[attempt["lesson_id"]],business)

@@ -122,7 +122,7 @@ def verify_controls(db,lesson,v,actions):
             rows=list(db.scalars(select(CountSession).where(CountSession.created_by_user_id==v["actor"],CountSession.notes==v["reference"])).all())
             if len(rows)==1:
                 count=rows[0];lines={line.item_id:line for line in count.lines}
-                ok=unchanged and count.location_id==v["store"] and count.blind_count and count.approval_threshold==0 and count.status=="pending_approval" and len(lines)==3 and lines[v["chicken"]].counted_quantity==q and lines[v["amenities"]].counted_quantity==v["secondary_count"] and lines[v["alfredo"]].counted_quantity==0
+                ok=unchanged and count.location_id==v["store"] and count.blind_count and count.approval_threshold==1 and count.status=="pending_approval" and len(lines)==3 and lines[v["chicken"]].counted_quantity==q and lines[v["amenities"]].counted_quantity==v["secondary_count"] and lines[v["alfredo"]].counted_quantity==0
         elif id=="save-incomplete-count":ok=unchanged and count.status=="open" and lines[v["chicken"]].counted_quantity==q and lines[v["amenities"]].counted_quantity is None and bool(audited("count.entries_saved",count.id))
         elif id=="request-count-recheck":
             audit=audited("count.recount_requested",count.id)

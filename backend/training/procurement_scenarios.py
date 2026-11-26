@@ -18,11 +18,12 @@ def prepare_procurement(db,lesson,v):
     submitted=lesson.module=="J"
     req=PurchaseRequisition(id="training-requisition",requisition_number="TRAIN-REQUEST",department="Kitchen",location_id=v["store"],
         justification="Verified weekend demand" if lesson.id!="reject-duplicate-request" else "Duplicate of existing approved TRAIN-PO",status="submitted" if submitted else "approved",
-        requested_by_user_id=v["actor"] if lesson.id=="request-self-approval" else v["colleague"],approved_by_user_id=None if submitted else v["colleague"])
+        requested_by_user_id=v["actor"] if lesson.id=="request-self-approval" else v["colleague"],approved_by_user_id=None if submitted else v["reviewer"])
     req.lines=[PurchaseRequisitionLine(item_id=v["chicken"],quantity=v["quantity"],estimated_unit_cost=200)]
     db.add(req)
     po=db.get(PurchaseOrder,v["po"])
-    if lesson.id in {"purchase-approval-limit","amend-draft-order"}:po.status="draft"
+    if lesson.id in {"purchase-approval-limit","amend-draft-order"}:
+        po.status="draft";po.approved_by_user_id=None;po.approved_at=None
     if lesson.id in {"purchase-approval-limit","inspect-received-order-lock"}:po.lines[0].ordered_quantity=v["quantity"]
     if lesson.id=="purchase-approval-limit":
         for scope in db.scalars(select(OperationalAccessScope).where(OperationalAccessScope.user_id==v["actor"])):scope.approval_limit=100

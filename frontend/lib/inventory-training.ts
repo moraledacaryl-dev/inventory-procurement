@@ -20,7 +20,7 @@ export type TrainingProfile = {
   record_inspected: boolean;
 };
 export type TrainingCatalogue = { version: string; roles: Record<string, string>; lessons: TrainingLesson[];
-  capstones: { id: string; title: string; lessons: string[] }[]; environment: string };
+  capstones: { id: string; title: string; lessons: string[]; linked?:boolean }[]; environment: string };
 
 export function mastery(history: TrainingAttempt[], lesson: TrainingLesson, role: string) {
   const modes = new Set(history.filter(row => row.lesson_id === lesson.id && row.role === role && row.status === "passed" && row.curriculum_version === lesson.curriculum_version).map(row => row.mode));
@@ -30,6 +30,7 @@ export function mastery(history: TrainingAttempt[], lesson: TrainingLesson, role
 export const trainingEnabled = process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1";
 
 export function trainingOutcomeMatches(expected:string,actual:string) {
+  actual=actual.split("?")[0];
   if(!expected.includes("*"))return expected===actual;
   const parts=expected.split("*");
   if(parts.length!==2||!actual.startsWith(parts[0])||!actual.endsWith(parts[1]))return false;

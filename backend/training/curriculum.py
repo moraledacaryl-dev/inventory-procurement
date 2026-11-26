@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Literal
 from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.26.7"
+VERSION = "2026.11.26.8"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
@@ -329,16 +329,18 @@ from training.property_lessons import LESSONS as PROPERTY_LESSONS
 LESSONS.extend(PROPERTY_LESSONS)
 from training.connected_lessons import LESSONS as CONNECTED_LESSONS
 LESSONS.extend(CONNECTED_LESSONS)
+from training.capstone_lessons import build_capstones
+LESSONS.extend(build_capstones({lesson.id:lesson for lesson in LESSONS}))
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)
 
-# Capstones are ordered existing tasks, not imaginary cross-role permissions.
+# Linked capstones retain one database; unfinished sequences are labeled honestly.
 CAPSTONES = [
-    {"id": "busy-weekend", "title": "Prepare for a busy weekend", "lessons": ["available-stock", "request-purchase", "order-supplies", "partial-delivery", "issue-kitchen"]},
-    {"id": "delivery-problems", "title": "Handle supplier delivery problems", "lessons": ["full-delivery", "partial-delivery", "damaged-delivery", "expired-delivery", "fully-rejected"]},
-    {"id": "restaurant-service", "title": "Follow restaurant ingredients", "lessons": ["recipe-cost", "batch-production", "menu-mapping", "sale-consumption", "accounting-proof"]},
-    {"id": "monthly-count", "title": "Complete a monthly stock count", "lessons": ["blind-count", "count-zero", "approve-count", "management-review"]},
-    {"id": "housekeeping", "title": "Prepare rooms for arriving guests", "lessons": ["available-stock", "housekeeping-supplies", "management-review"]},
-    {"id": "owner-review", "title": "Review the resort's inventory controls", "lessons": ["management-review", "accounting-proof", "connected-work", "admin-controls"]},
+    {"id": "busy-weekend", "title": "Prepare for a busy weekend", "linked":True,"lessons": ["cap-busy-weekend"]},
+    {"id": "delivery-problems", "title": "Handle supplier delivery problems", "linked":True,"lessons": ["cap-delivery-recovery"]},
+    {"id": "restaurant-service", "title": "Follow restaurant ingredients", "linked":True,"lessons": ["cap-restaurant-service"]},
+    {"id": "monthly-count", "title": "Complete a monthly stock count", "linked":True,"lessons": ["cap-monthly-count"]},
+    {"id": "housekeeping", "title": "Prepare rooms for arriving guests", "linked":True,"lessons": ["cap-housekeeping"]},
+    {"id": "owner-review", "title": "Review the resort's inventory controls", "linked":True,"lessons": ["cap-owner-review"]},
 ]

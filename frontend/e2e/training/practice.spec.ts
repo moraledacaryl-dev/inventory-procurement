@@ -3,17 +3,56 @@ import type {TrainingLesson} from "../../lib/inventory-training";
 import AxeBuilder from "@axe-core/playwright";
 
 const headers={"X-Requested-With":"HiddenOasisInventory"};
+async function openTrainingPage(page:Page,path:string){
+  try{await page.goto(path)}catch(error){
+    if(!String(error).includes("net::ERR_CONNECTION_FAILED"))throw error;
+    // Hosted Windows occasionally loses a fresh browser connection while the
+    // same native server remains healthy. Retry only this idempotent GET.
+    const health=await page.request.get("/api/v1/health");
+    expect(health.ok(),"A navigation retry requires a healthy training server").toBeTruthy();
+    test.info().annotations.push({type:"navigation-recovery",description:`Retried ${path} once after a healthy sandbox check`});
+    await page.goto(path);
+  }
+}
 async function prepare(page:Page,lesson_id:string,role:string){
   expect((await page.request.post("/api/v1/training/enrol",{headers,data:{name:"Fictional browser learner",role}})).ok()).toBeTruthy();
   const response=await page.request.post("/api/v1/training/start",{headers,data:{lesson_id}});
   expect(response.ok(),await response.text()).toBeTruthy();
   const data=await response.json() as {attempt_id:string;lesson:TrainingLesson};
-  await page.goto("/training");
+  await openTrainingPage(page,"/training");
   await page.evaluate(id=>{localStorage.setItem("inventory-training-attempt",id);sessionStorage.setItem("inventory-training-attempt",id)},data.attempt_id);
-  await page.goto(data.lesson.route);
+  await openTrainingPage(page,data.lesson.route);
   await expect(page.getByRole("complementary",{name:"Your training task"})).toBeVisible();
   return data;
 }
+
+test("a transient initial navigation preserves one prepared attempt",async({page})=>{
+  let interrupted=false;
+  await page.route("**/training",route=>{
+    if(!interrupted&&route.request().resourceType()==="document"){interrupted=true;return route.abort("connectionfailed")}
+    return route.continue();
+  });
+  const prepared=await prepare(page,"issue-kitchen","inventory_manager");
+  expect(interrupted).toBeTruthy();
+  const profile=await(await page.request.get("/api/v1/training/me")).json();
+  expect(profile.history).toHaveLength(1);
+  expect(profile.attempt.id).toBe(prepared.attempt_id);
+  expect(test.info().annotations.some(row=>row.type==="navigation-recovery")).toBeTruthy();
+});
+
+test("the guide follows a target moved by late asset rows",async({page})=>{
+  await page.route("**/api/v1/assets",async route=>{
+    const response=await route.fetch();
+    await new Promise(resolve=>setTimeout(resolve,400));
+    await route.fulfill({response});
+  });
+  const{lesson}=await prepare(page,"prepare-depreciation-run","inventory_manager");
+  await expect(page.getByText("TRAIN-FAN-01",{exact:true})).toBeVisible();
+  await guide(page,lesson);
+  await page.getByRole("textbox",{name:lesson.question,exact:true}).fill("no");
+  await page.getByRole("button",{name:"Check my work",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Task passed",exact:true})).toBeVisible();
+});
 
 async function guide(page:Page,lesson:TrainingLesson,screenshotPrefix?:string,startIndex=0){
   for(let index=startIndex;index<lesson.steps.length;index++){
@@ -177,6 +216,10 @@ test("a correctly prefilled transfer amount can be reviewed without retyping",as
 });
 
 for(const[lesson,role,answer]of[
+  ["accept-accountable-operations-work","owner","no"],
+  ["reject-duplicate-operations-work","owner","no"],
+  ["complete-evidenced-operations-work","owner","no"],
+  ["requeue-failed-accounting-handoff","owner","no"],
   ["issue-clean-linen","inventory_manager","no"],
   ["send-used-linen-to-laundry","inventory_manager","no"],
   ["return-clean-linen","inventory_manager","no"],

@@ -16,8 +16,9 @@ from training.control_scenarios import control_values, prepare_controls, after_p
 from training.procurement_scenarios import prepare_procurement, after_prepare_procurement, verify_procurement, procurement_inspection
 from training.food_scenarios import prepare_food, after_prepare_food, verify_food
 from training.property_scenarios import property_values, prepare_property, after_prepare_property, verify_property
+from training.connected_scenarios import prepare_connected, after_prepare_connected, verify_connected
 
-IDS = {key: f"training-{key}" for key in ["actor", "colleague", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
+IDS = {key: f"training-{key}" for key in ["actor", "colleague", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "each", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
 
 def values(lesson: Lesson, mode: str):
@@ -59,6 +60,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
             UnitOfMeasure(id=IDS["kg"], code="TRAIN-KG", name="Kilogram", precision=4),
             UnitOfMeasure(id=IDS["gram"], code="TRAIN-G", name="Gram", precision=4),
             UnitOfMeasure(id=IDS["portion"], code="TRAIN-PORTION", name="Portion", precision=0),
+            UnitOfMeasure(id=IDS["each"], code="TRAIN-EACH", name="Each", precision=0),
             Location(id=IDS["store"], code="TRAIN-STORE", name="Training stockroom"),
             Location(id=IDS["kitchen"], code="TRAIN-KITCHEN", name="Training kitchen"),
             Location(id=IDS["restricted"], code="TRAIN-RESTRICTED", name="Other department — no access"),
@@ -68,7 +70,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         db.add_all([
             Item(id=IDS["chicken"], sku="TRAIN-CHICKEN", name="Chicken (kg)", category_id=IDS["category"], base_unit_id=IDS["kg"], standard_cost=200, minimum_stock=40),
             Item(id=IDS["alfredo"], sku="TRAIN-ALFREDO", name="Training Chicken Alfredo", category_id=IDS["category"], base_unit_id=IDS["portion"], standard_cost=50),
-            Item(id=IDS["amenities"], sku="TRAIN-AMENITIES", name="Guest amenity kit", category_id=IDS["category"], base_unit_id=IDS["portion"], standard_cost=50),
+            Item(id=IDS["amenities"], sku="TRAIN-AMENITIES", name="Guest amenity kit", category_id=IDS["category"], base_unit_id=IDS["each"], standard_cost=50),
         ])
         db.flush()
         db.add(UnitConversion(item_id=IDS["chicken"], from_unit_id=IDS["kg"], to_unit_id=IDS["gram"], multiplier=1000))
@@ -134,11 +136,13 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         prepare_procurement(db,lesson,v)
         prepare_food(db,lesson,v)
         prepare_property(db,lesson,v)
+        prepare_connected(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
         after_prepare_procurement(db,lesson,v)
         after_prepare_food(db,lesson,v)
         after_prepare_property(db,lesson,v)
+        after_prepare_connected(db,lesson,v)
         if lesson.workflow == "return" or lesson.id == "later-delivery":
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
@@ -201,6 +205,8 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
         return verify_food(db,lesson,v,business_actions)
     if lesson.workflow.startswith("property_"):
         return verify_property(db,lesson,v,business_actions)
+    if lesson.workflow.startswith("connected_"):
+        return verify_connected(db,lesson,v,business_actions)
     q = Decimal(v["quantity"])
     start = Decimal(v["base"])
     workflow = lesson.workflow

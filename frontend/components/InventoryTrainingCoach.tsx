@@ -90,16 +90,19 @@ export function InventoryTrainingCoach() {
     let marked:HTMLElement|null=null;
     let observer:ResizeObserver|null=null;
     let frame=0;
+    let reposition=true;
     const missingTimer=window.setTimeout(()=>setMissing(true),5000);
     function refresh(){
+      let shouldScroll=reposition;reposition=false;
       const found=Array.from(document.querySelectorAll<HTMLElement>(targetSelector!)).find(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0})||null;
       if(marked!==found){
+        shouldScroll=true;
         marked?.removeAttribute("data-inventory-training-focus");observer?.disconnect();
         marked=found;
         if(found){
           setMissing(false);window.clearTimeout(missingTimer);
           found.setAttribute("data-inventory-training-focus","true");
-          observer=new ResizeObserver(schedule);observer.observe(found);
+          observer=new ResizeObserver(layoutSchedule);observer.observe(found);
           found.scrollIntoView({block:"center",behavior:"instant"});
         }
       }
@@ -107,29 +110,31 @@ export function InventoryTrainingCoach() {
       const r=found.getBoundingClientRect();
       const box={top:r.top,left:r.left,width:r.width,height:r.height};
       setRect(previous=>JSON.stringify(previous)===JSON.stringify(box)?previous:box);
+      const bannerBottom=document.querySelector(".inventory-training-banner")?.getBoundingClientRect().bottom||54;
       const h=coachRef.current?.getBoundingClientRect().height||260;
       const w=Math.min(360,window.innerWidth-24);
       let x=Math.max(12,Math.min(r.left,window.innerWidth-w-12));
       let y=r.bottom+18;
       if(window.innerWidth<760){
         x=12;y=window.innerHeight-Math.min(h,window.innerHeight*.42)-12;
-        if(!found.closest('[role="alertdialog"]')&&(r.bottom>y-24||r.top<45)){window.scrollBy({top:r.top-Math.max(70,(y-r.height)/2),behavior:"instant"})}
-      }else if(r.right+w+34<window.innerWidth){x=r.right+22;y=Math.max(65,Math.min(r.top,window.innerHeight-h-15))}
-      else if(r.left-w-24>=12){x=r.left-w-22;y=Math.max(65,Math.min(r.top,window.innerHeight-h-15))}
+        if(shouldScroll&&!found.closest('[role="alertdialog"]')&&(r.bottom>y-24||r.top<bannerBottom+3)){window.scrollBy({top:r.top-Math.max(70,(y-r.height)/2),behavior:"instant"})}
+      }else if(r.right+w+34<window.innerWidth){x=r.right+22;y=Math.max(bannerBottom+12,Math.min(r.top,window.innerHeight-h-15))}
+      else if(r.left-w-24>=12){x=r.left-w-22;y=Math.max(bannerBottom+12,Math.min(r.top,window.innerHeight-h-15))}
       else if(y+h>window.innerHeight-15){
         y=r.top-h-18;
-        if(y<50){y=window.innerHeight-h-15;if(r.bottom>y-20)window.scrollBy({top:r.top-75,behavior:"instant"})}
+        if(y<bannerBottom+8){y=window.innerHeight-h-15;if(shouldScroll&&r.bottom>y-20)window.scrollBy({top:r.top-75,behavior:"instant"})}
       }
       const pos={top:Math.max(12,y),left:x,width:w,height:h};
       setPanel(previous=>JSON.stringify(previous)===JSON.stringify(pos)?previous:pos);
     }
     function schedule(){window.cancelAnimationFrame(frame);frame=window.requestAnimationFrame(refresh)}
-    const mutation=new MutationObserver(schedule);mutation.observe(document.body,{childList:true,subtree:true});
-    const panelResize=new ResizeObserver(schedule);if(coachRef.current)panelResize.observe(coachRef.current);
-    window.addEventListener("resize",schedule);window.addEventListener("scroll",schedule,true);
-    window.visualViewport?.addEventListener("resize",schedule);
+    function layoutSchedule(){reposition=true;schedule()}
+    const mutation=new MutationObserver(layoutSchedule);mutation.observe(document.body,{childList:true,subtree:true});
+    const panelResize=new ResizeObserver(layoutSchedule);if(coachRef.current)panelResize.observe(coachRef.current);
+    window.addEventListener("resize",layoutSchedule);window.addEventListener("scroll",schedule,true);
+    window.visualViewport?.addEventListener("resize",layoutSchedule);
     schedule();
-    return()=>{window.clearTimeout(missingTimer);window.cancelAnimationFrame(frame);mutation.disconnect();observer?.disconnect();panelResize.disconnect();window.removeEventListener("resize",schedule);window.removeEventListener("scroll",schedule,true);window.visualViewport?.removeEventListener("resize",schedule);marked?.removeAttribute("data-inventory-training-focus")}
+    return()=>{window.clearTimeout(missingTimer);window.cancelAnimationFrame(frame);mutation.disconnect();observer?.disconnect();panelResize.disconnect();window.removeEventListener("resize",layoutSchedule);window.removeEventListener("scroll",schedule,true);window.visualViewport?.removeEventListener("resize",layoutSchedule);marked?.removeAttribute("data-inventory-training-focus")}
   },[visible,targetSelector,expanded,passed,pathname]);
 
   useEffect(()=>{

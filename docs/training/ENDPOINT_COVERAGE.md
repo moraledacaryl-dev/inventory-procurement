@@ -6,7 +6,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 |---|---|---|---|
 | `GET /integrations/accounting/workspace` | `accounting_integration.py` | integrations.read | Supporting UI / record inspection |
 | `POST /integrations/accounting/receipts` | `accounting_integration.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
-| `POST /integrations/accounting/events/{event_id}/requeue` | `accounting_integration.py` | integrations.* | Disabled in training; sandbox adapter or separate onboarding applies |
+| `POST /integrations/accounting/events/{event_id}/requeue` | `accounting_integration.py` | integrations.* | Assessed: reviewed failed-event retry preserves identity/amount; local pending state, no delivery worker |
 | `GET /assets` | `assets.py` | inventory.read | Supporting UI / record inspection |
 | `POST /assets` | `assets.py` | inventory.* | Assessed: unique physical tag, classification, location, dates, cost and useful life |
 | `POST /assets/{asset_id}/events` | `assets.py` | inventory.* | Excluded from employee GUI practice: lifecycle API has no event action form in current Assets screen; steward process required |
@@ -110,7 +110,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `PUT /fnb/menu/{item_id}` | `menu.py` | items.* | Further practical lesson required |
 | `POST /integrations/operations/requests` | `operational_integrations.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /integrations/operations/workspace` | `operational_integrations.py` | integrations.read | Supporting UI / record inspection |
-| `POST /integrations/operations/requests/{event_id}/decision` | `operational_integrations.py` | integrations.* | Disabled in training; sandbox adapter or separate onboarding applies |
+| `POST /integrations/operations/requests/{event_id}/decision` | `operational_integrations.py` | integrations.* | Assessed: owner accepts with canonical assignee, rejects duplicate or completes evidenced handover; only local pending status outbox |
 | `GET /audit-logs` | `operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /notifications` | `operations.py` | reports.read | Supporting UI / record inspection |
 | `POST /notifications/{notification_id}/read` | `operations.py` | reports.read | Further practical lesson required |

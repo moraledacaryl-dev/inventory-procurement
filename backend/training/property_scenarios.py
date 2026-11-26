@@ -2,7 +2,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 from sqlalchemy import select
-from app.models.inventory import Item, Location, StockBalance, StockDocument, UnitOfMeasure
+from app.models.inventory import Item, Location, StockBalance, StockDocument
 from app.models.classification import OperationalDimension
 from app.models.property import PropertyBalance, PropertyMovement, HotelParProfile, HotelParLine
 from app.models.assets import FixedAsset, DepreciationRun, DepreciationLine
@@ -26,7 +26,6 @@ def property_values(lesson,mode):
 def prepare_property(db,lesson,v):
     if not lesson.workflow.startswith("property_"):return
     dims={r["code"]:r["id"] for r in DEFAULT_DIMENSIONS}
-    db.add(UnitOfMeasure(id="training-each",code="TRAIN-EACH",name="Each",precision=0));db.flush()
     if lesson.module=="U":
         floor=db.get(Location,v["kitchen"]);floor.code="TRAIN-FLOOR";floor.name="Training room floor"
         db.add(Item(id=v["linen"],sku="TRAIN-TOWEL",name="Training bath towel",category_id=v["category"],base_unit_id="training-each",primary_workspace_id=dims["hotel"],item_type_id=dims["linen"],track_stock=False))

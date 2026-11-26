@@ -27,6 +27,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
     from training.store import Store
     from training.curriculum import BY_ID, LESSONS, VERSION, ROLES, ROLE_NAMES, CAPSTONES
     from training.scenarios import IDS, engine_for, prepare, public_lesson, practical_question, inspection_endpoint, recover_checkpoint, resolve_practice_route, verify
+    from training.connected_scenarios import local_control_allowed
 
     store = Store(root)
     app.title = "Hidden Oasis Inventory Training — isolated practice"
@@ -101,7 +102,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
             except HTTPException as exc:
                 return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
             blocked = path.startswith("/api/v1/auth/login") or request.method != "GET" and (
-                path.startswith("/api/v1/integrations/") or path in {"/api/v1/integration-events/process", "/api/v1/master-data/publish"})
+                path.startswith("/api/v1/integrations/") and not local_control_allowed(request.method,path,BY_ID[attempt["lesson_id"]]) or path in {"/api/v1/integration-events/process", "/api/v1/master-data/publish"})
             if blocked:
                 return JSONResponse(status_code=403, content={"detail": "External services and integration delivery are disabled in training."})
             response = await call_next(request)

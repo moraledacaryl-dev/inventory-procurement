@@ -17,7 +17,10 @@ def property_values(lesson,mode):
     dims={r["code"]:r["id"] for r in DEFAULT_DIMENSIONS}
     cost={"guided":12000,"assisted":15000,"independent":18000}[mode]
     issue=lesson.id=="issue-clean-linen";laundry=lesson.id=="send-used-linen-to-laundry"
-    return {"linen":"training-linen","asset":"training-asset","asset_item":"training-asset-item","asset_class":"training-asset-class","asset_method":"training-asset-method",
+    labor={"guided":125,"assisted":150,"independent":175}[mode]
+    external={"guided":275,"assisted":300,"independent":325}[mode]
+    downtime={"guided":"1.25","assisted":"1.50","independent":"1.75"}[mode]
+    return {"work_labor":labor,"work_external":external,"work_downtime":downtime,"linen":"training-linen","asset":"training-asset","asset_item":"training-asset-item","asset_class":"training-asset-class","asset_method":"training-asset-method",
         "property_source":"training-kitchen" if laundry else "training-store","property_destination":"training-kitchen" if issue else "training-store",
         "property_from_condition":dims["available" if issue or lesson.id=="configure-room-par" else "in-use" if laundry else "in-laundry"],
         "property_to_condition":dims["in-use" if issue else "in-laundry" if laundry else "available"],"property_reason":dims["issue" if issue else "laundry"],"asset_cost":cost,"asset_monthly":cost//60}
@@ -40,11 +43,11 @@ def prepare_property(db,lesson,v):
     db.flush()
     db.add(FixedAsset(id=v["asset"],asset_tag="TRAIN-FAN-01",item_id=v["asset_item"],asset_class_id=v["asset_class"],depreciation_method_id=v["asset_method"],location_id=v["store"],acquisition_date=date(2026,11,1),placed_in_service_date=date(2026,11,1),acquisition_cost=v["asset_cost"],useful_life_months=60,status="active",created_by_user_id=v["colleague"]))
     db.flush()
-    if lesson.id=="complete-maintenance-work":
+    if lesson.id in {"complete-maintenance-work","complete-costed-maintenance"}:
         db.add(MaintenancePlan(id="training-plan",code="TRAIN-FAN-CARE",name="Fan safety check",asset_id=v["asset"],interval_days=30,next_due_date=date(2026,11,1)))
         db.flush()
-    if lesson.id in {"start-maintenance-work","complete-maintenance-work"}:
-        db.add(WorkOrder(id="training-work",work_order_number="TRAIN-WORK",asset_id=v["asset"],plan_id="training-plan" if lesson.id=="complete-maintenance-work" else None,title="Inspect fan guard",status="in_progress" if lesson.id=="complete-maintenance-work" else "open",created_by_user_id=v["colleague"]))
+    if lesson.id in {"start-maintenance-work","complete-maintenance-work","complete-costed-maintenance"}:
+        db.add(WorkOrder(id="training-work",work_order_number="TRAIN-WORK",asset_id=v["asset"],plan_id="training-plan" if lesson.id in {"complete-maintenance-work","complete-costed-maintenance"} else None,title="Inspect fan guard",status="in_progress" if lesson.id in {"complete-maintenance-work","complete-costed-maintenance"} else "open",created_by_user_id=v["colleague"]))
 
 
 def after_prepare_property(db,lesson,v):
@@ -85,6 +88,9 @@ def verify_property(db,lesson,v,actions):
     elif id=="complete-maintenance-work":
         row=db.get(WorkOrder,"training-work");plan=db.get(MaintenancePlan,"training-plan")
         ok=row.status=="completed" and row.completed_at is not None and row.labor_cost==row.external_cost==row.downtime_hours==0 and not row.parts and plan.next_due_date==date.today()+timedelta(days=30) and audited("maintenance.work_order_completed",row.id) and event("inventory.maintenance.completed",row.id)
+    elif id=="complete-costed-maintenance":
+        row=db.get(WorkOrder,"training-work");plan=db.get(MaintenancePlan,"training-plan")
+        ok=row.status=="completed" and row.completed_at is not None and row.labor_cost==v["work_labor"] and row.external_cost==v["work_external"] and row.downtime_hours==Decimal(v["work_downtime"]) and row.completion_notes==v["reference"] and not row.parts and plan.next_due_date==date.today()+timedelta(days=30) and audited("maintenance.work_order_completed",row.id) and event("inventory.maintenance.completed",row.id)
     elif id in {"prepare-depreciation-run","post-reviewed-depreciation"}:
         rows=list(db.scalars(select(DepreciationRun)));lines=list(db.scalars(select(DepreciationLine)));asset=db.get(FixedAsset,v["asset"])
         posted=id=="post-reviewed-depreciation"

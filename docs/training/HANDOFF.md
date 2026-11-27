@@ -6,7 +6,7 @@ This is a source-backed training application on the dedicated feature branch, wi
 
 | Source | Verified GitHub main |
 |---|---|
-| `moraledacaryl-dev/inventory-procurement` | `ca3a339c92aee79cc85079f5b9bf3560cc20e3b6` |
+| `moraledacaryl-dev/inventory-procurement` | `6f6723da5a4f22986a8e0cee53272f8a88efb03e` |
 | `moraledacaryl-dev/operations-command-center` | `63a9e7c011ecfa140f7ae3e75612c2d5d6e4fa86` |
 
 Both were fetched and rechecked directly against GitHub. Work uses fresh clones; the existing Desktop checkout is not source authority. Branch: `codex/inventory-training-20261126`. The PR and native `RELEASE.json` identify the exact implementation/package commit. Native CI checks out the feature head explicitly, rather than attributing a generated merge commit to the branch head.
@@ -25,7 +25,7 @@ Registry schemas 1–3 migrate transactionally to schema 4. Old versions remain 
 
 Employee wording revision `2026.11.27.3` removes implementation language from lessons and feedback, shortens course descriptions and shows examples as optional help. The employee home screen omits trainer access; trainers still use `/training/management`. Task bindings, quantities, answers, permissions and grading are unchanged. Curriculum and assessment versions are retained, so this wording update does not invalidate current learner progress. Native release manifests record the wording revision separately.
 
-Curriculum `2026.11.27.2` contains **168 definitions: 140 action/validation/analysis exercises and 28 inspections**. Seventeen action exercises finish with an actual protective refusal. Every definition supports guided, assisted and independent mode: **504 attempt variants**. These are not 504 distinct business workflows. Café/bar issues and the direct Stock correction reuse existing posting engines with different unit/custody decisions. The original conceptual POS inspection is replaced in place, not counted twice.
+Curriculum `2026.11.27.4` contains **173 definitions: 145 action/validation/analysis exercises and 28 inspections**. Seventeen action exercises finish with an actual protective refusal. Every definition supports guided, assisted and independent mode: **519 attempt variants**. These are not 519 distinct business workflows. Café/bar issues and the direct Stock correction reuse existing posting engines with different unit/custody decisions. The original conceptual POS inspection is replaced in place, not counted twice.
 
 | Module | Definitions | Source-supported scope |
 |---|---:|---|
@@ -56,7 +56,7 @@ Curriculum `2026.11.27.2` contains **168 definitions: 140 action/validation/anal
 | Y — Management reports | 5 | Supplier purchasing/acceptance, stock valuation, saved scope, separate reconciliation/backup assurance evidence |
 | Z — Administration | 17 | Bounded scopes, departments/classification, fixed fictional CSV migration, original-job resume, locations, verified follow-ups, honest diagnostics |
 
-The complete definition-to-role matrix and 14 duty-course assignments are in [CURRICULUM.md](CURRICULUM.md). [ENDPOINT_COVERAGE.md](ENDPOINT_COVERAGE.md) covers 234 decorated API contracts, including explicit exclusions. [source-contract.json](source-contract.json) fingerprints 184 operational files and fails CI when source changes without review.
+The complete definition-to-role matrix and 14 duty-course assignments are in [CURRICULUM.md](CURRICULUM.md). [ENDPOINT_COVERAGE.md](ENDPOINT_COVERAGE.md) covers 234 decorated API contracts, including explicit exclusions. [source-contract.json](source-contract.json) fingerprints 186 operational files and fails CI when source changes without review.
 
 | Actual role | Assigned definitions | Responsibility |
 |---|---:|---|
@@ -73,7 +73,7 @@ Quick reference provides searchable lessons, practical questions, role-specific 
 
 ## Assessments and linked days
 
-All 168 definitions have independent mode. There are **160 final blueprints: 146 applicable module finals and 14 duty finals**. These reuse the real exercises and are not additional unique business scenarios. A module final requires guided/assisted prerequisites; a duty final requires all assigned modes and current module finals. Every final practical uses new independent records tied to its exam/course/role/version, without hints. Knowledge requires 85%, practical objectives 90%, and every critical knowledge/business check 100%. Live source evidence is rechecked at grading; a prior practice pass cannot conceal a later change. Specific corrections and fresh retakes preserve the failed record. Certificates attest only to local training performance.
+All 173 definitions have independent mode. There are **160 final blueprints: 146 applicable module finals and 14 duty finals**. These reuse the real exercises and are not additional unique business scenarios. A module final requires guided/assisted prerequisites; a duty final requires all assigned modes and current module finals. Every final practical uses new independent records tied to its exam/course/role/version, without hints. Knowledge requires 85%, practical objectives 90%, and every critical knowledge/business check 100%. Live source evidence is rechecked at grading; a prior practice pass cannot conceal a later change. Specific corrections and fresh retakes preserve the failed record. Certificates attest only to local training performance.
 
 | Linked capstone | Evidence in one evolving database | Learner roles |
 |---|---|---|

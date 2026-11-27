@@ -64,6 +64,6 @@ def validate():
 
 if __name__ == "__main__":
     if "--record-reviewed-baseline" in sys.argv:
-        BASELINE.write_text(json.dumps({"inventory_main": "ca3a339c92aee79cc85079f5b9bf3560cc20e3b6", "operations_main": "63a9e7c011ecfa140f7ae3e75612c2d5d6e4fa86", "files": source_hashes()}, indent=2) + "\n")
+        BASELINE.write_text(json.dumps({"inventory_main": "6f6723da5a4f22986a8e0cee53272f8a88efb03e", "operations_main": "63a9e7c011ecfa140f7ae3e75612c2d5d6e4fa86", "files": source_hashes()}, indent=2) + "\n")
     else:
         validate()

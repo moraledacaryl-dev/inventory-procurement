@@ -36,6 +36,17 @@ def prepare_catalogue(db,lesson,v):
     if lesson.id=="remove-item-barcode":
         db.add(ItemBarcode(id="training-old-barcode",item_id=v["chicken"],barcode="TRAIN-OLD-SCAN",barcode_type="INTERNAL",is_primary=False))
 
+    if lesson.id=="edit-item-barcode":
+        db.add(ItemBarcode(id="training-edit-barcode",item_id=v["chicken"],barcode="TRAIN-OLD-SCAN",barcode_type="INTERNAL",is_primary=False))
+    if lesson.id=="edit-unit-conversion":
+        db.execute(delete(UnitConversion).where(UnitConversion.item_id==v["chicken"]))
+        db.add(UnitConversion(id="training-edit-conversion",item_id=v["chicken"],from_unit_id=v["conversion_from"],to_unit_id=v["conversion_to"],multiplier=800))
+    if lesson.id=="edit-location-policy":
+        db.add(ItemLocationSetting(id="training-edit-policy",item_id=v["chicken"],location_id=v["store"],minimum_stock=3,reorder_quantity=5,maximum_stock=10,cycle_count_days=30))
+    if lesson.id=="edit-supplier-item-terms":
+        row=db.scalar(select(SupplierItem).where(SupplierItem.item_id==v["chicken"],SupplierItem.supplier_id==v["supplier"]))
+        row.id="training-edit-supplier"
+
 
 def verify_catalogue(db,lesson,v,actions):
     id=lesson.id
@@ -60,6 +71,18 @@ def verify_catalogue(db,lesson,v,actions):
     elif id=="define-unit-conversion":
         rows=db.scalars(select(UnitConversion).where(UnitConversion.item_id==v["chicken"])).all()
         ok=len(rows)==1 and rows[0].from_unit_id==v["conversion_from"] and rows[0].to_unit_id==v["conversion_to"] and rows[0].multiplier==Decimal(v["conversion_multiplier"]) and rows[0].is_active
+    elif id=="edit-item-barcode":
+        row=db.get(ItemBarcode,"training-edit-barcode")
+        ok=bool(row and row.item_id==v["chicken"] and row.barcode==v["barcode"] and row.barcode_type=="INTERNAL" and not row.is_primary)
+    elif id=="edit-unit-conversion":
+        row=db.get(UnitConversion,"training-edit-conversion")
+        ok=bool(row and row.item_id==v["chicken"] and row.from_unit_id==v["conversion_from"] and row.to_unit_id==v["conversion_to"] and row.multiplier==Decimal(v["conversion_multiplier"]) and row.is_active)
+    elif id=="edit-location-policy":
+        row=db.get(ItemLocationSetting,"training-edit-policy")
+        ok=bool(row and row.item_id==v["chicken"] and row.location_id==v["store"] and row.minimum_stock==v["quantity"] and row.reorder_quantity==20 and row.maximum_stock==60 and row.cycle_count_days==7 and row.preferred_supplier_id is None and row.is_active)
+    elif id=="edit-supplier-item-terms":
+        row=db.get(SupplierItem,"training-edit-supplier");po=db.get(PurchaseOrder,v["po"])
+        ok=bool(row and row.item_id==v["chicken"] and row.supplier_id==v["supplier"] and row.supplier_sku=="TRAIN-CHICKEN" and row.last_price==210 and row.lead_time_days==4 and row.minimum_order_quantity==2 and row.is_preferred and po.status=="approved" and po.lines[0].received_quantity==0)
     elif id=="set-location-policy":
         rows=db.scalars(select(ItemLocationSetting).where(ItemLocationSetting.item_id==v["chicken"])).all()
         ok=len(rows)==1 and rows[0].location_id==v["store"] and rows[0].minimum_stock==v["quantity"] and rows[0].reorder_quantity==20 and rows[0].maximum_stock==60 and rows[0].cycle_count_days==7 and rows[0].preferred_supplier_id is None and rows[0].is_active

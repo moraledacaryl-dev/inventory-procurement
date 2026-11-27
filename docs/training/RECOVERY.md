@@ -52,4 +52,4 @@ No production database is opened and no `BackupRecord` is manufactured. This ver
 
 ## Curriculum refresh
 
-Curriculum 2026.11.27.2 preserves the learner registry and historical attempts, results and certificates. Earlier attempts are retained as earlier-version evidence; they do not pass updated lessons or current finals. Return to the course and start the current lesson. Do not delete a learner profile or manually alter version fields to reuse an earlier pass.
+Curriculum 2026.11.27.4 preserves the learner registry and historical attempts, results and certificates. Earlier attempts are retained as earlier-version evidence; they do not pass updated lessons or current finals. Return to the course and start the current lesson. Do not delete a learner profile or manually alter version fields to reuse an earlier pass.

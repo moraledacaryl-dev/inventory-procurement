@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Literal
 from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.27.2"
+VERSION = "2026.11.27.4"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]

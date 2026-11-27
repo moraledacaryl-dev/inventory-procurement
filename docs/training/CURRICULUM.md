@@ -1,6 +1,6 @@
 # Inventory Training curriculum and role matrix
 
-Curriculum version: `2026.11.27.2`. Generated from the typed definitions; review alongside source-contract.json and ENDPOINT_COVERAGE.md.
+Curriculum version: `2026.11.27.4`. Generated from the typed definitions; review alongside source-contract.json and ENDPOINT_COVERAGE.md.
 
 Each row is one definition with guided, assisted and independent variants. Item/quantity variants do not create additional unique business workflows. A check mark means the real source role is assigned the lesson; production location and monetary limits still apply.
 
@@ -15,7 +15,10 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | C | `create-item` — Create a correctly classified item | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | C | `deactivate-empty-item` — Retire an item without erasing history | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | C | `define-unit-conversion` — Configure the direction of a unit conversion | ✓ |  |  |  |  | ✓ | Source business/master outcome |
+| C | `edit-item-barcode` — Correct an existing scan code | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | C | `edit-item-reorder` — Change a minimum without changing stock | ✓ |  |  |  |  | ✓ | Source business/master outcome |
+| C | `edit-location-policy` — Update an existing stockroom policy | ✓ |  |  |  |  | ✓ | Source business/master outcome |
+| C | `edit-unit-conversion` — Correct an existing unit conversion | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | C | `reactivate-item` — Bring a retired item back into use | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | C | `remove-item-barcode` — Remove an obsolete scan code | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | C | `set-location-policy` — Set a stockroom-specific replenishment policy | ✓ |  |  |  |  | ✓ | Source business/master outcome |
@@ -61,6 +64,7 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | I | `supplier-profile` — Find a supplier and check its history | ✓ | ✓ | ✓ |  | ✓ | ✓ | Source record inspection |
 | I | `unlink-obsolete-supplier-item` — Remove an obsolete supplier-item link |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `approve-purchase-request` — Review and approve another person's request |  | ✓ |  |  |  | ✓ | Source business/master outcome |
+| J | `edit-supplier-item-terms` — Update an existing supplier's item terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `reject-duplicate-request` — Reject an unnecessary purchase request |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `request-purchase` — Check stock before requesting a purchase |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `request-self-approval` — Recognize independent request approval |  | ✓ |  |  |  | ✓ | Source protective refusal |
@@ -132,6 +136,7 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | U | `return-clean-linen` — Return verified clean towels to availability | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | U | `send-used-linen-to-laundry` — Hand used towels into laundry control | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | V | `asset-maintenance` — Distinguish assets from consumable supplies | ✓ |  |  |  |  | ✓ | Source record inspection |
+| V | `complete-costed-maintenance` — Record repair costs when completing work | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | V | `complete-maintenance-work` — Close completed work and advance its schedule | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | V | `create-maintenance-plan` — Schedule preventive work for a specific asset | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | V | `create-maintenance-work-order` — Record a specific maintenance job | ✓ |  |  |  |  | ✓ | Source business/master outcome |
@@ -179,18 +184,18 @@ Each row is one definition with guided, assisted and independent variants. Item/
 
 | Course | Source role | Assigned definitions | Fresh duty-final tasks |
 |---|---|---:|---|
-| Stock and department supplies (`role-inventory_manager`) | `inventory_manager` | 94 | `cap-monthly-count`, `cap-restaurant-service`, `reservation-shortage` |
-| Purchasing (`role-procurement_officer`) | `procurement_officer` | 33 | `cap-busy-weekend`, `request-self-approval`, `purchase-approval-limit` |
+| Stock and department supplies (`role-inventory_manager`) | `inventory_manager` | 98 | `cap-monthly-count`, `cap-restaurant-service`, `reservation-shortage` |
+| Purchasing (`role-procurement_officer`) | `procurement_officer` | 34 | `cap-busy-weekend`, `request-self-approval`, `purchase-approval-limit` |
 | Receiving deliveries (`role-receiver`) | `receiver` | 17 | `cap-delivery-recovery`, `check-order` |
 | Physical stock counts (`role-counter`) | `counter` | 8 | `cap-monthly-count`, `count-zero`, `stale-count-snapshot` |
 | Reports and review (`role-viewer`) | `viewer` | 20 | `available-stock`, `management-review` |
-| Owner and administration (`role-owner`) | `owner` | 165 | `cap-owner-review`, `cap-busy-weekend`, `cap-monthly-count` |
-| Stockroom and inventory (`stockroom`) | `inventory_manager` | 51 | `cap-monthly-count`, `transfer-receipt-variance`, `reservation-shortage` |
+| Owner and administration (`role-owner`) | `owner` | 170 | `cap-owner-review`, `cap-busy-weekend`, `cap-monthly-count` |
+| Stockroom and inventory (`stockroom`) | `inventory_manager` | 54 | `cap-monthly-count`, `transfer-receipt-variance`, `reservation-shortage` |
 | Kitchen preparation (`kitchen`) | `inventory_manager` | 24 | `cap-restaurant-service`, `record-waste` |
 | Cafe supplies and service (`cafe`) | `inventory_manager` | 21 | `transfer-receipt-variance`, `staff-meal`, `available-stock` |
 | Bar supplies and service (`bar`) | `inventory_manager` | 20 | `transfer-receipt-variance`, `record-waste`, `available-stock` |
 | Housekeeping and linen (`housekeeping`) | `inventory_manager` | 11 | `cap-housekeeping`, `available-stock` |
-| Maintenance and assets (`maintenance`) | `inventory_manager` | 10 | `create-maintenance-work-order`, `complete-maintenance-work`, `asset-maintenance` |
+| Maintenance and assets (`maintenance`) | `inventory_manager` | 11 | `create-maintenance-work-order`, `complete-maintenance-work`, `asset-maintenance` |
 | Department supervision (`department-supervisor`) | `inventory_manager` | 19 | `cap-monthly-count`, `recipe-self-approval`, `request-count-recheck` |
 | Accounting-related inventory review (`accounting-review`) | `viewer` | 20 | `available-stock`, `management-review` |
 

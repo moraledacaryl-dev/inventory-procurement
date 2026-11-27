@@ -169,3 +169,51 @@ LESSONS = [
             Step('[data-training="supplier-status"]',"Try Deactivate supplier in this fictional practice."),
             save('[data-training="confirm"]',"Read the refusal caused by the outstanding order.","/suppliers/training-supplier",409))),
 ]
+
+# Existing records are edited in place; their identity and stock history stay.
+LESSONS += [
+    lesson("edit-item-barcode","C","Correct an existing scan code",STOCK,"/items/{chicken}",
+        "The chicken scan code has changed. Edit its existing TRAIN-OLD-SCAN row to {barcode}. Keep INTERNAL as the type and leave Primary unchecked.",
+        "Correcting a scan code changes how the item is found. It does not record a delivery or change stock.",
+        "A replacement label should still find the same chicken item.",
+        "Check the item and edit the existing code. Keep its stock history.",
+        "Does correcting a barcode change physical stock? yes or no","no","Change the existing scan code only.",(
+            Step('[data-training="edit-barcode"]',"Open Edit beside TRAIN-OLD-SCAN."),
+            input_step('[data-training="edit-barcode-form"] [name="barcode"]',"Enter {barcode}.","{barcode}"),
+            Step('[data-training="confirm"]',"Save the corrected barcode.",outcome="/items/training-chicken/barcodes/training-edit-barcode",outcome_method="PATCH"))),
+    lesson("edit-unit-conversion","C","Correct an existing unit conversion",STOCK,"/items/{chicken}",
+        "The existing chicken conversion has an incorrect multiplier. Edit it to {conversion_description}. Keep it available for new entries.",
+        "A conversion must state the direction and multiplier together. Correcting it does not rewrite earlier stock movements.",
+        "One kilogram is 1,000 grams; one gram is 0.001 kilogram.",
+        "Read both units before saving the multiplier.",
+        "How many grams are in one kilogram?","1000","Read the full conversion before saving.",(
+            Step('[data-training="edit-conversion"]',"Open the existing conversion."),
+            select_step('[data-training="edit-conversion-form"] [name="from_unit_id"]',"Choose {conversion_from_name}.","{conversion_from}"),
+            select_step('[data-training="edit-conversion-form"] [name="to_unit_id"]',"Choose {conversion_to_name}.","{conversion_to}"),
+            input_step('[data-training="edit-conversion-form"] [name="multiplier"]',"Enter {conversion_multiplier}.","{conversion_multiplier}"),
+            Step('[data-training="confirm"]',"Save the corrected conversion.",outcome="/items/training-chicken/conversions/training-edit-conversion",outcome_method="PATCH"))),
+    lesson("edit-location-policy","C","Update an existing stockroom policy",STOCK,"/items/{chicken}",
+        "Update chicken's existing Training stockroom policy: minimum {quantity} kg, reorder 20 kg, maximum 60 kg and count every 7 days. Leave the supplier override blank and the policy active.",
+        "An edited policy guides future replenishment and counts. It does not move supplies or place an order.",
+        "A new minimum changes when the stockroom checks its supplies; the shelf quantity stays the same.",
+        "Edit the assigned stockroom's existing policy and check all quantities.",
+        "Does editing this policy place a purchase order? yes or no","no","The policy guides planning. Purchasing still needs its normal approval.",(
+            Step('[data-training="edit-policy"]',"Open the existing Training stockroom policy."),
+            input_step('[data-training="edit-policy-form"] [name="minimum_stock"]',"Set minimum to {quantity} kg.","{quantity}"),
+            input_step('[data-training="edit-policy-form"] [name="reorder_quantity"]',"Set reorder quantity to 20 kg.","20"),
+            input_step('[data-training="edit-policy-form"] [name="maximum_stock"]',"Set maximum to 60 kg.","60"),
+            input_step('[data-training="edit-policy-form"] [name="cycle_count_days"]',"Set the count interval to 7 days.","7"),
+            Step('[data-training="confirm"]',"Save changes to this policy.",outcome="/item-location-settings/training-edit-policy",outcome_method="PATCH")),quantity=12,global_access=False),
+    lesson("edit-supplier-item-terms","J","Update an existing supplier's item terms",BUY,"/items/{chicken}",
+        "The supplier confirmed new terms for chicken: supplier item code TRAIN-CHICKEN, last price PHP 210, lead time 4 days and minimum order 2 kg. Edit the existing supplier link and keep it preferred.",
+        "Supplier item terms describe an offer. Editing them does not change an already approved order or prove that goods arrived.",
+        "A new quoted price applies to later planning. The old approved purchase order retains its own agreed price.",
+        "Check the supplier and item, then update the existing link.",
+        "Does changing these terms rewrite an approved purchase order? yes or no","no","Update the supplier link while keeping approved orders unchanged.",(
+            Step('[data-training="edit-supplier"]',"Edit Training Valley Foods' existing chicken terms."),
+            input_step('[data-training="edit-supplier-form"] [name="supplier_sku"]',"Enter TRAIN-CHICKEN.","TRAIN-CHICKEN"),
+            input_step('[data-training="edit-supplier-form"] [name="last_price"]',"Enter PHP 210.","210"),
+            input_step('[data-training="edit-supplier-form"] [name="lead_time_days"]',"Enter 4 days.","4"),
+            input_step('[data-training="edit-supplier-form"] [name="minimum_order_quantity"]',"Enter 2 kg.","2"),
+            Step('[data-training="confirm"]',"Save the revised supplier terms.",outcome="/supplier-items/training-edit-supplier",outcome_method="PATCH"))),
+]

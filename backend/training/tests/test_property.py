@@ -12,6 +12,7 @@ def perform(client,lesson,v):
     if id=="create-maintenance-plan":return client.post("/api/v1/maintenance/plans",json={"code":"TRAIN-FAN-CARE","name":"Fan safety check","asset_id":v["asset"],"interval_days":30,"next_due_date":"2026-12-01","checklist":"Check guard and clean filter"})
     if id=="create-maintenance-work-order":return client.post("/api/v1/maintenance/work-orders",json={"asset_id":v["asset"],"title":"Inspect fan guard","priority":"high","scheduled_date":"2026-12-01","description":v["reference"],"parts":[]})
     if id=="start-maintenance-work":return client.post("/api/v1/maintenance/work-orders/training-work/start")
+    if id=="complete-costed-maintenance":return client.post("/api/v1/maintenance/work-orders/training-work/complete",json={"labor_cost":v["work_labor"],"external_cost":v["work_external"],"downtime_hours":v["work_downtime"],"completion_notes":v["reference"]})
     if id=="complete-maintenance-work":return client.post("/api/v1/maintenance/work-orders/training-work/complete",json={"labor_cost":0,"external_cost":0,"downtime_hours":0})
     if id=="prepare-depreciation-run":return client.post("/api/v1/depreciation-runs",json={"period":"2026-11"})
     run=client.get("/api/v1/depreciation-runs").json()[0]
@@ -29,7 +30,7 @@ def test_property_real_outcomes_all_modes(learner,lesson):
             learner.headers["X-Training-Attempt"]=response.json()["attempt_id"]
         assert not learner.post("/api/v1/training/check",json={"answer":"no"}).json()["passed"]
         response=perform(learner,lesson,values(lesson,mode))
-        expected=200 if lesson.id in {"start-maintenance-work","complete-maintenance-work","post-reviewed-depreciation"} else 201
+        expected=200 if lesson.id in {"start-maintenance-work","complete-maintenance-work","complete-costed-maintenance","post-reviewed-depreciation"} else 201
         assert response.status_code==expected,response.text
         result=learner.post("/api/v1/training/check",json={"answer":"no"}).json()
         assert result["passed"],result

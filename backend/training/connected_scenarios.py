@@ -9,6 +9,8 @@ from app.models.audit_log import AuditLog
 
 
 def local_control_allowed(method,path,lesson):
+    if method=="POST" and lesson.id=="refuse-accepted-accounting-dedicated":
+        return path=="/api/v1/integrations/accounting/events/training-safety-event/requeue"
     if method!="POST" or not lesson.workflow.startswith(("connected_","capstone_")):return False
     return bool(re.fullmatch(r"/api/v1/integrations/(accounting/events/[A-Za-z0-9-]+/requeue|operations/requests/[A-Za-z0-9-]+/decision)",path))
 

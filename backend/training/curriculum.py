@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Literal
 from training.lesson_types import Lesson, Step
 
-VERSION = "2026.11.27.1"
+VERSION = "2026.11.27.2"
 Role = Literal["owner", "inventory_manager", "procurement_officer", "receiver", "counter", "viewer"]
 Mode = Literal["guided", "assisted", "independent"]
 ROLES = ["inventory_manager", "procurement_officer", "receiver", "counter", "viewer", "owner"]
@@ -236,6 +236,7 @@ _deliveries = [
     ("quantity-discrepancy", "Record a delivery quantity difference", 6, 1, "6 kg arrived; 1 kg is damaged. Record 6 arrived and 1 rejected, accepting 5."),
     ("wrong-item", "Handle an incorrect item", 10, 10, "The delivery is the wrong item for this line. Record rejection with a clear wrong-item reason; do not add the ordered item to stock."),
     ("later-delivery", "Receive the remaining order later", 2, 0, "8 kg arrived on an earlier delivery. The remaining 2 kg arrives today. Use a new delivery reference."),
+    ("replacement-delivery", "Receive acceptable replacements against the original order", 2, 0, "An earlier delivery against TRAIN-PO arrived in full but {quantity} kg was rejected. Purchasing still expects {quantity} kg of acceptable replacement. That replacement arrives today; use a new delivery reference and accept only the actual replacement quantity."),
     ("check-order", "Check the order before posting", 8, 0, "Two orders look similar. Use TRAIN-PO from Training Valley Foods, not the decoy order."),
     ("resume-delivery", "Continue an interrupted receipt", 8, 0, "Only 8 kg arrived. Save the delivery draft by entering details, leave the page, then return and finish the receipt."),
 ]
@@ -244,9 +245,9 @@ for ident, title, qty, rejected, situation in _deliveries:
     if rejected:
         steps.insert(4, s('[aria-label="Reason for rejecting Chicken (kg)"]', "Write the actual reason: {reject_reason}.", "{reject_reason}", "input"))
     LESSONS.append(Lesson(ident, "M", title, RECEIVE, "/receiving", "receiving", situation,
-        "Arrived is what the supplier delivered. Rejected is what you refused. Accepted is arrived minus rejected. Only accepted stock is added; all arrived quantity counts toward PO fulfillment.",
-        "10 kg arrived and 2 kg was rejected: stock rises by 8 kg. The order may be received in full even though usable stock is short. Arrange follow-up through purchasing.",
-        "Check item, condition, expiry, lot, location, quantity and delivery reference. Never record supplies that did not arrive. Rejection does not automatically leave the PO outstanding.",
+        "Arrived is what the supplier delivered. Rejected is what you refused. Accepted is arrived minus rejected. Only accepted stock is added; only accepted quantity fulfills the order. Rejected quantities remain outstanding for acceptable replacement.",
+        "10 kg arrived and 2 kg was rejected: stock rises by 8 kg. The order stays partially received with 2 kg outstanding. Receive the acceptable replacement against the same order using a new delivery reference.",
+        "Check item, condition, expiry, lot, location, quantity and delivery reference. Never record supplies that did not arrive. Rejected quantities remain outstanding until acceptable replacements arrive. Preserve the original rejection and delivery history.",
         "Does rejected quantity increase usable stock? yes or no", "no", "Rejected goods never enter usable stock. Accepted = arrived minus rejected.", ("receiving_workspace.py",), tuple(steps), qty, rejected))
 
 EXTRA_STEPS = {
@@ -354,6 +355,9 @@ LESSONS.extend(row for row in POS_REVIEW_LESSONS if row.id!="sale-consumption")
 
 # Read-only evidence is available to the source Viewer role.
 LESSONS=[replace(lesson,roles=lesson.roles+("viewer",)) if lesson.id in {"recipe-cost","accounting-proof"} and "viewer" not in lesson.roles else lesson for lesson in LESSONS]
+
+from training.safety_lessons import LESSONS as SAFETY_LESSONS
+LESSONS.extend(SAFETY_LESSONS)
 
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)

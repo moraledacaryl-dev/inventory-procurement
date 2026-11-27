@@ -32,7 +32,7 @@ def test_steward_outcomes_all_modes(learner,lesson):
             learner.headers['X-Training-Attempt']=response.json()['attempt_id']
         assert not learner.post('/api/v1/training/check',json={'answer':'no'}).json()['passed']
         response=perform(learner,lesson,values(lesson,mode))
-        assert response.status_code in {200,201,204},response.text
+        assert response.status_code in ({409} if lesson.id=='retry-eligible-inbound-event' else {200,201,204}),response.text
         checked=learner.post('/api/v1/training/check',json={'answer':'no'}).json()
         assert checked['passed'],checked
         assert checked['evidence']['stock_integrity']

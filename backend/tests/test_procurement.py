@@ -27,11 +27,16 @@ def test_procurement_to_partial_and_full_receipt(client):
     repeat=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-1','idempotency_key':'grn-1','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'4','accepted_quantity':'4','rejected_quantity':'0'}]}); assert repeat.status_code==201 and repeat.json()['id']==first.json()['id']
     after=client.get('/api/v1/purchase-orders',headers=h).json()[0]; assert after['status']=='partially_received' and after['lines'][0]['received_quantity']=='4.0000'
     second=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-2','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'6','accepted_quantity':'5','rejected_quantity':'1'}]}); assert second.status_code==201
-    after=client.get('/api/v1/purchase-orders',headers=h).json()[0]; assert after['status']=='received' and after['lines'][0]['received_quantity']=='10.0000'
+    after=client.get('/api/v1/purchase-orders',headers=h).json()[0]; assert after['status']=='partially_received' and after['lines'][0]['received_quantity']=='10.0000'
     bal=client.get('/api/v1/stock/balances',headers=h).json()[0]; assert bal['quantity']=='9.0000'
     ret=client.post(f"/api/v1/purchase-orders/{po['id']}/returns",headers=h,json={'reason':'Damaged after inspection','idempotency_key':'return-1','lines':[{'purchase_order_line_id':line['id'],'quantity':'2'}]}); assert ret.status_code==201
     ret_repeat=client.post(f"/api/v1/purchase-orders/{po['id']}/returns",headers=h,json={'reason':'Damaged after inspection','idempotency_key':'return-1','lines':[{'purchase_order_line_id':line['id'],'quantity':'2'}]}); assert ret_repeat.json()['id']==ret.json()['id']
     bal=client.get('/api/v1/stock/balances',headers=h).json()[0]; assert bal['quantity']=='7.0000'
+    replacement=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-REPLACEMENT','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'1','accepted_quantity':'1','rejected_quantity':'0'}]})
+    assert replacement.status_code==201
+    after=client.get('/api/v1/purchase-orders',headers=h).json()[0]
+    assert after['status']=='received' and after['lines'][0]['received_quantity']=='11.0000'
+
 def test_fully_rejected_delivery_is_recorded_without_stock(client):
     h=auth(client); item,loc,supplier=masters(client,h); po,_,_=approved_po(client,h,item,loc,supplier,quantity='3'); line=po['lines'][0]
     receipt=client.post(f"/api/v1/purchase-orders/{po['id']}/receipts",headers=h,json={'delivery_reference':'DR-REJECTED','lines':[{'purchase_order_line_id':line['id'],'received_quantity':'3','accepted_quantity':'0','rejected_quantity':'3'}]})

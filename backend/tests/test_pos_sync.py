@@ -139,10 +139,8 @@ def test_pos_event_idempotency_and_reversal(client):
 
     with SessionLocal() as db:
         reversal_event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.event_type == "inventory.pos_sale_reversed"))
-        assert reversal_event is not None
-        assert Decimal(reversal_event.payload["total_cost"]) == Decimal("20")
-        assert reversal_event.payload["reverses_stock_document_id"] == original_stock_document_id
-        assert reversal_event.payload["event_type"] == "sale_refunded"
+        assert reversal_event is None
+        assert reversal.json()["stock_document_id"] is None
 
     second_reversal = client.post(
         "/api/v1/integrations/pos/events",
@@ -151,7 +149,7 @@ def test_pos_event_idempotency_and_reversal(client):
     )
     assert second_reversal.status_code == 409
     after_reversal = client.get(f"/api/v1/stock/balances?item_id={ingredient['id']}&location_id={location['id']}", headers=headers).json()[0]
-    assert Decimal(after_reversal["quantity"]) == Decimal("100")
+    assert Decimal(after_reversal["quantity"]) == Decimal("96")
 
     workspace = client.get("/api/v1/integrations/pos/workspace", headers=headers)
     assert workspace.status_code == 200

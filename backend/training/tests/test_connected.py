@@ -67,4 +67,4 @@ def test_accepted_accounting_event_still_cannot_be_requeued(learner,app):
     engine.dispose()
     response=learner.post("/api/v1/integrations/accounting/events/training-retry/requeue")
     assert response.status_code==409,response.text
-    assert "Accepted accounting events" in response.text
+    assert "already received or accepted" in response.text

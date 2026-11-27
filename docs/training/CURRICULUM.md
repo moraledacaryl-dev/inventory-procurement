@@ -1,6 +1,6 @@
 # Inventory Training curriculum and role matrix
 
-Curriculum version: `2026.11.27.1`. Generated from the typed definitions; review alongside source-contract.json and ENDPOINT_COVERAGE.md.
+Curriculum version: `2026.11.27.2`. Generated from the typed definitions; review alongside source-contract.json and ENDPOINT_COVERAGE.md.
 
 Each row is one definition with guided, assisted and independent variants. Item/quantity variants do not create additional unique business workflows. A check mark means the real source role is assigned the lesson; production location and monetary limits still apply.
 
@@ -84,6 +84,7 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | M | `later-delivery` — Receive the remaining order later |  |  | ✓ |  |  | ✓ | Source business/master outcome |
 | M | `partial-delivery` — Receive only what arrived |  |  | ✓ |  |  | ✓ | Source business/master outcome |
 | M | `quantity-discrepancy` — Record a delivery quantity difference |  |  | ✓ |  |  | ✓ | Source business/master outcome |
+| M | `replacement-delivery` — Receive acceptable replacements against the original order |  |  | ✓ |  |  | ✓ | Source business/master outcome |
 | M | `resume-delivery` — Continue an interrupted receipt |  |  | ✓ |  |  | ✓ | Source business/master outcome |
 | M | `wrong-item` — Handle an incorrect item |  |  | ✓ |  |  | ✓ | Source business/master outcome |
 | N | `supplier-return` — Return previously accepted goods |  |  | ✓ |  |  | ✓ | Source business/master outcome |
@@ -116,12 +117,13 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | S | `inspect-cooked-sale-return` — Review discarded prepared food without restoring raw ingredients |  |  |  |  | ✓ | ✓ | Source record inspection |
 | S | `inspect-pos-duplicate-delivery` — Verify that a repeated POS event did not deduct twice |  |  |  |  | ✓ | ✓ | Source record inspection |
 | S | `inspect-unmapped-pos-refusal` — Recognize a refused unmapped sale without inventing a failed row |  |  |  |  | ✓ | ✓ | Source record inspection |
-| S | `inspect-unused-sale-void` — Trace a verified unused-sale correction to its linked reversal |  |  |  |  | ✓ | ✓ | Source record inspection |
+| S | `inspect-unused-sale-void` — Review a financial void without restoring ingredients |  |  |  |  | ✓ | ✓ | Source record inspection |
 | S | `map-pos-product` — Link a POS product to its approved recipe |  |  |  |  |  | ✓ | Source business/master outcome |
-| S | `retry-eligible-inbound-event` — Requeue one reviewed failed POS event |  |  |  |  |  | ✓ | Source business/master outcome |
+| S | `retry-eligible-inbound-event` — Stop an inbound POS event from using outbound Retry |  |  |  |  |  | ✓ | Source protective refusal |
 | S | `sale-consumption` — Trace a made-to-order POS sale to four ingredients |  |  |  |  | ✓ | ✓ | Source record inspection |
 | T | `reverse-duplicate-staff-meal` — Reverse a duplicate meal that never consumed stock | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | T | `staff-meal` — Record supplies used for staff meals | ✓ |  |  |  |  | ✓ | Source business/master outcome |
+| T | `staff-meal-reserved-stock` — Protect ingredients reserved for another job | ✓ |  |  |  |  | ✓ | Source protective refusal |
 | T | `staff-meal-shortage` — Stop an unprepared meal when ingredients are short | ✓ |  |  |  |  | ✓ | Source protective refusal |
 | U | `cap-housekeeping` — Prepare rooms and trace the same linen through laundry | ✓ |  |  |  |  | ✓ | Linked source outcomes in one database |
 | U | `configure-room-par` — Set a room standard without issuing stock | ✓ |  |  |  |  | ✓ | Source business/master outcome |
@@ -139,7 +141,10 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | V | `start-maintenance-work` — Record that authorized work has begun | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | W | `accounting-proof` — Read Accounting delivery and journal evidence |  |  |  |  | ✓ | ✓ | Source record inspection |
 | W | `create-accounting-mapping` — Record a reviewer-approved Accounting mapping |  |  |  |  |  | ✓ | Source business/master outcome |
+| W | `refuse-accepted-accounting-dedicated` — Protect accepted evidence in Accounting Requeue |  |  |  |  |  | ✓ | Source protective refusal |
+| W | `refuse-accepted-accounting-generic` — Protect accepted Accounting evidence in generic Retry |  |  |  |  |  | ✓ | Source protective refusal |
 | W | `requeue-failed-accounting-handoff` — Retry a failed handoff without claiming a posted journal |  |  |  |  |  | ✓ | Source business/master outcome |
+| W | `retry-reviewed-outbound-event` — Requeue one eligible outbound delivery |  |  |  |  |  | ✓ | Source business/master outcome |
 | X | `accept-accountable-operations-work` — Accept connected work with an accountable assignee |  |  |  |  |  | ✓ | Source business/master outcome |
 | X | `acknowledge-operational-alert` — Read an alert without treating it as completed work | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | X | `cap-owner-review` — Follow accountable work through handover and local financial retry |  |  |  |  |  | ✓ | Linked source outcomes in one database |
@@ -174,16 +179,16 @@ Each row is one definition with guided, assisted and independent variants. Item/
 
 | Course | Source role | Assigned definitions | Fresh duty-final tasks |
 |---|---|---:|---|
-| Stock and department supplies (`role-inventory_manager`) | `inventory_manager` | 93 | `cap-monthly-count`, `cap-restaurant-service`, `reservation-shortage` |
+| Stock and department supplies (`role-inventory_manager`) | `inventory_manager` | 94 | `cap-monthly-count`, `cap-restaurant-service`, `reservation-shortage` |
 | Purchasing (`role-procurement_officer`) | `procurement_officer` | 33 | `cap-busy-weekend`, `request-self-approval`, `purchase-approval-limit` |
-| Receiving deliveries (`role-receiver`) | `receiver` | 16 | `cap-delivery-recovery`, `check-order` |
+| Receiving deliveries (`role-receiver`) | `receiver` | 17 | `cap-delivery-recovery`, `check-order` |
 | Physical stock counts (`role-counter`) | `counter` | 8 | `cap-monthly-count`, `count-zero`, `stale-count-snapshot` |
 | Reports and review (`role-viewer`) | `viewer` | 20 | `available-stock`, `management-review` |
-| Owner and administration (`role-owner`) | `owner` | 160 | `cap-owner-review`, `cap-busy-weekend`, `cap-monthly-count` |
+| Owner and administration (`role-owner`) | `owner` | 165 | `cap-owner-review`, `cap-busy-weekend`, `cap-monthly-count` |
 | Stockroom and inventory (`stockroom`) | `inventory_manager` | 51 | `cap-monthly-count`, `transfer-receipt-variance`, `reservation-shortage` |
-| Kitchen preparation (`kitchen`) | `inventory_manager` | 23 | `cap-restaurant-service`, `record-waste` |
-| Cafe supplies and service (`cafe`) | `inventory_manager` | 20 | `transfer-receipt-variance`, `staff-meal`, `available-stock` |
-| Bar supplies and service (`bar`) | `inventory_manager` | 19 | `transfer-receipt-variance`, `record-waste`, `available-stock` |
+| Kitchen preparation (`kitchen`) | `inventory_manager` | 24 | `cap-restaurant-service`, `record-waste` |
+| Cafe supplies and service (`cafe`) | `inventory_manager` | 21 | `transfer-receipt-variance`, `staff-meal`, `available-stock` |
+| Bar supplies and service (`bar`) | `inventory_manager` | 20 | `transfer-receipt-variance`, `record-waste`, `available-stock` |
 | Housekeeping and linen (`housekeeping`) | `inventory_manager` | 11 | `cap-housekeeping`, `available-stock` |
 | Maintenance and assets (`maintenance`) | `inventory_manager` | 10 | `create-maintenance-work-order`, `complete-maintenance-work`, `asset-maintenance` |
 | Department supervision (`department-supervisor`) | `inventory_manager` | 19 | `cap-monthly-count`, `recipe-self-approval`, `request-count-recheck` |

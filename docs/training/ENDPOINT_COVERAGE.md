@@ -6,7 +6,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 |---|---|---|---|
 | `GET /integrations/accounting/workspace` | `accounting_integration.py` | integrations.read | Supporting UI / record inspection |
 | `POST /integrations/accounting/receipts` | `accounting_integration.py` | Service/session boundary | Disabled in training; sandbox adapter or separate onboarding applies |
-| `POST /integrations/accounting/events/{event_id}/requeue` | `accounting_integration.py` | integrations.* | Assessed: reviewed failed-event retry preserves identity/amount; local pending state, no delivery worker |
+| `POST /integrations/accounting/events/{event_id}/requeue` | `accounting_integration.py` | integrations.* | Assessed: reviewed failed outbound retry preserves identity/amount; accepted-receipt retry is refused. Local pending state only, no delivery worker |
 | `GET /assets` | `assets.py` | inventory.read | Supporting UI / record inspection |
 | `POST /assets` | `assets.py` | inventory.* | Assessed: unique physical tag, classification, location, dates, cost and useful life |
 | `POST /assets/{asset_id}/events` | `assets.py` | inventory.* | Excluded from employee GUI practice: lifecycle API has no event action form in current Assets screen; steward process required |
@@ -116,7 +116,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /notifications/{notification_id}/read` | `operations.py` | reports.read | Assessed: acknowledge own operational alert without correcting or completing its underlying work |
 | `GET /integration-events` | `operations.py` | reports.read | Supporting UI / record inspection |
 | `POST /integration-events` | `operations.py` | procurement.* | Excluded from employee GUI practice: event inbox has inspection/retry but no arbitrary event-creation form; real service intake remains disabled |
-| `POST /integration-events/{event_id}/retry` | `operations.py` | procurement.* | Assessed only for a reviewed eligible failed inbound POS event; preserve event/payload identity and pending local state. Generic route lacks accepted-financial safeguards; dedicated Accounting controls required |
+| `POST /integration-events/{event_id}/retry` | `operations.py` | procurement.* | Assessed: eligible failed outbound delivery preserves identity and payload; inbound POS retry and accepted Accounting retry are refused by the real source. Both retry routes share delivery safeguards; Accounting additionally requires integration administration permission |
 | `POST /integration-events/process` | `operations.py` | procurement.* | Disabled in training; sandbox adapter or separate onboarding applies |
 | `GET /exports/items.csv` | `operations.py` | reports.read | Supporting UI / record inspection |
 | `GET /exports/balances.csv` | `operations.py` | reports.read | Supporting UI / record inspection |

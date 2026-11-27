@@ -21,8 +21,8 @@ const reading:Record<string,{answer:string;observations:string[]}>= {
   'sale-consumption':{answer:'no',observations:['-340','-255','-170']},
   'inspect-pos-duplicate-delivery':{answer:'no',observations:['1','1','1']},
   'inspect-unmapped-pos-refusal':{answer:'no',observations:['0','0','0']},
-  'inspect-cooked-sale-return':{answer:'no',observations:['2','2','2']},
-  'inspect-unused-sale-void':{answer:'no',observations:['170','85','85']},
+  'inspect-cooked-sale-return':{answer:'no',observations:['3','3','3']},
+  'inspect-unused-sale-void':{answer:'no',observations:['-170','-85','-85']},
   'management-review':{answer:'no',observations:['2000','2400','2800']},
 };
 const foundation={available:'20',unit:'0.25',value:'500',authority:'no'};
@@ -40,6 +40,7 @@ const topicAnswers:Record<string,string>={
   'S-raw':'no','S-retry':'no','S-refund':'no',
   'W-delivery':'no','W-retry':'no','W-accepted':'no',
   'Y-cause':'no','Y-basis':'yes','Y-review':'no',
+  'M-rejection':'no','T-reservation':'no',
   'final-A-physical':'no','final-Y-cause':'no','final-B-restricted':'no','final-C-case':'72','final-I-terms':'no',
   'final-G-truth':'8','final-M-accepted':'6','final-K-deadline':'1','final-S-raw':'no','final-W-delivery':'no',
 };

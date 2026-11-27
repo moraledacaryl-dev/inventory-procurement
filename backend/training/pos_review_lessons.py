@@ -4,7 +4,7 @@ ROLES=("viewer","owner")
 
 def read(id,title,situation,concept,example,rule,question,document=False,quantity=2):
     steps=(Step('[data-training-pos-document="TRAIN-SALE-COMPLETED"]',"Open the original sale's stock document and inspect all four ingredient lines.",event="read",outcome="/stock/documents/*"),) if document else ()
-    if id=="inspect-unused-sale-void":steps=(Step('[data-training-pos-document="TRAIN-SALE-VOIDED"]',"Open the verified unused-sale correction's reversal document.",event="read",outcome="/stock/documents/*"),)
+    if id=="inspect-unused-sale-void":steps=(Step('[data-training-pos-document="TRAIN-SALE-COMPLETED"]',"Open the original consumption document. The financial void has no stock document.",event="read",outcome="/stock/documents/*"),)
     return Lesson(id,"S",title,ROLES,"/integrations/pos","read_pos",situation,concept,example,rule,question,"no",rule,("production.py","pos_sync.py","stock_ledger.py"),steps,quantity,global_access=True)
 
 LESSONS=[
@@ -27,15 +27,15 @@ LESSONS=[
     "Preserve the external sale/product references and ask the integration steward to verify and correct the mapping. Check original consumption before any reviewed replay; never manufacture stock or a replacement sale.",
     "Does zero Failed events alone prove that the unmapped sale was successfully processed? yes or no"),
  read("inspect-cooked-sale-return","Review discarded prepared food without restoring raw ingredients",
-    "A fictional POS counterpart completed a made-to-order sale of {quantity} portions, then recorded one cooked portion returned with explicit waste disposition through the real local handler. In POS Synchronization read Processed events and check the original sale document. The return has no new stock document: the raw ingredients remain consumed.",
+    "A fictional POS counterpart completed a made-to-order sale of {quantity} portions, then recorded a financial refund and one cooked portion returned with explicit waste disposition through the real local handler. In POS Synchronization read Processed events and check the original sale document. The return has no new stock document: the raw ingredients remain consumed.",
     "A returned cooked meal cannot be reconstructed into usable chicken, cream, pasta and sauce. The source waste return links the original sale without a second stock deduction or ingredient restoration.",
-    "A two-portion completed sale and one waste-return event are two processed lifecycle events. They retain only the original recipe consumption document.",
-    "Separate financial refunds from physical disposition. The legacy financial refund/void handler reverses ingredients without a physical-disposition gate; do not use it for cooked or discarded meals. Escalate that source limitation to the supervisor and integration steward.",
+    "A completed sale, a financial refund and one waste return are three processed lifecycle events. They retain only the original ingredient-consumption document and cost.",
+    "Separate financial refunds from physical disposition. Financial refunds and voids do not restore ingredients. Record physical waste separately without deducting ingredients again. Any verified unused-stock error requires a separately authorized inventory correction.",
     "Does returning or refunding cooked food make its raw ingredients usable stock again? yes or no"),
- read("inspect-unused-sale-void","Trace a verified unused-sale correction to its linked reversal",
-    "The supervisor verified a mistaken finalization of {quantity} portions before any physical preparation: all ingredients remain unused and present. The fictional POS counterpart recorded the separately authorized void using the real local handler. Open TRAIN-SALE-VOIDED's linked reversal document and read its signed Net value. This correction is not appropriate for cooked, consumed or discarded food.",
-    "This legacy handler reverses the original recipe movements. Its physical-disposition gate is an upstream limitation, so the exercise is restricted to a verified unconsumed mistake with supervisor authorization.",
-    "A mistaken two-portion sale originally deducts PHP 170, and its linked correction restores PHP 170. Both immutable documents remain; nothing is physically cooked or discarded in this scenario.",
-    "Verify unused physical stock and authorization before correction. Preserve original event and reversal links. Money refunded for cooked food is not evidence that ingredients returned.",
-    "May this unused-sale correction be used to restore raw ingredients from a cooked meal? yes or no",True),
+ read("inspect-unused-sale-void","Review a financial void without restoring ingredients",
+    "A mistaken sale of {quantity} portions was finalized before preparation. The supervisor confirms the ingredients remain physically unused. The fictional POS counterpart records a financial void through the real local handler. Open TRAIN-SALE-COMPLETED's original stock document and read its signed Net value. TRAIN-SALE-VOIDED has no stock document. Ask the inventory supervisor for a separately authorized, referenced stock correction; this inspection does not post one.",
+    "A financial void records the sale lifecycle but cannot verify physical ingredients. It does not reverse recipe consumption or cost, even when the supervisor has found an unused-sale mistake.",
+    "A two-portion sale consumes PHP 170 in the ledger. Its financial void leaves the original PHP -170 consumption unchanged. If stock is physically unused, an authorized inventory correction must record that separate fact and reference the original sale.",
+    "Inspect the original sale, actual physical stock and authority. Preserve both event identities. Never use a financial refund or void as evidence that ingredients returned.",
+    "Does a financial void itself restore the original recipe ingredients? yes or no",True),
 ]

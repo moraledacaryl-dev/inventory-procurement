@@ -37,7 +37,7 @@ LESSONS=[
         "Check the original count and independent approval. Never edit an observed count just to remove a difference.",
         "Should a posted count difference be hidden by changing the original physical observation? yes or no",("guided_counts.py",),roles=REVIEW,quantity=21),
     read("interpret-supplier-acceptance","Y","Distinguish arrived goods from usable supplier delivery","/reports",
-        "A colleague inspected a {quantity} kg chicken delivery for TRAIN-PO and rejected 2 kg. In Supplier performance read Training Valley Foods' Acceptance %. The current application counts arrived goods toward PO fulfillment, while usable stock receives accepted goods only.",
+        "A colleague inspected a {quantity} kg chicken delivery for TRAIN-PO and rejected 2 kg. In Supplier performance read Training Valley Foods' Acceptance %. Delivery history keeps arrived quantities, while only accepted goods fulfill the order and enter usable stock. Rejected quantities remain outstanding for acceptable replacement.",
         "Acceptance percent divides accepted value by arrived value. A completed order can contain rejected goods; completion does not certify that all delivered goods were usable.",
         "Ten kg arrived and 2 kg was rejected at the same price: acceptance is 8/10 = 80%. Eight kg enters stock, even though ten kg counts as arrived.",
         "Review the underlying receipt, rejection reason and delivery timing. Do not infer quality from a completed-order count alone.",

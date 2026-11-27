@@ -13,7 +13,7 @@ def task(id,module,title,route,situation,concept,example,rule,question,steps,rol
 LESSONS=[
     task("staff-meal-shortage","T","Stop an unprepared meal when ingredients are short","/fnb/staff-meals",
         "The kitchen is considering a meal for 4 people requiring {meal_shortage} kg of chicken, but only {base} kg physically exists at Training stockroom. Nothing has been cooked or taken. Enter the proposed requirement, preview it, and in this isolated exercise confirm that posting is also refused. Keep the original stock unchanged and ask the supervisor to revise the plan or arrange a real authorized supply movement.",
-        "The source meal workflow refuses a quantity above physical stock when negative stock is prohibited. Servings do not create ingredients. Its preview uses physical balance, so separately check reservations before allocating supplies to another job.",
+        "The source meal workflow refuses a quantity above physical stock when negative stock is prohibited. Servings do not create ingredients. Its preview shows unreserved availability, and posting rechecks active reservations under the shared stock locks. A preview does not reserve supplies.",
         "If 24 kg exists and a proposed meal requires 25 kg, the shortage is 1 kg. Do not invent a receipt or adjustment to make the meal pass.",
         "Resolve the actual supply or plan with the supervisor before cooking or recording consumption. Never pretend unavailable ingredients were used or restore stock from a meal people ate.",
         "Should an invented stock receipt be used to bypass a meal shortage? yes or no",(

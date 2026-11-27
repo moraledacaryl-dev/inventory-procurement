@@ -6,7 +6,7 @@ This is a source-backed training application on the dedicated feature branch, wi
 
 | Source | Verified GitHub main |
 |---|---|
-| `moraledacaryl-dev/inventory-procurement` | `07c651d0111be2840cac81b66bb1d7b97fd4c616` |
+| `moraledacaryl-dev/inventory-procurement` | `ca3a339c92aee79cc85079f5b9bf3560cc20e3b6` |
 | `moraledacaryl-dev/operations-command-center` | `63a9e7c011ecfa140f7ae3e75612c2d5d6e4fa86` |
 
 Both were fetched and rechecked directly against GitHub. Work uses fresh clones; the existing Desktop checkout is not source authority. Branch: `codex/inventory-training-20261126`. The PR and native `RELEASE.json` identify the exact implementation/package commit. Native CI checks out the feature head explicitly, rather than attributing a generated merge commit to the branch head.
@@ -23,7 +23,7 @@ Registry schemas 1–3 migrate transactionally to schema 4. Old versions remain 
 
 ## Curriculum and responsibilities
 
-Curriculum `2026.11.27.1` contains **163 definitions: 135 action/validation/analysis exercises and 28 inspections**. Thirteen action exercises finish with an actual protective refusal. Every definition supports guided, assisted and independent mode: **489 attempt variants**. These are not 489 distinct business workflows. Café/bar issues and the direct Stock correction reuse existing posting engines with different unit/custody decisions. The original conceptual POS inspection is replaced in place, not counted twice.
+Curriculum `2026.11.27.2` contains **168 definitions: 140 action/validation/analysis exercises and 28 inspections**. Seventeen action exercises finish with an actual protective refusal. Every definition supports guided, assisted and independent mode: **504 attempt variants**. These are not 504 distinct business workflows. Café/bar issues and the direct Stock correction reuse existing posting engines with different unit/custody decisions. The original conceptual POS inspection is replaced in place, not counted twice.
 
 | Module | Definitions | Source-supported scope |
 |---|---:|---|
@@ -39,31 +39,31 @@ Curriculum `2026.11.27.1` contains **163 definitions: 135 action/validation/anal
 | J — Requests | 4 | Check stock/on-order demand; submit; independent approval; duplicate rejection; self-approval refusal |
 | K — Quotations/authority | 5 | Real offers; price versus deadline; award one linked draft; inspect the same PO; linked busy weekend |
 | L — Purchase orders | 6 | Manual draft, amendment, pre-receipt cancellation, approval-limit refusal and immutable-status controls |
-| M — Receiving | 11 | Ten required delivery/recovery cases plus one linked delivery-problem capstone |
+| M — Receiving | 12 | Ten delivery/recovery cases, acceptable replacements against an earlier rejected receipt, and a linked delivery-problem capstone |
 | N — Returns | 1 | Source-linked return of previously accepted goods with exact stock/obligation evidence |
 | O — Lots/expiry | 5 | Metadata, tracked receipt/issue, batch shortage, expiry/condition/FIFO/FEFO responsibilities |
 | P — Recipes/cost | 6 | Location-specific cost; units/waste; independent governance; safe retirement; margin analysis without changing menu price |
 | Q — Production | 6 | Plan, start/actual execution, good output, cancellations with material disposition, posted actual unit cost |
 | R — Menu/selling | 7 | Variant/price/modifier; conditional rules; shared add-ons; approved tags, conditional prices and group assignment |
-| S — POS | 9 | Exact mapping controls/retry; actual four-ingredient consumption; duplicate identity; unmapped refusal; cooked waste return; verified unused-sale reversal |
-| T — Staff meals | 3 | Four-serving consumption/cost; genuine shortage refusals; authorized duplicate reversal |
+| S — POS | 9 | Exact mapping controls/retry; actual four-ingredient consumption; duplicate identity; unmapped refusal; financial refund plus cooked waste return; void without ingredient restoration; inbound retry refusal |
+| T — Staff meals | 4 | Four-serving consumption/cost; physical and reserved-stock shortage refusals; authorized duplicate reversal |
 | U — Housekeeping/linen | 6 | Amenities; clean/in-use/laundry handovers; accepted return; room par; linked room preparation |
 | V — Assets/maintenance | 8 | Register/read asset; preventive plan; work order/start/verified zero-cost completion; reviewed depreciation |
-| W — Accounting | 3 | Delivery/intake versus journal evidence; approved mapping; eligible failed-event requeue with preserved obligation |
+| W — Accounting | 6 | Delivery/intake versus journal evidence; approved mapping; eligible outbound retry with preserved obligation; accepted-receipt refusal through both retry routes |
 | X — Connected work | 7 | Canonical assignee, accept/reject, confirmed linked completion, alert, specific feedback and owner-review capstone |
 | Y — Management reports | 5 | Supplier purchasing/acceptance, stock valuation, saved scope, separate reconciliation/backup assurance evidence |
 | Z — Administration | 17 | Bounded scopes, departments/classification, fixed fictional CSV migration, original-job resume, locations, verified follow-ups, honest diagnostics |
 
-The complete definition-to-role matrix and 14 duty-course assignments are in [CURRICULUM.md](CURRICULUM.md). [ENDPOINT_COVERAGE.md](ENDPOINT_COVERAGE.md) covers 234 decorated API contracts, including explicit exclusions. [source-contract.json](source-contract.json) fingerprints 183 operational files and fails CI when source changes without review.
+The complete definition-to-role matrix and 14 duty-course assignments are in [CURRICULUM.md](CURRICULUM.md). [ENDPOINT_COVERAGE.md](ENDPOINT_COVERAGE.md) covers 234 decorated API contracts, including explicit exclusions. [source-contract.json](source-contract.json) fingerprints 184 operational files and fails CI when source changes without review.
 
 | Actual role | Assigned definitions | Responsibility |
 |---|---:|---|
-| inventory_manager | 93 | Authorized stockroom/department posting, counts, food, property and reports; assigned locations still apply |
+| inventory_manager | 94 | Authorized stockroom/department posting, counts, food, property and reports; assigned locations still apply |
 | procurement_officer | 33 | Purchasing and permitted reporting; matching approval location and monetary limits remain mandatory |
-| receiver | 16 | Delivery inspection and source-linked returns; no PO creation |
+| receiver | 17 | Delivery inspection and source-linked returns; no PO creation |
 | counter | 8 | Actual blind physical quantities, safe saves and submission; no independent approval |
 | viewer | 20 | Authorized stock, count, recipe, production, POS and Accounting/report inspections; no posting/retry authority |
-| owner | 160 | Administrative/operating responsibilities; excludes three role-specific scope/limit refusal exercises; roster still requires manager key |
+| owner | 165 | Administrative/operating responsibilities; excludes three role-specific scope/limit refusal exercises; roster still requires manager key |
 
 The six complete source-role courses are supplemented by stockroom, kitchen, café, bar, housekeeping, maintenance, department-supervisor and accounting-related Viewer courses. Multiple assignments preserve earlier history and share current-version skills only within the same source role.
 
@@ -71,7 +71,7 @@ Quick reference provides searchable lessons, practical questions, role-specific 
 
 ## Assessments and linked days
 
-All 163 definitions have independent mode. There are **160 final blueprints: 146 applicable module finals and 14 duty finals**. These reuse the real exercises and are not additional unique business scenarios. A module final requires guided/assisted prerequisites; a duty final requires all assigned modes and current module finals. Every final practical uses new independent records tied to its exam/course/role/version, without hints. Knowledge requires 85%, practical objectives 90%, and every critical knowledge/business check 100%. Live source evidence is rechecked at grading; a prior practice pass cannot conceal a later change. Specific corrections and fresh retakes preserve the failed record. Certificates attest only to local training performance.
+All 168 definitions have independent mode. There are **160 final blueprints: 146 applicable module finals and 14 duty finals**. These reuse the real exercises and are not additional unique business scenarios. A module final requires guided/assisted prerequisites; a duty final requires all assigned modes and current module finals. Every final practical uses new independent records tied to its exam/course/role/version, without hints. Knowledge requires 85%, practical objectives 90%, and every critical knowledge/business check 100%. Live source evidence is rechecked at grading; a prior practice pass cannot conceal a later change. Specific corrections and fresh retakes preserve the failed record. Certificates attest only to local training performance.
 
 | Linked capstone | Evidence in one evolving database | Learner roles |
 |---|---|---|
@@ -99,9 +99,9 @@ Counterparts are explicitly fictional actors using typed source handlers. They d
 
 ## Source limits and operational requirements
 
-Source receiving fulfills PO quantities by **arrived**, including rejected goods; only accepted goods enter usable stock. A fully rejected receipt can close the order. Staff-meal preview checks physical balance; reservations need separate allocation review. Posted production actual cost is read from its stock document, not the planned summary. Mixed physical units are never interpreted as one quantity.
+Source receiving fulfills PO quantities by **accepted** goods. Arrival and rejection history stays intact; rejected quantities remain outstanding for acceptable replacement. Staff-meal preview subtracts active, unexpired reservations, and posting rechecks them under the shared stock locks. Posted production actual cost is read from its stock document, not the planned summary. Mixed physical units are never interpreted as one quantity.
 
-Unmapped POS intake refuses before saving a failed-event row; zero failures does not prove success. Cooked-food waste returns retain consumed ingredients. The legacy financial refund/void handler reverses recipe movements without a physical-disposition gate: it is not prescribed for cooked/eaten food. The unused-sale correction is restricted to verified unused ingredients and explicit supervisor authorization. Generic retry lacks dedicated Accounting accepted-obligation safeguards; training uses only a confirmed eligible failure.
+Unmapped POS intake refuses before saving a failed-event row; zero failures does not prove success. Cooked-food waste returns retain consumed ingredients. Financial refunds and voids record linked lifecycle events without ingredient or cost reversal. A physically unused-sale mistake requires a separately authorized, referenced inventory correction. Both retry routes protect delivered/accepted/posted Accounting evidence and permit only eligible failed/dead-letter outbound events; generic Accounting retry also requires integration administration permission. Inbound POS events use the original sender and intake process, not the outbound inbox Retry.
 
 API-only schedule, reservation-release, recipe-revision, asset-lifecycle and charged-maintenance editors have no current employee form and are explicitly excluded with canonical alternatives/source limits. External file readers, physical printers, real shelf inspection/rotation and production backup operations are outside the isolated app. Actual CSV download bytes and source report/transaction interpretation are tested; no parallel editor is invented for unsupported actions.
 

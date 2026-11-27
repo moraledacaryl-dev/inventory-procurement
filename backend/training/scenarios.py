@@ -28,6 +28,7 @@ from training.pos_review_scenarios import after_prepare_pos_reviews, pos_questio
 from training.report_scenarios import after_prepare_reports, report_question, report_endpoint
 
 from training.steward_scenarios import steward_values, prepare_steward, verify_steward
+from training.safety_scenarios import prepare_safety, verify_safety
 
 IDS = {key: f"training-{key}" for key in ["actor", "colleague", "reviewer", "purchaser", "store", "kitchen", "restricted", "category", "kg", "gram", "portion", "each", "chicken", "amenities", "alfredo", "supplier", "po", "po-line", "count", "recipe", "batch"]}
 
@@ -44,7 +45,7 @@ def values(lesson: Lesson, mode: str):
         "practice_item": IDS["amenities"] if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else IDS["chicken"],
         "practice_name": "TRAIN-AMENITIES — Guest amenity kit" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else "TRAIN-CHICKEN — Chicken (kg)",
         "movement_reason": "Room preparation" if lesson.id in {"housekeeping-supplies","cap-housekeeping"} else {"issue":"Kitchen preparation","receipt":"Opening inventory","transfer":"Kitchen replenishment"}.get(lesson.workflow,"Training practice"),
-        "meal_shortage":base+1,
+        "meal_shortage":base+1, "meal_reserved_need":base-3,
         "base": 0 if lesson.id=="import-initial-balances" else {"guided": 24, "assisted": 27, "independent": 31}[mode],
         "reference": f"TRAIN-{lesson.id.upper()}-{mode.upper()}",
         "reject_reason": "wrong item delivered" if lesson.id == "wrong-item" else "unacceptable expiry" if lesson.id == "expired-delivery" else "damaged or unusable goods",
@@ -163,6 +164,7 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         prepare_extensions(db,lesson,v)
         prepare_admin(db,lesson,v)
         prepare_steward(db,lesson,v)
+        prepare_safety(db,lesson,v)
         db.commit()
         after_prepare_controls(db,lesson,v)
         after_prepare_procurement(db,lesson,v)
@@ -174,11 +176,12 @@ def prepare(path: Path, lesson: Lesson, role: str, mode: str):
         after_prepare_admin(db,lesson,v)
         after_prepare_reports(db,lesson,v)
         after_prepare_pos_reviews(db,lesson,v)
-        if lesson.workflow == "return" or lesson.id == "later-delivery":
+        if lesson.workflow == "return" or lesson.id in {"later-delivery","replacement-delivery"}:
             # Seed an earlier real receipt through the same route and service.
             from app.api.routes.receiving_workspace import ControlledReceiptCreate, post_controlled_receipt
-            prior = 10 if lesson.workflow == "return" else 10 - v["quantity"]
-            post_controlled_receipt(IDS["po"], ControlledReceiptCreate(delivery_reference="TRAIN-EARLIER-DR", lines=[{"purchase_order_line_id": IDS["po-line"], "received_quantity": prior, "accepted_quantity": prior, "rejected_quantity": 0}]), db, db.get(User, IDS["colleague"]))
+            prior = 10 if lesson.workflow == "return" or lesson.id=="replacement-delivery" else 10 - v["quantity"]
+            prior_rejected = v["quantity"] if lesson.id=="replacement-delivery" else 0
+            post_controlled_receipt(IDS["po"], ControlledReceiptCreate(delivery_reference="TRAIN-EARLIER-DR", lines=[{"purchase_order_line_id": IDS["po-line"], "received_quantity": prior, "accepted_quantity": prior-prior_rejected, "rejected_quantity": prior_rejected, "discrepancy_reason": "damaged goods awaiting replacement" if prior_rejected else None}]), db, db.get(User, IDS["colleague"]))
     engine.dispose()
     path.chmod(0o600)
 
@@ -235,6 +238,8 @@ def read_only_unchanged(db,actor_id):
 
 def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple[bool, dict]:
     v = values(lesson, mode)
+    if lesson.workflow.startswith("safety_"):
+        return verify_safety(db,lesson,v,business_actions)
     if lesson.workflow.startswith("steward_"):
         return verify_steward(db,lesson,v,business_actions)
     if lesson.workflow.startswith("admin_"):
@@ -277,12 +282,19 @@ def verify(db: Session, lesson: Lesson, mode: str, business_actions=()) -> tuple
         result.update(expected_quantity=str(expected), document_ids=[doc.id for doc in docs])
     elif workflow == "receiving":
         receipts = list(db.scalars(select(GoodsReceipt).where(GoodsReceipt.received_by_user_id == IDS["actor"])).all())
-        prior = Decimal(10) - q if lesson.id == "later-delivery" else Decimal(0)
-        expected = start + prior + q - v["rejected"]
+        prior = Decimal(10) - q if lesson.id == "later-delivery" else Decimal(10) if lesson.id=="replacement-delivery" else Decimal(0)
+        prior_rejected = q if lesson.id=="replacement-delivery" else Decimal(0)
+        expected = start + prior - prior_rejected + q - v["rejected"]
         po = db.get(PurchaseOrder, IDS["po"])
         lines = receipts[0].lines if len(receipts) == 1 else []
         ok = len(lines) == 1 and receipts[0].purchase_order_id == IDS["po"] and receipts[0].delivery_reference == v["reference"] and Decimal(lines[0].received_quantity) == q and Decimal(lines[0].rejected_quantity) == v["rejected"] and actual == expected and Decimal(po.lines[0].received_quantity) == prior + q
-        result.update(expected_quantity=str(expected), purchase_order_status=po.status, received_quantity=str(po.lines[0].received_quantity), receipt_ids=[row.id for row in receipts])
+        expected_outstanding=max(Decimal(0),Decimal(po.lines[0].ordered_quantity)-(prior-prior_rejected+q-v["rejected"]))
+        ok=ok and po.status==("received" if expected_outstanding==0 else "partially_received") and po.lines[0].outstanding_quantity==expected_outstanding
+        if lesson.id=="replacement-delivery":
+            earlier=db.scalar(select(GoodsReceipt).where(GoodsReceipt.purchase_order_id==IDS["po"],GoodsReceipt.delivery_reference=="TRAIN-EARLIER-DR"))
+            earlier_line=earlier.lines[0] if earlier and len(earlier.lines)==1 else None
+            ok=ok and earlier_line is not None and earlier.received_by_user_id==IDS["colleague"] and earlier_line.received_quantity==10 and earlier_line.accepted_quantity==10-q and earlier_line.rejected_quantity==q and earlier_line.unit_cost==200
+        result.update(expected_outstanding=str(expected_outstanding), expected_quantity=str(expected), purchase_order_status=po.status, received_quantity=str(po.lines[0].received_quantity), receipt_ids=[row.id for row in receipts])
         if not ok:
             result["correction"] = f"This situation has {q} kg arrived and {v['rejected']} kg rejected. Record the actual delivery, not the original order quantity. " + ("No delivery is posted yet. Finish the confirmation." if not receipts else "The posted receipt does not match. Reset this practice and record only the goods in the situation.")
         if lesson.id=="check-order" and receipts and any(row.purchase_order_id!=IDS["po"] for row in receipts):

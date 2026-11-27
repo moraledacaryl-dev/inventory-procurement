@@ -4,7 +4,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.api.deps import require_permission
+from app.core.roles import has_permission
 from app.db.session import get_db
+from app.services.integration_retry import reset_failed_event
 from app.models.audit_log import AuditLog
 from app.models.inventory import Item, Category, UnitOfMeasure, StockBalance
 from app.models.operations import Notification, NotificationRead, IntegrationEvent, BackupRecord
@@ -56,9 +58,11 @@ def create_event(p:IntegrationEventCreate,db:Session=Depends(get_db),user:User=D
 @router.post('/integration-events/{event_id}/retry',response_model=IntegrationEventOut)
 def retry_event(event_id:str,db:Session=Depends(get_db),user:User=Depends(require_permission('procurement.*'))):
     require_global_operational_access(db,user)
-    row=db.get(IntegrationEvent,event_id)
+    row=db.scalar(select(IntegrationEvent).where(IntegrationEvent.id==event_id).with_for_update())
     if not row: raise HTTPException(404,'Event not found')
-    row.status='pending'; row.last_error=None; row.locked_at=None; row.locked_by=None; row.attempts=0
+    if row.destination_system == 'accounting' and not has_permission(user.role, 'integrations.*'):
+        raise HTTPException(403, 'Accounting retries require integration administration permission')
+    reset_failed_event(row)
     add_audit(db,actor_user_id=user.id,action='integration.manual_retry',entity_type='integration_event',entity_id=row.id)
     db.commit(); db.refresh(row); return row
 @router.post('/integration-events/process',response_model=WorkerRunOut)

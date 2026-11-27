@@ -268,6 +268,11 @@ for(const[lesson,role,answer]of[
   ["reject-duplicate-operations-work","owner","no"],
   ["complete-evidenced-operations-work","owner","no"],
   ["requeue-failed-accounting-handoff","owner","no"],
+  ["retry-reviewed-outbound-event","owner","no"],
+  ["refuse-accepted-accounting-generic","owner","no"],
+  ["refuse-accepted-accounting-dedicated","owner","no"],
+  ["staff-meal-reserved-stock","inventory_manager","no"],
+  ["replacement-delivery","receiver","no"],
   ["issue-clean-linen","inventory_manager","no"],
   ["send-used-linen-to-laundry","inventory_manager","no"],
   ["return-clean-linen","inventory_manager","no"],
@@ -643,8 +648,8 @@ for(const[id,role,observation,visibleText]of[
   ["sale-consumption","viewer","-340","TRAIN-SPAGHETTI"],
   ["inspect-pos-duplicate-delivery","viewer","1","TRAIN-SALE-COMPLETED"],
   ["inspect-unmapped-pos-refusal","viewer","0","Failed events"],
-  ["inspect-cooked-sale-return","viewer","2","TRAIN-SALE-RETURNED"],
-  ["inspect-unused-sale-void","viewer","170","TRAIN-SPAGHETTI"],
+  ["inspect-cooked-sale-return","viewer","3","TRAIN-SALE-RETURNED"],
+  ["inspect-unused-sale-void","viewer","-170","TRAIN-SPAGHETTI"],
 ]as const){
   test(`${role}: interpret source evidence for ${id}`,async({page},info)=>{
     const{lesson}=await prepare(page,id,role);

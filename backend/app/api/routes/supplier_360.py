@@ -117,7 +117,7 @@ def supplier_detail(
     for po in purchase_orders:
         total = decimal_sum(Decimal(line.ordered_quantity) * Decimal(line.unit_price) for line in po.lines)
         received_total = decimal_sum(Decimal(line.received_quantity) * Decimal(line.unit_price) for line in po.lines)
-        outstanding = decimal_sum(max(Decimal("0"), Decimal(line.ordered_quantity) - Decimal(line.received_quantity)) * Decimal(line.unit_price) for line in po.lines)
+        outstanding = decimal_sum(line.outstanding_quantity * Decimal(line.unit_price) for line in po.lines)
         ordered_value += total
         received_value += received_total
         if po.status not in {"received", "closed", "cancelled"}:

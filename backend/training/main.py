@@ -108,6 +108,12 @@ def create_training_app(root: Path, *, guard_network: bool = True):
                 path.startswith("/api/v1/integrations/") and not local_control_allowed(request.method,path,BY_ID[attempt["lesson_id"]]) or path in {"/api/v1/integration-events/process", "/api/v1/master-data/publish"})
             if blocked:
                 return JSONResponse(status_code=403, content={"detail": "External services and integration delivery are disabled in training."})
+            meal_proposal=None
+            if request.method=="POST" and path in {"/api/v1/staff-meals","/api/v1/staff-meals/preview"} and attempt["lesson_id"]=="staff-meal-reserved-stock":
+                try:
+                    payload=await request.json()
+                    if isinstance(payload,dict):meal_proposal={key:payload.get(key) for key in ("meal_name","location_id","servings","lines")}
+                except (ValueError,TypeError):pass
             calculation=None
             if request.method=="POST" and path=="/api/v1/recipes/training-recipe/margin-scenario" and attempt["lesson_id"]=="calculate-food-margin":
                 try:
@@ -130,7 +136,7 @@ def create_training_app(root: Path, *, guard_network: bool = True):
             if request.method == "GET" and response.status_code == 200 and record_read_allowed(BY_ID[attempt["lesson_id"]],path,request.query_params):
                 store.event(attempt["id"], "record_read", {"path": path,"method":"GET","status":200})
             elif request.method != "GET":
-                store.event(attempt["id"], "business_action", {"path": path,"method":request.method,"status": response.status_code,**({"calculation":calculation} if calculation is not None else {})})
+                store.event(attempt["id"], "business_action", {"path": path,"method":request.method,"status": response.status_code,**({"calculation":calculation} if calculation is not None else {}),**({"meal_proposal":meal_proposal} if meal_proposal is not None else {})})
                 expected_refusal=any(bool(step.outcome and re.fullmatch(re.escape(step.outcome).replace(r"\*",r"[a-f0-9-]{36}"),path.removeprefix("/api/v1"))) and step.outcome_status==response.status_code for step in BY_ID[attempt["lesson_id"]].steps)
                 if response.status_code >= 400 and not expected_refusal:
                     with store.connect() as db:

@@ -39,19 +39,21 @@ def after_prepare_pos_reviews(db,lesson,v):
     if lesson.id=="inspect-pos-duplicate-delivery":
         again=process_pos_event(event("TRAIN-SALE-COMPLETED","sale_completed"),db,colleague)
         if again.id!=original.id or again.stock_document_id!=original.stock_document_id:raise RuntimeError("Source POS retry lost idempotency")
-    elif lesson.id=="inspect-cooked-sale-return":process_pos_event(event("TRAIN-SALE-RETURNED","sale_returned",quantity=1,disposition="waste"),db,colleague)
+    elif lesson.id=="inspect-cooked-sale-return":
+        process_pos_event(event("TRAIN-SALE-REFUNDED","sale_refunded"),db,colleague)
+        process_pos_event(event("TRAIN-SALE-RETURNED","sale_returned",quantity=1,disposition="waste"),db,colleague)
     elif lesson.id=="inspect-unused-sale-void":process_pos_event(event("TRAIN-SALE-VOIDED","sale_voided"),db,colleague)
 
 
 def pos_question(lesson,mode,v):
-    answers={"sale-consumption":str(-85*v["quantity"]),"inspect-pos-duplicate-delivery":"1","inspect-unmapped-pos-refusal":"0","inspect-cooked-sale-return":"2","inspect-unused-sale-void":str(85*v["quantity"])}
+    answers={"sale-consumption":str(-85*v["quantity"]),"inspect-pos-duplicate-delivery":"1","inspect-unmapped-pos-refusal":"0","inspect-cooked-sale-return":"3","inspect-unused-sale-void":str(-85*v["quantity"])}
     question="In the opened stock document, what signed Net value is shown in pesos?" if lesson.id in {"sale-consumption","inspect-unused-sale-void"} else "How many Failed events are shown?" if lesson.id=="inspect-unmapped-pos-refusal" else "How many Processed events are shown?"
     return question,answers[lesson.id],lesson.route
 
 
 def pos_endpoint(lesson,db=None):
     if db is not None and lesson.id in {"sale-consumption","inspect-unused-sale-void"}:
-        identity="TRAIN-SALE-VOIDED" if lesson.id=="inspect-unused-sale-void" else "TRAIN-SALE-COMPLETED"
+        identity="TRAIN-SALE-COMPLETED"
         row=db.scalar(select(PosSaleEvent).where(PosSaleEvent.external_event_id==identity))
         return f"/api/v1/stock/documents/{row.stock_document_id}"
     return "/api/v1/integrations/pos/workspace"
@@ -61,11 +63,11 @@ def verify_pos_review(db,lesson,v):
     events=list(db.scalars(select(PosSaleEvent)));docs=list(db.scalars(select(StockDocument).where(StockDocument.document_type.in_(["pos_sale_consumption","pos_sale_reversal"]))))
     original=next((row for row in events if row.external_event_id=="TRAIN-SALE-COMPLETED"),None)
     unused=lesson.id=="inspect-unused-sale-void";unmapped=lesson.id=="inspect-unmapped-pos-refusal";returned=lesson.id=="inspect-cooked-sale-return"
-    expected_events=0 if unmapped else 2 if unused or returned else 1
-    ok=len(events)==expected_events and len(docs)==(0 if unmapped else 2 if unused else 1) and all(row.status=="processed" for row in events)
+    expected_events=0 if unmapped else 3 if returned else 2 if unused else 1
+    ok=len(events)==expected_events and len(docs)==(0 if unmapped else 1) and all(row.status=="processed" for row in events)
     for key,unit,quantity,cost,opening in INGREDIENTS:
         balance=db.scalar(select(StockBalance).where(StockBalance.item_id=="training-"+key,StockBalance.location_id==v["store"]))
-        expected=Decimal(v["base"] if key=="chicken" else opening)-(0 if unmapped or unused else Decimal(quantity)*v["quantity"])
+        expected=Decimal(v["base"] if key=="chicken" else opening)-(0 if unmapped else Decimal(quantity)*v["quantity"])
         ok=ok and balance is not None and balance.quantity==expected
     if original:
         source=db.get(StockDocument,original.stock_document_id)
@@ -74,15 +76,16 @@ def verify_pos_review(db,lesson,v):
         mapping=db.get(PosProductMapping,"training-pos-map")
         ok=ok and mapping is not None and mapping.is_active and mapping.recipe_id==v["recipe"] and mapping.location_id==v["store"] and db.get(Recipe,mapping.recipe_id).status=="approved"
         if unused or returned:
-            follow=next(row for row in events if row.id!=original.id)
-            ok=ok and follow.reversal_of_event_id==original.id and (bool(follow.stock_document_id) if unused else follow.stock_document_id is None)
-            if unused and follow.stock_document_id:
-                reversal=db.get(StockDocument,follow.stock_document_id)
-                ok=ok and reversal.document_type=="pos_sale_reversal" and len(reversal.movements)==4 and {row.item_id:(-row.quantity,row.unit_cost) for row in reversal.movements}==expected_lines
-            if returned:ok=ok and follow.payload["lines"][0]["inventory_disposition"]=="waste" and Decimal(follow.payload["lines"][0]["quantity"])==1
+            follows=[row for row in events if row.id!=original.id]
+            ok=ok and all(row.reversal_of_event_id==original.id and row.stock_document_id is None for row in follows)
+            if unused:ok=ok and follows[0].event_type=="sale_voided"
+            if returned:
+                waste=next((row for row in follows if row.event_type=="sale_returned"),None)
+                refund=next((row for row in follows if row.event_type=="sale_refunded"),None)
+                ok=ok and refund is not None and waste is not None and waste.payload["lines"][0]["inventory_disposition"]=="waste" and Decimal(waste.payload["lines"][0]["quantity"])==1
     if unmapped:
         audit=db.scalar(select(AuditLog).where(AuditLog.action=="training.pos_intake_refused"))
         ok=ok and audit is not None and audit.details.get("status")==422
     pending=list(db.scalars(select(IntegrationEvent).where(IntegrationEvent.event_type.in_(["inventory.pos_sale_consumed","inventory.pos_sale_reversed"]))))
-    ok=ok and len(pending)==(0 if unmapped else 2 if unused else 1) and all(row.status=="pending" for row in pending)
+    ok=ok and len(pending)==(0 if unmapped else 1) and all(row.status=="pending" for row in pending)
     return bool(ok),{"source_pos_evidence_intact":bool(ok),"pos_event_count":len(events),"pos_document_count":len(docs),"accounting_transport_disabled":all(row.status=="pending" for row in pending),"correction":"Inspect the original local POS evidence and preserve its stock, mapping and event identities. Reset if an unintended business change was posted."}

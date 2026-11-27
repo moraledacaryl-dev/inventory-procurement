@@ -13,7 +13,7 @@ import { formatDateTime, formatMoney, formatQuantity } from "../../lib/formatter
 import { readTrainingReceiptDraft, writeTrainingReceiptDraft } from "../../lib/training-receiving-draft";
 
 type POLine={id:string;item_id:string;sku:string;item_name:string;ordered_quantity:string;received_quantity:string;returned_quantity:string;outstanding_quantity:string;returnable_quantity:string;unit_price:string};
-type PO={id:string;purchase_order_number:string;supplier_id:string;supplier_code:string;supplier_name:string;delivery_location_id:string;delivery_location_code:string;delivery_location_name:string;expected_delivery_date:string|null;status:string;ordered_quantity:string;received_quantity:string;outstanding_quantity:string;lines:POLine[]};
+type PO={replacement_required?:boolean;id:string;purchase_order_number:string;supplier_id:string;supplier_code:string;supplier_name:string;delivery_location_id:string;delivery_location_code:string;delivery_location_name:string;expected_delivery_date:string|null;status:string;ordered_quantity:string;received_quantity:string;outstanding_quantity:string;lines:POLine[]};
 type Receipt={id:string;goods_receipt_number:string;purchase_order_id:string;purchase_order_number:string;supplier_id:string|null;supplier_code:string|null;supplier_name:string|null;delivery_location_id:string|null;delivery_location_code:string|null;delivery_location_name:string|null;stock_document_id:string;delivery_reference:string|null;notes:string|null;received_at:string;received_value:string;accepted_value:string;rejected_value:string;has_discrepancy:boolean;lines:{id:string;purchase_order_line_id:string;item_id:string;sku:string;item_name:string;received_quantity:string;accepted_quantity:string;rejected_quantity:string;unit_cost:string}[]};
 type ReturnRow={id:string;return_number:string;purchase_order_id:string;purchase_order_number:string;supplier_id:string|null;supplier_code:string|null;supplier_name:string|null;stock_document_id:string;reason:string;created_at:string};
 type HistoryPage={page:number;page_size:number;total:number;has_previous:boolean;has_next:boolean};
@@ -206,13 +206,13 @@ export default function ReceivingPage(){
             <option key={row.id} value={row.id}>{row.purchase_order_number} — {row.supplier_name} — {row.delivery_location_name}</option>)}
         </select>
       </label>
-      {selectedPo?<div className="workflow-note"><strong>{selectedPo.supplier_name}</strong><span>Deliver to {selectedPo.delivery_location_name} · {formatQuantity(selectedPo.outstanding_quantity)} units still expected</span></div>:null}
+      {selectedPo?<div className="workflow-note"><strong>{selectedPo.supplier_name}</strong><span>Deliver to {selectedPo.delivery_location_name} · {formatQuantity(selectedPo.outstanding_quantity)} units still expected</span>{selectedPo.replacement_required?<p role="status">Rejected deliveries still need acceptable replacements. Record the replacement delivery against this order.</p>:null}</div>:null}
       <div className="form-actions"><button data-training="receive-next" type="button" className="primary" disabled={!selectedPo||busy} onClick={()=>setReceiptStep(2)}>Next: count the delivery</button></div>
     </div>:null}
 
     {receiptStep===2&&selectedPo?<div className="workflow-stage" data-testid="receiving-count">
       <h3>Step 2: What actually arrived?</h3>
-      <p className="workflow-hint">For each item, enter the quantity delivered today. If anything is damaged, enter how many you rejected and why. Enter 0 for items not delivered.</p>
+      <p className="workflow-hint">For each item, enter the quantity delivered today. If anything is damaged, enter how many you rejected and why. Enter 0 for items not delivered. Rejected quantities remain outstanding until acceptable replacements arrive.</p>
       <div className="receiving-po-summary">
         <div><span>Order</span><strong>{selectedPo.purchase_order_number}</strong></div>
         <div><span>Supplier</span><strong>{selectedPo.supplier_name}</strong></div>
@@ -227,7 +227,7 @@ export default function ReceivingPage(){
           const invalid=Boolean(entry && (arrived<0||!Number.isFinite(arrived)||arrived>Number(line.outstanding_quantity)||rejected<0||rejected>arrived||!Number.isFinite(rejected)||(rejected>0&&!entry.reason.trim())||(entry.expiry_date&&entry.manufactured_date&&entry.expiry_date<entry.manufactured_date)));
           const errorMessage=arrived>Number(line.outstanding_quantity)?"More than the remaining order":rejected>arrived?"Rejected cannot be more than arrived":rejected>0&&!entry?.reason.trim()?"Enter why these items were rejected":"Check the entered quantities and dates";
           return <tr key={line.id} className={invalid?"invalid-line":""}>
-            <td data-label="Item"><Link href={`/items/${line.item_id}`}>{line.item_name}</Link><small className="workflow-item-meta">{line.sku} · Ordered {formatQuantity(line.ordered_quantity)} · Earlier deliveries {formatQuantity(line.received_quantity)}</small></td>
+            <td data-label="Item"><Link href={`/items/${line.item_id}`}>{line.item_name}</Link><small className="workflow-item-meta">{line.sku} · Ordered {formatQuantity(line.ordered_quantity)} · Earlier arrivals {formatQuantity(line.received_quantity)}</small></td>
             <td data-label="Still expected">{formatQuantity(line.outstanding_quantity)}</td>
             <td data-label="Arrived today"><input aria-label={`Arrived today for ${line.item_name}`} aria-invalid={arrived<0||arrived>Number(line.outstanding_quantity)||!Number.isFinite(arrived)} type="number" min="0" max={line.outstanding_quantity} step="0.0001" inputMode="decimal" disabled={!entry} value={entry?.received||""} placeholder="0" onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,received:event.target.value}:row))}/></td>
             <td data-label="Rejected"><input aria-label={`Rejected quantity for ${line.item_name}`} aria-invalid={rejected<0||rejected>arrived||!Number.isFinite(rejected)} type="number" min="0" max={entry?.received||0} step="0.0001" inputMode="decimal" disabled={!entry} value={entry?.rejected||"0"} onChange={event=>setReceiveLines(rows=>rows.map(row=>row.line_id===line.id?{...row,rejected:event.target.value}:row))}/></td>

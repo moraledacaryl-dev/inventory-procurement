@@ -53,14 +53,14 @@ The complete current definition-to-role matrix is in [CURRICULUM.md](CURRICULUM.
 
 ## Verified rules that affect instruction
 
-1. Controlled receiving increments PO received quantity by **arrived quantity**, including rejected goods; stock increases by **accepted quantity only**. A fully rejected delivery can therefore close an order without adding stock. Do not teach that rejected goods remain outstanding automatically.
+1. Delivery history retains **arrived quantity**, including rejected goods. Stock and PO fulfillment increase by **accepted quantity only**. Rejected quantities remain outstanding for acceptable replacements against the same order; even a fully arrived but rejected delivery stays partially received.
 2. Receiving requires accepted + rejected = arrived. Rejection requires a reason. Delivery references are unique per PO; idempotency keys are bound to the payload.
 3. Open blind counts hide snapshots even from approvers. Pending blind counts disclose quantities only to approvers. Every nonzero counter variance requires review. A creator cannot approve their own variance. Stock movement after snapshot requires a fresh count.
 4. Role permissions and operational location scopes both apply. Inactive scopes deny access; they do not revert to unrestricted access. Non-owner purchase approval requires explicit monetary authorization.
-5. Direct issues and transfers cannot consume stock reserved for another operation. Quantity and monetary valuation are separate.
-6. Accounting outbox completed means delivered to intake. Review acceptance and source-linked journal proof are separate. Neither proves supplier payment.
-7. POS reversal and refunds need the actual inventory disposition rules. Do not automatically restore consumed food.
-8. Staff-meal preview uses physical stock, so reservations require a separate allocation check. A shortage must not be bypassed with invented supplies.
+5. Direct issues, transfers and staff meals cannot consume stock reserved for another operation. Quantity and monetary valuation are separate.
+6. Accounting outbox completed means delivered to intake. Review acceptance and source-linked journal proof are separate. Neither proves supplier payment. Both retry routes preserve accepted/delivered/posted evidence and allow only eligible failed/dead-letter outbound events. Accounting retries require integration administration permission. Inbound POS diagnostics cannot use the outbound Retry button.
+7. Financial POS voids and refunds preserve ingredient consumption and cost; they do not create a reversal document. Waste returns are separate and do not reconstruct raw ingredients. A verified unused-sale mistake requires a separately authorized, referenced inventory correction.
+8. Staff-meal preview subtracts active, unexpired reservations. Posting rechecks them while holding the shared stock locks; a preview does not reserve stock. A shortage must not be bypassed with invented supplies.
 9. The source accepts expiry metadata but does not guarantee physical food inspection or automatic FEFO selection. Employees must inspect and rotate real goods.
 
 ## Verification boundaries

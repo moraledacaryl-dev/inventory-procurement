@@ -28,15 +28,16 @@ import "./mobile-ux.css";
 import "./inventory-workspace.css";
 import "./guided-staff-workflows.css";
 import { SidebarScrollMemory } from "../components/SidebarScrollMemory";
+import { InventoryTrainingCoach } from "../components/InventoryTrainingCoach";
 
 export const metadata = {
-  title: { default: "Hidden Oasis Operations", template: "%s | Hidden Oasis" },
-  description: "Inventory, procurement, production, and connected operations for Hidden Oasis",
+  title: { default: process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1"?"Hidden Oasis Inventory Training":"Hidden Oasis Operations", template: "%s | Hidden Oasis" },
+  description: process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1"?"Safe Inventory practice with fictional records":"Inventory, procurement, production, and connected operations for Hidden Oasis",
   applicationName: "Hidden Oasis Operations",
 };
 
 export const viewport = { width: "device-width", initialScale: 1, themeColor: "#14293b", colorScheme: "light" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body><SidebarScrollMemory/>{children}</body></html>;
+  return <html lang="en"><body><SidebarScrollMemory/>{children}{process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1"?<InventoryTrainingCoach/>:null}</body></html>;
 }

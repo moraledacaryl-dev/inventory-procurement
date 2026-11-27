@@ -1,0 +1,72 @@
+name: Isolated Inventory training
+on:
+  pull_request:
+  push:
+    branches: [main, 'codex/inventory-training-*']
+permissions:
+  contents: read
+concurrency:
+  group: inventory-training-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  training:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: pip install -r backend/requirements.txt
+      - name: Verify lesson contracts and sandbox outcomes
+        working-directory: backend
+        run: |
+          python -m training.validate
+          python -m pytest training/tests --confcutdir=training/tests -v --junitxml=training-results.xml
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run typecheck
+        working-directory: frontend
+      - name: Verify frontend configuration fails closed before transport
+        run: node scripts/test-training-web-config.mjs
+      - name: Build isolated training frontend
+        working-directory: frontend
+        env: {NEXT_PUBLIC_INVENTORY_TRAINING: '1'}
+        run: npm run build
+      - name: Start isolated services without production configuration
+        run: |
+          echo "TRAINING_MANAGER_KEY_PATH=$RUNNER_TEMP/inventory-training/manager-key" >> "$GITHUB_ENV"
+          cd backend
+          python -m training.launch --data "$RUNNER_TEMP/inventory-training" > "$RUNNER_TEMP/training-api.log" 2>&1 &
+          cd ../frontend
+          NEXT_PUBLIC_INVENTORY_TRAINING=1 npm start -- --hostname 127.0.0.1 --port 3400 > "$RUNNER_TEMP/training-web.log" 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:3400/api/v1/training/catalogue > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Install browser and perform real workflows on desktop and mobile
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test --config playwright.training.config.ts
+      - name: Package standalone training build
+        working-directory: frontend
+        run: |
+          node ../scripts/verify-training-web.mjs
+          mkdir -p .next/standalone/.next
+          cp -R .next/static .next/standalone/.next/static
+          cp -R public .next/standalone/public 2>/dev/null || test ! -d public
+          tar -czf ../inventory-training-source-and-web.tar.gz .next/standalone ../backend ../docs/training ../scripts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inventory-training-evidence
+          path: |
+            backend/training-results.xml
+            frontend/training-report
+            frontend/training-test-results
+            inventory-training-source-and-web.tar.gz
+            ${{ runner.temp }}/training-api.log
+            ${{ runner.temp }}/training-web.log

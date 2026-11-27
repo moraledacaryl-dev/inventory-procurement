@@ -162,7 +162,7 @@ export default function Page() {
 
       <div className="form-grid">
         <label className="field">Meal name
-          <input value={mealName} onChange={e => { setMealName(e.target.value); setPreview(null); }} placeholder="e.g. Chicken adobo" maxLength={180} />
+          <input data-training="meal-name" value={mealName} onChange={e => { setMealName(e.target.value); setPreview(null); }} placeholder="e.g. Chicken adobo" maxLength={180} />
         </label>
         <label className="field">Meal period
           <select value={mealPeriod} onChange={e => { setMealPeriod(e.target.value); setPreview(null); }}>
@@ -170,10 +170,10 @@ export default function Page() {
           </select>
         </label>
         <label className="field">Servings
-          <input type="number" min="1" max="500" value={servings} onChange={e => { setServings(e.target.value); setPreview(null); }} />
+          <input data-training="meal-servings" type="number" min="1" max="500" value={servings} onChange={e => { setServings(e.target.value); setPreview(null); }} />
         </label>
         <label className="field">Stock location
-          <select value={locationId} onChange={e => { setLocationId(e.target.value); setPreview(null); }}>
+          <select data-training="meal-location" value={locationId} onChange={e => { setLocationId(e.target.value); setPreview(null); }}>
             <option value="">Select location</option>
             {locations.map(x => <option value={x.id} key={x.id}>{x.code} — {x.name}</option>)}
           </select>
@@ -228,8 +228,8 @@ export default function Page() {
       </div>
 
       <div className="button-row">
-        <button className="secondary" type="button" onClick={estimate} disabled={saving}>Preview cost</button>
-        <button className="primary" type="button" disabled={saving} onClick={post}>{saving ? "Posting…" : "Post staff meal"}</button>
+        <button data-training="meal-preview" className="secondary" type="button" onClick={estimate} disabled={saving}>Preview cost</button>
+        <button data-training="meal-post" className="primary" type="button" disabled={saving} onClick={post}>{saving ? "Posting…" : "Post staff meal"}</button>
       </div>
       <p className="section-gap" style={accessibleHelperStyle}>Posted meals are immutable. If something is wrong, reverse the posting and enter the corrected meal.</p>
     </section>
@@ -250,7 +250,7 @@ export default function Page() {
                 <td>{locationById[meal.location_id]?.name || "Unknown location"}</td>
                 <td>{new Date(meal.created_at).toLocaleString()}</td>
                 <td><StatusBadge status={meal.status} /></td>
-                <td>{meal.status === "posted" ? <button className="secondary compact" type="button" onClick={() => void reverse(meal)}>Reverse</button> : null}</td>
+                <td>{meal.status === "posted" ? <button aria-label={`Reverse staff meal ${meal.meal_name}`} className="secondary compact" type="button" onClick={() => void reverse(meal)}>Reverse</button> : null}</td>
               </tr>)}
               {meals.length === 0 ? <tr><td colSpan={7}><div className="empty-state"><strong>No staff meals yet</strong><span>Post the first staff meal above.</span></div></td></tr> : null}
             </tbody>

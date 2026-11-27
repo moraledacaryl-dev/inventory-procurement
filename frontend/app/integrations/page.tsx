@@ -50,22 +50,22 @@ export default function Page() {
       <section className="grid">
         <div className="card">
           <h2>POS synchronization</h2>
-          <p>Govern product mappings, recipe readiness, sale consumption, refunds, voids, and stock-document traceability.</p>
+          <p>Check product mappings, recorded sales, refunds and stock deductions.</p>
           <Link className="primary compact" href="/integrations/pos">Open POS workspace</Link>
         </div>
         <div className="card">
           <h2>Shared identity & master data</h2>
-          <p>Publish canonical operational identities, items, locations, and suppliers to Staff, Command Center, and Accounting.</p>
+          <p>Share approved employee, item, location and supplier records with connected apps.</p>
           <Link className="primary compact" href="/integrations/master-data">Open master data</Link>
         </div>
         <div className="card">
           <h2>Accounting integration</h2>
-          <p>Review journal intent, delivery status, queued value, external acknowledgements, failures, and dead-letter events.</p>
-          <Link className="primary compact" href="/integrations/accounting">Open accounting workspace</Link>
+          <p>Check Accounting deliveries, accepted records and failed messages.</p>
+          <Link data-training="integrations-accounting" className="primary compact" href="/integrations/accounting">Open accounting workspace</Link>
         </div>
         <div className="card">
           <h2>Staff & Command Center</h2>
-          <p>Receive employee-linked operational requests, assign accountability, and publish governed status updates.</p>
+          <p>Review requests, assign work and update its status.</p>
           <Link className="primary compact" href="/integrations/operations">Open operations workspace</Link>
         </div>
       </section>
@@ -99,7 +99,7 @@ export default function Page() {
                   <td>{entry.aggregate_id}</td>
                   <td>{entry.status}</td>
                   <td>{entry.attempts}</td>
-                  <td>{["failed", "dead_letter"].includes(entry.status) ? <button className="secondary" onClick={() => retry(entry.id)}>Retry</button> : ""}</td>
+                  <td>{["failed", "dead_letter"].includes(entry.status) ? <button data-training={`integration-retry-${entry.id}`} className="secondary" onClick={() => retry(entry.id)}>Retry</button> : ""}</td>
                 </tr>
               ))}
             </tbody>

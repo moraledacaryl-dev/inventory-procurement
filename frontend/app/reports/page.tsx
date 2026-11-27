@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "../../components/AppShell";
 import { DataTable } from "../../components/DataTable";
 import { formatMoney } from "../../lib/formatters";
+import { trainingAttempt } from "../../lib/training-session";
 import { API, api } from "../../lib/api";
 
 type Audit={id:string;action:string;entity_type:string;entity_id:string|null;created_at:string};
@@ -26,9 +27,14 @@ export default function Page(){
   useEffect(()=>{void load()},[load]);
 
   function download(path:string){
-    fetch(`${API}${path}`,{credentials:"include",headers:{"X-Requested-With":"HiddenOasisInventory"}}).then(async response=>{
+    const training=process.env.NEXT_PUBLIC_INVENTORY_TRAINING==="1";
+    const headers:Record<string,string>={"X-Requested-With":"HiddenOasisInventory"};
+    const attempt=training?trainingAttempt():null;if(attempt)headers["X-Training-Attempt"]=attempt;
+    fetch(`${API}${path}`,{credentials:"include",headers}).then(async response=>{
       if(response.status===401){window.location.assign(`/login?expired=1&next=${encodeURIComponent(window.location.pathname)}`);return}
-      if(!response.ok)throw new Error("Export failed");
+      if(!response.ok)throw new Error("Export failed. Check your access and current practice, then try again.");
+      if(training&&response.headers.get("x-inventory-environment")!=="isolated-training")throw new Error("This export did not identify itself as isolated training.");
+      if(training)window.dispatchEvent(new CustomEvent("inventory-training-action",{detail:{path,method:"GET",status:response.status}}));
       const blob=await response.blob(),url=URL.createObjectURL(blob),anchor=document.createElement("a");
       anchor.href=url;anchor.download=path.includes("balances")?"stock-balances.csv":"items.csv";anchor.click();URL.revokeObjectURL(url);
     }).catch(error=>setMsg(error.message));

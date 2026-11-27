@@ -1,4 +1,10 @@
+import {forgetTrainingAttempt,trainingAttempt} from "./training-session";
 export const API = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+// Reject contaminated builds before any consumer (including CSV/blob exports)
+// can use the configured address. Runtime request checks remain below.
+if (process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1" && API !== "/api/v1") {
+  throw new Error("Training cannot use an external API address.");
+}
 
 export class ApiError extends Error {
   status: number;
@@ -42,9 +48,15 @@ function safeReturnPath() {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const training = process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1";
+  if (training && API !== "/api/v1") throw new Error("Training cannot use an external API address.");
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   headers.set("X-Requested-With", "HiddenOasisInventory");
+  if (training && typeof window !== "undefined") {
+    const attempt = trainingAttempt();
+    if (attempt) headers.set("X-Training-Attempt", attempt);
+  }
 
   const response = await fetch(`${API}${path}`, {
     ...init,
@@ -53,14 +65,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: "include",
   });
 
-  if (response.status === 401 && typeof window !== "undefined" && window.location.pathname !== "/login") {
+  if (response.status === 401 && typeof window !== "undefined" && window.location.pathname !== "/login" && !path.startsWith("/training/")) {
+    if (training) { window.location.assign("/training"); throw new Error("Return to Training to continue your session."); }
     const next = encodeURIComponent(safeReturnPath());
     window.location.assign(`/login?expired=1&next=${next}`);
   }
 
   if (!response.ok) {
+    if (training && typeof window !== "undefined" && !path.startsWith("/training/")) {
+      window.dispatchEvent(new CustomEvent("inventory-training-action", { detail: { path, method: init.method || "GET", status: response.status } }));
+    }
     const body = await response.json().catch(() => ({}));
     throw new ApiError(formatApiError(body?.detail, `Request failed (${response.status})`), response.status, body);
+  }
+
+  if (training && !path.startsWith("/training/") && response.headers.get("x-inventory-environment") !== "isolated-training") {
+    throw new Error("Practice is unavailable: this API did not identify itself as isolated training.");
+  }
+  if (training && typeof window !== "undefined" && !path.startsWith("/training/")) {
+    window.dispatchEvent(new CustomEvent("inventory-training-action", { detail: { path, method: init.method || "GET", status: response.status } }));
   }
 
   if (response.status === 204) return undefined as T;
@@ -68,6 +91,13 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function logout() {
+  const training = process.env.NEXT_PUBLIC_INVENTORY_TRAINING === "1";
   await api<void>("/auth/logout", { method: "POST" });
-  if (typeof window !== "undefined") window.location.assign("/login?signed_out=1");
+  if (typeof window !== "undefined") {
+    if (training) {
+      forgetTrainingAttempt();
+      for (const key of Object.keys(localStorage)) if (key.startsWith("inventory-training")) localStorage.removeItem(key);
+    }
+    window.location.assign(training ? "/training" : "/login?signed_out=1");
+  }
 }

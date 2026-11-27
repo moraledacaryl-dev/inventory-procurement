@@ -139,7 +139,7 @@ export default function Page() {
     workspaceName(row.workspace_id),
     row.sort_order,
     <StatusBadge key={`${row.id}-status`} status={row.is_active ? "active" : "inactive"} />,
-    <button key={`${row.id}-action`} className="secondary compact" type="button" onClick={() => void toggle(row)}>{row.is_active ? "Deactivate" : "Restore"}</button>,
+    <button data-training={`classification-toggle-${row.id}`} key={`${row.id}-action`} className="secondary compact" type="button" onClick={() => void toggle(row)}>{row.is_active ? "Deactivate" : "Restore"}</button>,
   ]), [currentRows, dimensions]);
 
   return <AppShell title="Operating Structure" description="Workspaces, categories, and item types.">
@@ -152,7 +152,7 @@ export default function Page() {
 
     <section className="card section-gap">
       <div className="topline"><div><h2>Editable masters</h2><p>Seeded defaults are starting points only. Rename, reorder, deactivate, or add operational records without changing code.</p></div><label className="catalogue-toggle"><input type="checkbox" checked={showInactive} onChange={event => setShowInactive(event.target.checked)} /><span>Include inactive</span></label></div>
-      <div className="master-tabs" role="tablist" aria-label="Classification masters">{MASTER_KEYS.map(key => <button type="button" role="tab" aria-selected={selectedMaster === key} className={selectedMaster === key ? "active" : ""} key={key} onClick={() => { setSelectedMaster(key); setDraft(EMPTY); }}>{MASTER_LABELS[key]}</button>)}</div>
+      <div className="master-tabs" role="tablist" aria-label="Classification masters">{MASTER_KEYS.map(key => <button data-training={`classification-tab-${key}`} type="button" role="tab" aria-selected={selectedMaster === key} className={selectedMaster === key ? "active" : ""} key={key} onClick={() => { setSelectedMaster(key); setDraft(EMPTY); }}>{MASTER_LABELS[key]}</button>)}</div>
       <div className="classification-layout">
         <form onSubmit={createMaster} className="classification-form">
           <FormSection title={`Add ${MASTER_LABELS[selectedMaster].toLowerCase()}`} description="Codes are stable references. Names and descriptions are what staff see.">
@@ -164,7 +164,7 @@ export default function Page() {
             {!["workspace", "record_class", "business_unit", "location_type", "asset_class", "depreciation_method", "condition_status", "movement_reason"].includes(selectedMaster) ? <FormField label="Workspace" name="dimension-workspace"><select value={draft.workspace_id} onChange={event => setDraft(current => ({ ...current, workspace_id: event.target.value }))}><option value="">Shared or not scoped</option>{workspaces.filter(row => row.is_active).map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></FormField> : null}
             <FormField label="Sort order" name="dimension-sort"><input type="number" value={draft.sort_order} onChange={event => setDraft(current => ({ ...current, sort_order: event.target.value }))} /></FormField>
           </FormSection>
-          <div className="form-actions"><button className="primary" disabled={saving}>{saving ? "Saving…" : "Add record"}</button></div>
+          <div className="form-actions"><button data-training="classification-create" className="primary" disabled={saving}>{saving ? "Saving…" : "Add record"}</button></div>
         </form>
         <DataTable columns={["Name", "Code", "Behavior", "Parent", "Workspace", "Order", "Status", "Action"]} rows={rows} rowIds={currentRows.map(row => row.id)} loading={loading} error={loadError} onRetry={() => void load()} searchPlaceholder={`Search ${MASTER_LABELS[selectedMaster].toLowerCase()}`} exportFileName={`hidden-oasis-${selectedMaster}`} caption={MASTER_LABELS[selectedMaster]} emptyTitle="No records" emptyMessage="Add the first record for this master." />
       </div>
@@ -183,7 +183,7 @@ export default function Page() {
           <select aria-label={`Item type for ${item.name}`} value={edit.item_type_id} disabled={!edit.primary_workspace_id} onChange={event => setItemField(item.item_id, "item_type_id", event.target.value)}><option value="">Item type</option>{itemTypes.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
           <select aria-label={`Department for ${item.name}`} value={edit.department_id} disabled={!edit.primary_workspace_id} onChange={event => setItemField(item.item_id, "department_id", event.target.value)}><option value="">Department optional</option>{departments.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
           <select aria-label={`Cost center for ${item.name}`} value={edit.cost_center_id} disabled={!edit.primary_workspace_id} onChange={event => setItemField(item.item_id, "cost_center_id", event.target.value)}><option value="">Cost center optional</option>{costCenters.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
-          <button className="primary compact" type="button" onClick={() => void saveItem(item)}>Save</button>
+          <button data-training={`classification-save-${item.item_id}`} className="primary compact" type="button" onClick={() => void saveItem(item)}>Save</button>
         </div>;
       })}</div> : <div className="empty-panel"><strong>All items are classified</strong><p>New items will use the same workspace and item-type structure automatically.</p></div>}
     </section>

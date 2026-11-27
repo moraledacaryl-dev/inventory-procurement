@@ -1,0 +1,157 @@
+"""Reusable property circulation, standards and fixed-asset stewardship."""
+from training.lesson_types import Lesson, Step, input_step as fill, select_step as choose, action_step as act
+
+ROLES=("inventory_manager","owner")
+PROPERTY="/hotel/property"
+ASSETS="/assets"
+MAINTENANCE="/assets/maintenance"
+
+
+def task(id,module,title,route,situation,concept,example,rule,question,steps):
+    if isinstance(steps,Step):steps=(steps,)
+    if module=="V":situation="Your approved global asset assignment covers this workspace. "+situation
+    return Lesson(id,module,title,ROLES,route,"property_"+id,situation,concept,example,rule,question,"no",rule+" "+situation,
+        ("property_operations.py",) if module=="U" else ("assets.py","pass5_operations.py"),steps,5,global_access=module=="V")
+
+
+def circulation(source,source_condition,destination,destination_condition,reason):
+    return (
+        act('[data-training="property-move-open"]',"Open Post circulation movement."),
+        choose('[aria-label="Circulation reusable item"]',"Choose Training bath towel.","{linen}"),
+        fill('[aria-label="Circulation quantity"]',"Record {quantity} individual towels.","{quantity}"),
+        choose('[aria-label="Circulation source location"]',source,"{property_source}"),
+        choose('[aria-label="Circulation source condition"]',source_condition,"{property_from_condition}"),
+        choose('[aria-label="Circulation destination location"]',destination,"{property_destination}"),
+        choose('[aria-label="Circulation destination condition"]',destination_condition,"{property_to_condition}"),
+        choose('[aria-label="Circulation movement reason"]',reason,"{property_reason}"),
+        fill('[aria-label="Circulation reference"]',"Use handover reference {reference}.","{reference}"),
+        act('[data-training="property-move-save"]',"Check both location and condition buckets, then post the actual handover.","/property/movements"),
+    )
+
+
+LESSONS=[
+    task("issue-clean-linen","U","Issue clean towels without treating them as consumed",PROPERTY,
+        "Housekeeping physically issues {quantity} clean Training bath towels from Training stockroom to Training room floor. Record them leaving Available / clean and entering In use, with reference {reference}.",
+        "Reusable property circulates between location and condition buckets. A towel placed in a room still belongs to the resort.",
+        "From 12 clean towels, issuing 5 leaves 7 clean and 5 in use. Total property remains 12.",
+        "Record the actual quantity, destination and condition. Do not consume reusable linen as an ordinary amenity issue.",
+        "Does issuing a reusable towel mean it no longer belongs to the resort? yes or no",
+        circulation("Choose Training stockroom.","Choose Available / clean.","Choose Training room floor.","Choose In use.","Choose Issue to room or department.")),
+    task("send-used-linen-to-laundry","U","Hand used towels into laundry control",PROPERTY,
+        "Housekeeping hands {quantity} used Training bath towels from Training room floor to the laundry holding bucket at Training stockroom. Move In use to In laundry with reference {reference}; they are not clean stock yet.",
+        "Laundry is a condition and custody stage. It does not manufacture new towels or certify that washing is finished.",
+        "Five used towels entering laundry increase In laundry by five and reduce In use by five. Clean availability does not increase.",
+        "Count the handover and use the laundry condition. Keep unwashed linen out of clean availability.",
+        "Should linen in laundry already be reported as clean and available? yes or no",
+        circulation("Choose Training room floor.","Choose In use.","Choose Training stockroom.","Choose In laundry.","Choose Laundry circulation.")),
+    task("return-clean-linen","U","Return verified clean towels to availability",PROPERTY,
+        "Laundry returned {quantity} inspected clean Training bath towels at Training stockroom. Move those actual towels from In laundry to Available / clean at the same location, with reference {reference}.",
+        "A condition change can happen within one location. Only the quantity actually cleaned and accepted returns to availability.",
+        "If 5 of 12 laundry towels are ready, move 5 to clean and leave the remaining 7 in laundry.",
+        "Inspect and count the return. Keep damaged, missing or unfinished linen out of the clean bucket.",
+        "Should the full laundry quantity be returned when only part is clean and accepted? yes or no",
+        circulation("Choose Training stockroom.","Choose In laundry.","Keep Training stockroom as destination.","Choose Available / clean.","Choose Laundry circulation.")),
+    task("configure-room-par","U","Set a room standard without issuing stock",PROPERTY,
+        "The approved standard for Training standard room is {quantity} Training bath towels. Create room-type profile TRAIN-ROOM-PAR at Training room floor with that quantity. Do not post a circulation movement.",
+        "A par is a planned standard. It describes how many items should be provided, not how many are currently present.",
+        "A two-towel room standard does not prove that two clean towels are available or that housekeeping delivered them.",
+        "Use the approved standard and correct profile location. Check real condition balances separately before replenishment.",
+        "Does creating a par profile physically deliver towels to a room? yes or no",(
+            fill('[aria-label="Par profile code"]',"Use code TRAIN-ROOM-PAR.","TRAIN-ROOM-PAR"),
+            fill('[aria-label="Par profile name"]',"Name it Training standard room.","Training standard room"),
+            choose('[aria-label="Par profile type"]',"Choose Room type.","room_type"),
+            choose('[aria-label="Par profile location"]',"Choose Training room floor.","{kitchen}"),
+            choose('[aria-label="Par reusable item"]',"Choose Training bath towel.","{linen}"),
+            fill('[aria-label="Par quantity"]',"The approved standard is {quantity} towels.","{quantity}"),
+            act('[data-training="par-save"]',"Save the standard without posting an issue.","/hotel/par-profiles"))),
+    task("register-fixed-asset","V","Register one identifiable asset",ASSETS,
+        "A second Training ventilation fan has been accepted and placed in service. Register physical unit TRAIN-FAN-02 at Training stockroom, acquired and placed in service on 1 November 2026, costing PHP 6,000. Use Training equipment class, Training straight line method and 60 months. Additional capitalized cost and residual value are both zero.",
+        "An asset tag identifies one physical unit. The asset register tracks its cost and useful life separately from consumable stock quantities.",
+        "A PHP 6,000 fan over 60 months with zero residual has a PHP 100 monthly straight-line amount. Registration itself does not post a depreciation run.",
+        "Verify the physical tag, classification, location, dates and approved useful life. Do not register the same unit twice.",
+        "Does registering an asset also post its monthly depreciation? yes or no",(
+            act('[data-training="asset-create-open"]',"Open Register asset."),
+            fill('[aria-label="Asset tag"]',"Identify the second unit as TRAIN-FAN-02.","TRAIN-FAN-02"),
+            choose('[aria-label="Fixed-asset item"]',"Choose Training ventilation fan.","{asset_item}"),
+            choose('[aria-label="Asset class"]',"Choose Training equipment.","{asset_class}"),
+            choose('[aria-label="Depreciation method"]',"Choose Training straight line.","{asset_method}"),
+            choose('[aria-label="Asset location"]',"Choose Training stockroom.","{store}"),
+            fill('[aria-label="Acquisition date"]',"Acquired on 1 November 2026.","2026-11-01"),
+            fill('[aria-label="Placed in service date"]',"Placed in service on 1 November 2026.","2026-11-01"),
+            fill('[aria-label="Acquisition cost"]',"Enter PHP 6,000 for this physical unit.","6000"),
+            fill('[aria-label="Useful life in months"]',"Verify the approved 60-month useful life.","60"),
+            act('[data-training="asset-create-save"]',"Leave additional cost and residual at zero and register the unit.","/assets"))),
+    task("create-maintenance-plan","V","Schedule preventive work for a specific asset",MAINTENANCE,
+        "Create preventive plan TRAIN-FAN-CARE, named Fan safety check, for TRAIN-FAN-01 every 30 days. Its first due date is 1 December 2026. Checklist: Check guard and clean filter.",
+        "A preventive plan describes repeated work and the next due date. Creating it is not evidence that the work was done.",
+        "A monthly fan inspection plan remains due until the actual maintenance work is recorded.",
+        "Choose the exact asset and approved interval. Keep planning separate from starting or completing work.",
+        "Does saving a maintenance plan prove that maintenance was completed? yes or no",(
+            act('[data-training="maintenance-plan-open"]',"Open Preventive maintenance plan."),
+            fill('[aria-label="Maintenance plan code"]',"Use code TRAIN-FAN-CARE.","TRAIN-FAN-CARE"),
+            fill('[aria-label="Maintenance plan name"]',"Name it Fan safety check.","Fan safety check"),
+            choose('[aria-label="Maintenance plan asset"]',"Choose TRAIN-FAN-01.","{asset}"),
+            fill('[aria-label="Maintenance interval days"]',"Use a 30-day interval.","30"),
+            fill('[aria-label="Maintenance next due date"]',"The first due date is 1 December 2026.","2026-12-01"),
+            fill('[aria-label="Maintenance checklist"]',"Enter Check guard and clean filter.","Check guard and clean filter"),
+            act('[data-training="maintenance-plan-save"]',"Save the preventive schedule.","/maintenance/plans"))),
+    task("create-maintenance-work-order","V","Record a specific maintenance job",MAINTENANCE,
+        "TRAIN-FAN-01 needs a high-priority guard inspection on 1 December 2026. Create work order Inspect fan guard, with description {reference}. This one-off task has no recurring plan, parts or outside charges yet.",
+        "A work order identifies an asset and a job. Creation records planned work; it does not mean a technician started or finished it.",
+        "An open guard-inspection order stays open until work progress is recorded.",
+        "Choose the correct asset, priority and schedule. Record real costs only through supported authorized controls.",
+        "Does creating a work order prove the asset is repaired? yes or no",(
+            act('[data-training="maintenance-order-open"]',"Open Create work order."),
+            choose('[aria-label="Work order asset"]',"Choose TRAIN-FAN-01.","{asset}"),
+            fill('[aria-label="Work order title"]',"Describe the work as Inspect fan guard.","Inspect fan guard"),
+            choose('[aria-label="Work order priority"]',"Choose High.","high"),
+            fill('[aria-label="Work order scheduled date"]',"Schedule 1 December 2026.","2026-12-01"),
+            fill('[aria-label="Work order description"]',"Enter the work reference {reference}.","{reference}"),
+            act('[data-training="maintenance-order-save"]',"Keep No recurring plan and save the open job.","/maintenance/work-orders"))),
+    task("start-maintenance-work","V","Record that authorized work has begun",MAINTENANCE,
+        "The assigned technician is physically starting TRAIN-WORK, the guard inspection of TRAIN-FAN-01. Mark that existing open job as started. It is not finished yet.",
+        "Starting records work in progress and its time. It does not certify safe completion or create another work order.",
+        "A fan being inspected may still be unavailable for service even though its job is now in progress.",
+        "Start the actual assigned job once. Record completion only after the work and safety checks are finished.",
+        "Does starting work certify that it is already complete? yes or no",
+        act('[data-training="maintenance-start-training-work"]',"Start existing TRAIN-WORK.","/maintenance/work-orders/training-work/start")),
+    task("complete-maintenance-work","V","Close completed work and advance its schedule",MAINTENANCE,
+        "The technician finished TRAIN-WORK and verified the fan guard. This internal inspection used no parts and has no separately charged labor, external cost or downtime. Mark it complete. Its linked 30-day plan will get a new due date; the training handoff stays local.",
+        "Completion records the finished job, its actual costs and downtime, and advances a linked preventive plan. For this inspection, enter zero in all three amount fields.",
+        "Completing a zero-charge inspection does not issue spare parts or change food stock. A charged repair needs its actual costs entered before completion.",
+        "Confirm the work and safety checks are finished. Do not use this zero-cost action to hide real repair costs.",
+        "Should a repair with real outside charges be closed as zero-cost just to finish this screen? yes or no",
+        (act('[data-training="maintenance-complete-training-work"]',"Open completion details for TRAIN-WORK."),
+        fill('[data-training="maintenance-completion-form"] [name="labor_cost"]',"Enter 0 for labor cost.","0"),
+        fill('[data-training="maintenance-completion-form"] [name="external_cost"]',"Enter 0 for other costs.","0"),
+        fill('[data-training="maintenance-completion-form"] [name="downtime_hours"]',"Enter 0 for downtime.","0"),
+        act('[data-training="confirm"]',"Complete the verified zero-charge TRAIN-WORK.","/maintenance/work-orders/training-work/complete"))),
+    task("prepare-depreciation-run","V","Prepare a monthly value allocation for review",ASSETS,
+        "Prepare the November 2026 depreciation run. TRAIN-FAN-01 is the only eligible asset: cost PHP {asset_cost}, zero residual and 60 months. The expected monthly amount is PHP {asset_monthly}. Keep the run as a draft.",
+        "Depreciation allocates an asset's depreciable cost over useful life. Preparing a run does not yet post it or change physical supplies.",
+        "PHP 12,000 over 60 months is PHP 200 per month. The fan still physically exists after that monthly allocation.",
+        "Review the period, eligible assets and amount. Prepare once and obtain the required review before posting.",
+        "Does preparing a draft run already post depreciation? yes or no",(
+            fill('[aria-label="Depreciation period"]',"Choose November 2026.","2026-11"),
+            act('[data-training="depreciation-prepare"]',"Prepare the reviewed period and leave it as a draft.","/depreciation-runs"))),
+    task("post-reviewed-depreciation","V","Post a reviewed depreciation run once",ASSETS,
+        "The November 2026 draft run has been checked and approved for posting. Its only eligible asset TRAIN-FAN-01 has cost PHP {asset_cost}, zero residual and 60 months; the reviewed amount is PHP {asset_monthly}. Post that existing run once. Accounting delivery is disabled in this training.",
+        "Posting increases accumulated depreciation and reduces book value. It creates a local Accounting handoff, not proof that Accounting posted a journal.",
+        "Posting PHP 200 against a PHP 12,000 asset leaves PHP 11,800 book value and changes no physical inventory quantity.",
+        "Confirm the reviewed period and amount before posting. Check the posted status and never represent a queued handoff as a verified journal.",
+        "Does a queued Accounting handoff prove that a General Ledger journal is posted? yes or no",
+        act('[data-training="depreciation-post-2026-11"]',"Post the reviewed November 2026 run once.","/depreciation-runs/*/post")),
+]
+
+LESSONS += [task("complete-costed-maintenance","V","Record repair costs when completing work",MAINTENANCE,
+    "The technician finished TRAIN-WORK and checked the fan guard. Record labor cost PHP {work_labor}, other costs PHP {work_external} and downtime {work_downtime} hours. Add the completion note {reference}. No parts were issued for this repair.",
+    "Completion records actual charges and downtime as well as the finished work. Use zero only when that cost or downtime did not occur.",
+    "A repair with a supplier charge should show that charge when the work is completed.",
+    "Check the completed work, record the actual amounts and review them before confirming.",
+    "Should actual repair charges be entered as zero just to finish the job? yes or no",(
+        act('[data-training="maintenance-complete-training-work"]',"Open completion details for TRAIN-WORK."),
+        fill('[data-training="maintenance-completion-form"] [name="labor_cost"]',"Enter labor cost PHP {work_labor}.","{work_labor}"),
+        fill('[data-training="maintenance-completion-form"] [name="external_cost"]',"Enter other costs PHP {work_external}.","{work_external}"),
+        fill('[data-training="maintenance-completion-form"] [name="downtime_hours"]',"Enter downtime of {work_downtime} hours.","{work_downtime}"),
+        fill('[data-training="maintenance-completion-form"] [name="completion_notes"]',"Record the completion note {reference}.","{reference}"),
+        act('[data-training="confirm"]',"Review the actual amounts, then complete the work order.","/maintenance/work-orders/training-work/complete"))) ]

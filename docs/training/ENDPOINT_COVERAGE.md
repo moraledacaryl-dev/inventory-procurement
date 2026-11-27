@@ -17,12 +17,12 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `POST /auth/logout` | `auth.py` | Service/session boundary | Assessed real outcome; relevant lifecycle refusals also exercised |
 | `GET /auth/me` | `auth.py` | Service/session boundary | Supporting UI / record inspection |
 | `GET /items/{item_id}/configuration` | `catalogue_configuration.py` | items.read | Supporting UI / record inspection |
-| `PATCH /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Excluded from employee GUI practice: ItemConfigurationPanel exposes create/remove links but no PATCH editor |
+| `PATCH /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Assessed: edit the original supplier-item terms without changing approved orders or stock |
 | `DELETE /supplier-items/{link_id}` | `catalogue_configuration.py` | suppliers.* | Assessed: remove obsolete sourcing link while retaining supplier, original approved PO and unchanged stock |
-| `PATCH /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Excluded from employee GUI practice: ItemConfigurationPanel exposes add/remove barcodes but no PATCH editor |
+| `PATCH /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Assessed: edit the original barcode while retaining item identity and stock |
 | `DELETE /items/{item_id}/barcodes/{barcode_id}` | `catalogue_configuration.py` | items.* | Assessed real outcome; relevant lifecycle refusals also exercised |
-| `PATCH /items/{item_id}/conversions/{conversion_id}` | `catalogue_configuration.py` | items.* | Excluded from employee GUI practice: ItemConfigurationPanel exposes conversion creation/read only, no existing-row editor |
-| `PATCH /item-location-settings/{setting_id}` | `catalogue_configuration.py` | inventory.* | Excluded from employee GUI practice: ItemConfigurationPanel exposes policy creation/read only, no existing-row editor |
+| `PATCH /items/{item_id}/conversions/{conversion_id}` | `catalogue_configuration.py` | items.* | Assessed: correct the original conversion direction and multiplier without rewriting stock history |
+| `PATCH /item-location-settings/{setting_id}` | `catalogue_configuration.py` | inventory.* | Assessed: edit the original assigned-location policy without ordering or moving stock |
 | `GET /classification/dimensions` | `classification.py` | items.read | Supporting UI / record inspection |
 | `GET /classification/bootstrap` | `classification.py` | items.read | Supporting UI / record inspection |
 | `POST /classification/dimensions` | `classification.py` | items.* | Assessed: approved department master with stable code/workspace; no access or stock grant |
@@ -127,7 +127,7 @@ Extracted from the current source, not README claims. Supporting reads do not im
 | `GET /maintenance/work-orders` | `pass5_operations.py` | inventory.read | Supporting UI / record inspection |
 | `POST /maintenance/work-orders` | `pass5_operations.py` | inventory.* | Assessed: one-off job, asset, priority and schedule; current UI has no parts entry |
 | `POST /maintenance/work-orders/{work_order_id}/start` | `pass5_operations.py` | inventory.* | Assessed: existing actual work enters in_progress |
-| `POST /maintenance/work-orders/{work_order_id}/complete` | `pass5_operations.py` | inventory.* | Assessed: completed zero-charge work advances linked plan and local handoff; current button has no non-zero cost/parts editor |
+| `POST /maintenance/work-orders/{work_order_id}/complete` | `pass5_operations.py` | inventory.* | Assessed: explicit zero-charge and actual-cost completion; exact labor, other costs, downtime, notes and linked plan date. Parts entry remains outside this completion form. |
 | `GET /purchase-line-treatments` | `pass5_operations.py` | inventory.read | Supporting UI / record inspection |
 | `POST /purchase-line-treatments` | `pass5_operations.py` | inventory.* | Excluded from employee GUI practice: API exists but no current purchase-treatment form; steward review required |
 | `GET /accounting-mappings` | `pass5_operations.py` | reports.read | Supporting UI / record inspection |

@@ -57,6 +57,7 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | H | `stock-screen-signed-correction` — Record an authorized signed balance correction | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | I | `create-supplier` — Add a supplier with clear terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | I | `deactivate-unused-supplier` — Retire a supplier after checking open orders |  | ✓ |  |  |  | ✓ | Source business/master outcome |
+| I | `edit-supplier-item-terms` — Update an existing supplier's item terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | I | `edit-supplier-terms` — Update approved contact and payment terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | I | `link-supplier-item` — Link an item to its preferred supplier |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | I | `open-orders-block-deactivation` — Handle a supplier with outstanding obligations |  | ✓ |  |  |  | ✓ | Source protective refusal |
@@ -64,7 +65,6 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | I | `supplier-profile` — Find a supplier and check its history | ✓ | ✓ | ✓ |  | ✓ | ✓ | Source record inspection |
 | I | `unlink-obsolete-supplier-item` — Remove an obsolete supplier-item link |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `approve-purchase-request` — Review and approve another person's request |  | ✓ |  |  |  | ✓ | Source business/master outcome |
-| J | `edit-supplier-item-terms` — Update an existing supplier's item terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `reject-duplicate-request` — Reject an unnecessary purchase request |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `request-purchase` — Check stock before requesting a purchase |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `request-self-approval` — Recognize independent request approval |  | ✓ |  |  |  | ✓ | Source protective refusal |
@@ -195,7 +195,7 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | Cafe supplies and service (`cafe`) | `inventory_manager` | 21 | `transfer-receipt-variance`, `staff-meal`, `available-stock` |
 | Bar supplies and service (`bar`) | `inventory_manager` | 20 | `transfer-receipt-variance`, `record-waste`, `available-stock` |
 | Housekeeping and linen (`housekeeping`) | `inventory_manager` | 11 | `cap-housekeeping`, `available-stock` |
-| Maintenance and assets (`maintenance`) | `inventory_manager` | 11 | `create-maintenance-work-order`, `complete-maintenance-work`, `asset-maintenance` |
+| Maintenance and assets (`maintenance`) | `inventory_manager` | 11 | `create-maintenance-work-order`, `complete-costed-maintenance`, `asset-maintenance` |
 | Department supervision (`department-supervisor`) | `inventory_manager` | 19 | `cap-monthly-count`, `recipe-self-approval`, `request-count-recheck` |
 | Accounting-related inventory review (`accounting-review`) | `viewer` | 20 | `available-stock`, `management-review` |
 

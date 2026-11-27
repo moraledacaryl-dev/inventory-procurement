@@ -31,13 +31,13 @@ Curriculum `2026.11.27.4` contains **173 definitions: 145 action/validation/anal
 |---|---:|---|
 | A — Fundamentals | 2 | Physical/reserved/available stock; counter-only unit reading without inventory-read access |
 | B — Navigation | 1 | Actual Home indicators, navigation, record search and restricted responsibility |
-| C — Catalogue | 11 | Units; item creation/editing; barcodes; conversions; location settings; lifecycle and stock/scope refusals |
+| C — Catalogue | 14 | Units; item creation/editing; barcodes; conversions; location settings; lifecycle and stock/scope refusals |
 | D — Balances and ledger | 2 | Opening quantity/cost; real date/item/location/type filters; net movement versus running/closing quantity |
 | E — Issuance | 3 | Kitchen kg, café case-to-individual-can and bar bottle-to-mL decisions |
 | F — Transfers/reservations | 11 | Reservation shortage; controlled dispatch/receipt; partial variance; cancellation; destination, availability and transit-scope controls |
 | G — Counts | 11 | Blind and zero; multiple units; full/partial save; recount; independent approval; stale snapshot; posted variance; linked monthly count |
 | H — Corrections/waste | 5 | Spoilage; signed authorized correction; lot-linked expiry write-off; original waste quantity/value |
-| I — Suppliers | 8 | Profile/history; create/edit; preferred link/unlink; deactivate/reactivate; open-order refusal |
+| I — Suppliers | 9 | Profile/history; create/edit; preferred link/unlink; deactivate/reactivate; open-order refusal |
 | J — Requests | 4 | Check stock/on-order demand; submit; independent approval; duplicate rejection; self-approval refusal |
 | K — Quotations/authority | 5 | Real offers; price versus deadline; award one linked draft; inspect the same PO; linked busy weekend |
 | L — Purchase orders | 6 | Manual draft, amendment, pre-receipt cancellation, approval-limit refusal and immutable-status controls |
@@ -50,7 +50,7 @@ Curriculum `2026.11.27.4` contains **173 definitions: 145 action/validation/anal
 | S — POS | 9 | Exact mapping controls/retry; actual four-ingredient consumption; duplicate identity; unmapped refusal; financial refund plus cooked waste return; void without ingredient restoration; inbound retry refusal |
 | T — Staff meals | 4 | Four-serving consumption/cost; physical and reserved-stock shortage refusals; authorized duplicate reversal |
 | U — Housekeeping/linen | 6 | Amenities; clean/in-use/laundry handovers; accepted return; room par; linked room preparation |
-| V — Assets/maintenance | 8 | Register/read asset; preventive plan; work order/start/verified zero-cost completion; reviewed depreciation |
+| V — Assets/maintenance | 9 | Register/read asset; preventive plan; work order/start/verified zero-charge and actual-cost completion; reviewed depreciation |
 | W — Accounting | 6 | Delivery/intake versus journal evidence; approved mapping; eligible outbound retry with preserved obligation; accepted-receipt refusal through both retry routes |
 | X — Connected work | 7 | Canonical assignee, accept/reject, confirmed linked completion, alert, specific feedback and owner-review capstone |
 | Y — Management reports | 5 | Supplier purchasing/acceptance, stock valuation, saved scope, separate reconciliation/backup assurance evidence |

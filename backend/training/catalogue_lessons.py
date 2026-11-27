@@ -204,7 +204,7 @@ LESSONS += [
             input_step('[data-training="edit-policy-form"] [name="maximum_stock"]',"Set maximum to 60 kg.","60"),
             input_step('[data-training="edit-policy-form"] [name="cycle_count_days"]',"Set the count interval to 7 days.","7"),
             Step('[data-training="confirm"]',"Save changes to this policy.",outcome="/item-location-settings/training-edit-policy",outcome_method="PATCH")),quantity=12,global_access=False),
-    lesson("edit-supplier-item-terms","J","Update an existing supplier's item terms",BUY,"/items/{chicken}",
+    lesson("edit-supplier-item-terms","I","Update an existing supplier's item terms",BUY,"/items/{chicken}",
         "The supplier confirmed new terms for chicken: supplier item code TRAIN-CHICKEN, last price PHP 210, lead time 4 days and minimum order 2 kg. Edit the existing supplier link and keep it preferred.",
         "Supplier item terms describe an offer. Editing them does not change an already approved order or prove that goods arrived.",
         "A new quoted price applies to later planning. The old approved purchase order retains its own agreed price.",

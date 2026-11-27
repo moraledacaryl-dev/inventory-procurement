@@ -113,7 +113,7 @@ test('quick reference answers a real question and opens authorized refresher pra
   await lesson.getByRole('button',{name:'← Back to your course',exact:true}).click();
   await page.getByRole('searchbox',{name:'Find a lesson or situation',exact:true}).fill('variance');
   await reference.locator('summary').filter({hasText:'Words used in Inventory'}).click();
-  await expect(reference.getByText('The difference between a physical count and its recorded snapshot.',{exact:false})).toBeVisible();
+  await expect(reference.getByText('The difference between the physical count and the stock balance recorded when counting began.',{exact:false})).toBeVisible();
   const result=await new AxeBuilder({page}).include('.training-reference').analyze();expect(result.violations.filter(violation=>['serious','critical'].includes(violation.impact||''))).toEqual([]);
   await page.screenshot({path:`training-test-results/${info.project.name}-quick-reference.png`});
 });

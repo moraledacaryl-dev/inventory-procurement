@@ -135,7 +135,8 @@ jobs:
           import sys
           sys.path.insert(0,'backend')
           from training.curriculum import LESSONS, VERSION
-          release={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'curriculum_version':VERSION,'lesson_definitions':len(LESSONS),'platform':platform.system(),'architecture':platform.machine(),'signing':'unsigned; macOS ad-hoc signature only','package':archive.name,'sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'native_recovery':json.loads(Path('dist/TRAINING-RECOVERY-PROOF.json').read_text())}
+          from training.employee_copy import COPY_VERSION
+          release={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'curriculum_version':VERSION,'employee_copy_version':COPY_VERSION,'lesson_definitions':len(LESSONS),'platform':platform.system(),'architecture':platform.machine(),'signing':'unsigned; macOS ad-hoc signature only','package':archive.name,'sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'native_recovery':json.loads(Path('dist/TRAINING-RECOVERY-PROOF.json').read_text())}
           Path('dist/RELEASE.json').write_text(json.dumps(release,indent=2)+'\n')
           Path('dist/SHA256SUMS.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+'  '+archive.name+'\n')
       - uses: actions/upload-artifact@v4

@@ -23,6 +23,8 @@ Registry schemas 1–3 migrate transactionally to schema 4. Old versions remain 
 
 ## Curriculum and responsibilities
 
+Employee wording revision `2026.11.27.3` removes implementation language from lessons and feedback, shortens course descriptions and shows examples as optional help. The employee home screen omits trainer access; trainers still use `/training/management`. Task bindings, quantities, answers, permissions and grading are unchanged. Curriculum and assessment versions are retained, so this wording update does not invalidate current learner progress. Native release manifests record the wording revision separately.
+
 Curriculum `2026.11.27.2` contains **168 definitions: 140 action/validation/analysis exercises and 28 inspections**. Seventeen action exercises finish with an actual protective refusal. Every definition supports guided, assisted and independent mode: **504 attempt variants**. These are not 504 distinct business workflows. Café/bar issues and the direct Stock correction reuse existing posting engines with different unit/custody decisions. The original conceptual POS inspection is replaced in place, not counted twice.
 
 | Module | Definitions | Source-supported scope |

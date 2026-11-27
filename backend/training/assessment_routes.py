@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from training.curriculum import BY_ID, VERSION
 from training.paths import BY_PATH
+from training.employee_copy import employee_feedback
 from training.exams import ASSESSMENT_VERSION, blueprint, public_blueprint, prerequisites, grade_knowledge, grade_practical, normalize
 
 
@@ -41,7 +42,7 @@ def practical_results(store,root,learner,row):
             saved=registry.execute("SELECT * FROM attempts WHERE exam_id=? AND learner_id=? AND lesson_id=? AND path_id=? AND role=? AND mode='independent' AND curriculum_version=? ORDER BY rowid DESC LIMIT 1",(row["id"],learner["id"],lesson_id,row["path_id"],row["role"],VERSION)).fetchone()
         attempt=dict(saved) if saved else None
         if not attempt:
-            results.append({"lesson_id":lesson_id,"title":lesson.title,"attempt_id":None,"score":0,"critical_pass":False,"correction":"Start and perform this final check's fresh independent task."});continue
+            results.append({"lesson_id":lesson_id,"title":lesson.title,"attempt_id":None,"score":0,"critical_pass":False,"correction":"Start and complete this task on your own."});continue
         path=root/f"attempt-{attempt['id']}.sqlite"
         if not path.exists():raise HTTPException(503,"A saved final task is unavailable. Your history is safe. Ask the trainer to restore its training backup or start a fresh retake.")
         engine=engine_for(path)
@@ -70,7 +71,8 @@ def practical_results(store,root,learner,row):
         critical=evidence.get("critical_pass",bool(ok))
         if attempt["hints"]:
             score=0;critical=False;evidence={**evidence,"correction":"This final task used a hint. Start a fresh independent task in this final check."}
-        results.append({"lesson_id":lesson_id,"title":lesson.title,"attempt_id":attempt["id"],"score":score,"critical_pass":bool(critical),"evidence":evidence,"correction":evidence.get("correction") if score<100 else None})
+        correction=employee_feedback(evidence.get("correction", ""),lesson,values(lesson,"independent")) if score<100 else None
+        results.append({"lesson_id":lesson_id,"title":lesson.title,"attempt_id":attempt["id"],"score":score,"critical_pass":bool(critical),"evidence":evidence,"correction":correction})
     return results
 
 

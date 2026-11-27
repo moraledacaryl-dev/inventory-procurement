@@ -170,7 +170,7 @@ export function InventoryTrainingCoach() {
     function advance(){
       if(advancing)return;advancing=true;setInputMessage("");
       const next=step+1;setStep(next);
-      void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:next})}).catch(()=>setError("Your guide checkpoint was not saved. Your posted practice records are safe. Use Continue practice to reconnect."));
+      void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:next})}).catch(()=>setError("Your place could not be saved. Reconnect to continue; saved work is safe."));
     }
     function businessOutcome(event:Event){
       const detail=(event as CustomEvent<{path:string;method:string;status:number}>).detail;
@@ -232,7 +232,7 @@ export function InventoryTrainingCoach() {
   if(!visible)return null;
   const floating=!!current&&!!panel&&expanded&&!passed;
   return <>
-    <div className="inventory-training-banner"><Link href="/training">← Training course</Link><strong>TRAINING ONLY</strong><span>Fictional records · {profile?.attempt?.role.replaceAll("_"," ")||"isolated practice"}</span><button type="button" onClick={()=>setExpanded(value=>!value)} aria-expanded={expanded}>{expanded?"Hide guide":"Show guide"}</button></div>
+    <div className="inventory-training-banner"><Link href="/training">← Training course</Link><strong>TRAINING ONLY</strong><span>Fictional records · {profile?.attempt?.role.replaceAll("_"," ")||"Practice"}</span><button type="button" onClick={()=>setExpanded(value=>!value)} aria-expanded={expanded}>{expanded?"Hide guide":"Show guide"}</button></div>
     {rect&&expanded&&!passed&&<div className="inventory-training-ring" aria-hidden="true" style={{top:rect.top-5,left:rect.left-5,width:rect.width+10,height:rect.height+10}}><span>↓</span></div>}
     {expanded&&<aside ref={coachRef} className={`inventory-training-coach ${floating?"is-floating":"is-docked"}`} style={floating?{top:panel!.top,left:panel!.left,width:panel!.width}:undefined} aria-label="Your training task" aria-live="polite">
       <div className="inventory-training-coach-label">{profile?.attempt?.mode||"Practice"}{current?` · Action ${step+1} of ${lesson?.steps.length}`:""}</div>
@@ -242,8 +242,8 @@ export function InventoryTrainingCoach() {
       {!lesson&&<Link href="/training">Open your training course</Link>}
       {lesson&&!passed&&<>
         {!current&&<p className="inventory-training-situation">{lesson.situation}</p>}
-        {current?<><h3>Your turn</h3><p className="inventory-training-current-instruction">{navigationInstruction||current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>The next control is not visible. Return to the practice page, or revisit the previous action if a dialog was closed.</p><Link href={lesson.route}>Open the practice page</Link></div>}<details key={step} className="inventory-training-context"><summary>Review the situation</summary><p>{lesson.situation}</p></details><button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. If an entered value is already correct, review it and move to the next field. Progress saves after each action; the server checks the final result.</p></>:<>
-          <p>{lesson.practical_question?"Inspect the record in the application, then enter what it shows.":"Complete the task in the application, then check your work below."}</p>
+        {current?<><h3>Your turn</h3><p className="inventory-training-current-instruction">{navigationInstruction||current.instruction}</p>{inputMessage&&<p className="inventory-training-correction" role="alert">{inputMessage}</p>}{missing&&<div className="inventory-training-correction"><p>Cannot find the next step? Reopen the practice page or go back one step.</p><Link href={lesson.route}>Open the practice page</Link></div>}<details key={step} className="inventory-training-context"><summary>Review the situation</summary><p>{lesson.situation}</p></details><button className="inventory-training-text-button" disabled={busy} onClick={()=>{const previous=Math.max(0,step-1);setStep(previous);void api("/training/checkpoint",{method:"POST",body:JSON.stringify({step:previous,revisit:true})})}}>Revisit previous action</button><p className="inventory-training-help">Use the outlined control. If its value is already correct, review it and move to the next field.</p></>:<>
+          <p>{lesson.practical_question?"Open the record and enter what it shows.":"Complete the task, then check your work."}</p>
           {lesson.practical_question&&<><Link href={lesson.inspection_route}>Open the record to inspect →</Link><label>{lesson.practical_question}<input value={observation} onChange={event=>setObservation(event.target.value)} autoComplete="off"/></label></>}
           {!lesson.practical_question&&showTaskAmount&&<p>Task amount: {lesson.quantity}{lesson.workflow==="receiving"?` arrived; ${lesson.rejected} rejected`:""}. {lesson.workflow==="production"?"Use 3 kg of chicken; record the actual usable output.":""}{lesson.workflow==="purchase_order"?"Use Training Valley Foods, Training stockroom and PHP 200 per kg.":""}{lesson.workflow==="receiving"?`Delivery reference: ${lesson.reference}`:""}</p>}
           <label>{lesson.question}<input value={answer} onChange={event=>setAnswer(event.target.value)} autoComplete="off" placeholder="Type your answer"/></label>

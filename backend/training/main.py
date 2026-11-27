@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from training.safety import configure, install_network_guard
+from training.employee_copy import employee_feedback
 
 
 def create_training_app(root: Path, *, guard_network: bool = True):
@@ -353,9 +354,10 @@ def create_training_app(root: Path, *, guard_network: bool = True):
         elif not knowledge:
             message = lesson.correction
         elif not practical:
-            message = evidence.get("correction") or "Check the situation again: use the correct item, location and actual quantities. The saved business result does not yet match. Correct any unposted entries, or reset this practice if an incorrect transaction was already posted."
+            message = evidence.get("correction") or "Check the item, location and quantities. Correct unposted entries, or reset this practice if an incorrect transaction was posted."
         else:
-            message = "The application refused the action as expected. Your result matches the task." if lesson.steps and lesson.steps[-1].outcome_status else "Your result matches the task."
+            message = "Correct. The action was refused." if lesson.steps and lesson.steps[-1].outcome_status else "Task complete."
+        message = employee_feedback(message, lesson, values(lesson,attempt["mode"]))
         evidence.update(knowledge=knowledge, practical=practical, curriculum_version=VERSION)
         with store.connect() as db:
             if passed:

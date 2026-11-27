@@ -61,17 +61,17 @@ export default function Assessments(){
   const practicalReady=tasks.length===selected?.blueprint.practical_lessons.length&&tasks.every(task=>task.critical_pass)&&practicalScore>=90;
   const allAnswered=!!selected&&selected.blueprint.questions.every(question=>answers[question.id]?.trim());
   return <main className="inventory-training training-exams">
-    <header className="training-masthead"><Link className="training-brand" href="/training">Hidden Oasis <span>Inventory training</span></Link><span className="training-environment">TRAINING ONLY · Fictional records</span></header>
+    <header className="training-masthead"><Link className="training-brand" href="/training">Hidden Oasis <span>Inventory training</span></Link><span className="training-environment">TRAINING ONLY</span></header>
     <p className="training-final-link"><Link href="/training">← Your duty course</Link></p>
     {error&&<div className="training-error" role="alert"><p>{error}</p><button disabled={busy} onClick={()=>window.location.reload()}>Reconnect to final checks</button></div>}
     {!data&&!error&&<p role="status">Preparing your final checks…</p>}
     {data&&!selected&&<>
-      <p className="training-eyebrow">{data.path_title}</p><h1>Show what you can do.</h1><p>Finish each module&apos;s learning, then complete its final check. The duty-course final also needs every assigned skill demonstrated independently and all module finals passed.</p>
-      <p className="training-rule">To pass, get at least 85% of the knowledge questions and 90% of the practical work right. Required checks, such as correct units and independent approvals, must all be correct. Each final uses fresh practice records. Hints require a fresh task.</p>
+      <p className="training-eyebrow">{data.path_title}</p><h1>Show what you can do.</h1><p>Finish your practice and module checks before taking your course final.</p>
+      <p className="training-rule">Pass marks: 85% for questions and 90% for practical work. Required checks must all be correct. Complete final tasks without hints.</p>
       <div className="training-exam-list">{data.blueprints.map(row=>{
         const active=data.history.find(exam=>exam.module===row.module&&exam.status==="active"&&exam.assessment_version===data.assessment_version&&exam.curriculum_version===row.version);
         const passed=data.history.some(exam=>exam.module===row.module&&exam.status==="passed"&&exam.assessment_version===data.assessment_version&&exam.curriculum_version===row.version);
-        return <section key={row.module||"course"} className="training-exam-entry"><div><h2>{row.title}</h2><p>{row.lessons.length} applicable skills · {row.practical_lessons.length} fresh practical task(s) · {row.questions.length} knowledge questions</p>
+        return <section key={row.module||"course"} className="training-exam-entry"><div><h2>{row.title}</h2><p>{row.lessons.length} skills · {row.practical_lessons.length} practical task(s) · {row.questions.length} knowledge questions</p>
           {passed?<p className="training-skill-status">Current final passed</p>:!row.readiness?.ready&&<><p>Finish the learning before this final.</p>{!!row.readiness?.missing_lessons.length&&<p className="training-exam-missing">Still to practise: {row.readiness.missing_lessons.slice(0,3).map(id=>catalogue?.lessons.find(lesson=>lesson.id===id)?.title||id).join("; ")}{row.readiness.missing_lessons.length>3?` and ${row.readiness.missing_lessons.length-3} more`:""}.</p>}{!!row.readiness?.missing_module_finals.length&&<p>Module finals still needed: {row.readiness.missing_module_finals.join(", ")}.</p>}</>}
         </div><button className={row.module?"":"training-primary"} disabled={busy||!active&&!row.readiness?.ready} onClick={()=>active?void openExam(active.id):void start(row)}>{active?"Continue final check":passed?"Take a fresh final":"Start final check"}</button></section>
       })}</div>
@@ -80,11 +80,11 @@ export default function Assessments(){
     {selected&&<>
       <button disabled={busy} onClick={()=>void allChecks()}>← All final checks</button><p className="training-eyebrow">{selected.blueprint.path_title||data?.path_title}</p><h1>{selected.blueprint.title}</h1>
       {selected.status==="active"&&!selected.historical?<>
-        <p>Use the situation in each task and work without hints. The final checks the real saved result. Your knowledge answers save as you type and before you open a task.</p>
+        <p>Complete the tasks without hints, then answer the questions. Your answers save automatically.</p>
         <section><h2>1. Perform the work</h2><div className="training-exam-list">{selected.blueprint.practical_lessons.map(id=>{
           const task=tasks.find(task=>task.lesson_id===id),lesson=catalogue?.lessons.find(lesson=>lesson.id===id);
           const current=profile?.attempt?.exam_id===selected.id&&profile.attempt.lesson_id===id&&profile.lesson;
-          return <article className="training-exam-task" key={id}><h3>{lesson?.title||id}</h3><p>{task?.score===100&&task.critical_pass?"The current saved business result meets this task.":task?.correction||"Perform this fresh independent task using its actual practice screen."}</p>
+          return <article className="training-exam-task" key={id}><h3>{lesson?.title||id}</h3><p>{task?.score===100&&task.critical_pass?"Task complete.":task?.correction||"Complete this task on your own."}</p>
             {!!task?.evidence?.objectives&&<ul>{task.evidence.objectives.filter(objective=>!objective.passed).map(objective=><li key={objective.id}>{objective.title}{objective.critical?" · must be correct":""}</li>)}</ul>}
             {current?<Link className="training-primary" href={current.route}>{task?.score===100?"Inspect your saved work":"Continue this practice"}</Link>:<button disabled={busy||task?.score===100&&task.critical_pass} className="training-primary" onClick={()=>void startTask(id)}>{task?.score===100?"Task complete":"Start fresh independent task"}</button>}
           </article>
@@ -101,10 +101,10 @@ export default function Assessments(){
           {selected.result.knowledge.questions.filter(question=>!question.passed).map(question=><div className="training-exam-correction" key={question.id}><h3>{question.prompt}</h3><p>{question.correction}</p></div>)}
           {selected.result.practical?.filter(task=>task.score<100||!task.critical_pass).map(task=><div className="training-exam-correction" key={task.lesson_id}><h3>{task.title}</h3><p>{task.correction}</p></div>)}
         </>}
-        <p>This saved result stays in your history. A retake uses a new final and fresh independent practice records.</p>{selected.historical&&<p>This is earlier training history. Use the current duty course and final-check version for a new result.</p>}<button className="training-primary" disabled={busy||selected.path_id!==profile?.learner.path_id} onClick={()=>void start(selected.blueprint,true)}>Start a fresh retake</button>
+        <p>This result stays in your history. A retake starts a new final.</p>{selected.historical&&<p>This is an earlier result. Complete the current course for a new result.</p>}<button className="training-primary" disabled={busy||selected.path_id!==profile?.learner.path_id} onClick={()=>void start(selected.blueprint,true)}>Start a fresh retake</button>
       </section>}
       <p className="training-final-link"><Link href="/training">Return to your course and practise</Link></p>
     </>}
-    <footer className="training-footer"><p>This is your training record. Your manager assigns production access separately.</p><Link href="/training/management">Trainer progress review</Link></footer>
+    <footer className="training-footer"><Link href="/training/management">Trainer progress review</Link></footer>
   </main>;
 }

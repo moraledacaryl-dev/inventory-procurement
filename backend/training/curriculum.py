@@ -359,6 +359,9 @@ LESSONS=[replace(lesson,roles=lesson.roles+("viewer",)) if lesson.id in {"recipe
 from training.safety_lessons import LESSONS as SAFETY_LESSONS
 LESSONS.extend(SAFETY_LESSONS)
 
+from training.employee_copy import employee_lesson
+LESSONS=[employee_lesson(lesson) for lesson in LESSONS]
+
 BY_ID = {lesson.id: lesson for lesson in LESSONS}
 assert len(BY_ID) == len(LESSONS)
 

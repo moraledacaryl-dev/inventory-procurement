@@ -52,7 +52,7 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | H | `interpret-waste-value` — Trace the quantity and value of recorded waste | ✓ | ✓ |  |  | ✓ | ✓ | Source record inspection |
 | H | `record-waste` — Record spoiled supplies | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | H | `stock-screen-signed-correction` — Record an authorized signed balance correction | ✓ |  |  |  |  | ✓ | Source business/master outcome |
-| I | `create-supplier` — Add a fictional supplier with clear terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
+| I | `create-supplier` — Add a supplier with clear terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | I | `deactivate-unused-supplier` — Retire a supplier after checking open orders |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | I | `edit-supplier-terms` — Update approved contact and payment terms |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | I | `link-supplier-item` — Link an item to its preferred supplier |  | ✓ |  |  |  | ✓ | Source business/master outcome |
@@ -65,7 +65,7 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | J | `request-purchase` — Check stock before requesting a purchase |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | J | `request-self-approval` — Recognize independent request approval |  | ✓ |  |  |  | ✓ | Source protective refusal |
 | K | `award-timely-quotation` — Compare price with the required delivery time |  | ✓ |  |  |  | ✓ | Source business/master outcome |
-| K | `cap-busy-weekend` — Source weekend demand and follow the linked delivery |  | ✓ |  |  |  | ✓ | Linked source outcomes in one database |
+| K | `cap-busy-weekend` — Order weekend supplies and follow the delivery |  | ✓ |  |  |  | ✓ | Linked source outcomes in one database |
 | K | `inspect-awarded-order` — Find the order already created from an offer |  | ✓ |  |  |  | ✓ | Source record inspection |
 | K | `purchase-approval` — Review purchasing authority and quotations |  | ✓ |  |  |  | ✓ | Source business/master outcome |
 | K | `record-supplier-quotation` — Record a supplier's actual offer |  | ✓ |  |  |  | ✓ | Source business/master outcome |
@@ -115,11 +115,11 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | S | `activate-verified-pos-mapping` — Activate a checked product-recipe mapping |  |  |  |  |  | ✓ | Source business/master outcome |
 | S | `disable-stale-pos-mapping` — Stop a mapping that points to a retired formula |  |  |  |  |  | ✓ | Source business/master outcome |
 | S | `inspect-cooked-sale-return` — Review discarded prepared food without restoring raw ingredients |  |  |  |  | ✓ | ✓ | Source record inspection |
-| S | `inspect-pos-duplicate-delivery` — Verify that a repeated POS event did not deduct twice |  |  |  |  | ✓ | ✓ | Source record inspection |
-| S | `inspect-unmapped-pos-refusal` — Recognize a refused unmapped sale without inventing a failed row |  |  |  |  | ✓ | ✓ | Source record inspection |
-| S | `inspect-unused-sale-void` — Review a financial void without restoring ingredients |  |  |  |  | ✓ | ✓ | Source record inspection |
+| S | `inspect-pos-duplicate-delivery` — Check that a repeated sale deducted stock only once |  |  |  |  | ✓ | ✓ | Source record inspection |
+| S | `inspect-unmapped-pos-refusal` — Check a sale with a missing product mapping |  |  |  |  | ✓ | ✓ | Source record inspection |
+| S | `inspect-unused-sale-void` — Check stock after a sale is voided |  |  |  |  | ✓ | ✓ | Source record inspection |
 | S | `map-pos-product` — Link a POS product to its approved recipe |  |  |  |  |  | ✓ | Source business/master outcome |
-| S | `retry-eligible-inbound-event` — Stop an inbound POS event from using outbound Retry |  |  |  |  |  | ✓ | Source protective refusal |
+| S | `retry-eligible-inbound-event` — Check why a POS record cannot use Retry |  |  |  |  |  | ✓ | Source protective refusal |
 | S | `sale-consumption` — Trace a made-to-order POS sale to four ingredients |  |  |  |  | ✓ | ✓ | Source record inspection |
 | T | `reverse-duplicate-staff-meal` — Reverse a duplicate meal that never consumed stock | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | T | `staff-meal` — Record supplies used for staff meals | ✓ |  |  |  |  | ✓ | Source business/master outcome |
@@ -141,14 +141,14 @@ Each row is one definition with guided, assisted and independent variants. Item/
 | V | `start-maintenance-work` — Record that authorized work has begun | ✓ |  |  |  |  | ✓ | Source business/master outcome |
 | W | `accounting-proof` — Read Accounting delivery and journal evidence |  |  |  |  | ✓ | ✓ | Source record inspection |
 | W | `create-accounting-mapping` — Record a reviewer-approved Accounting mapping |  |  |  |  |  | ✓ | Source business/master outcome |
-| W | `refuse-accepted-accounting-dedicated` — Protect accepted evidence in Accounting Requeue |  |  |  |  |  | ✓ | Source protective refusal |
-| W | `refuse-accepted-accounting-generic` — Protect accepted Accounting evidence in generic Retry |  |  |  |  |  | ✓ | Source protective refusal |
+| W | `refuse-accepted-accounting-dedicated` — Protect an accepted Accounting record in Requeue |  |  |  |  |  | ✓ | Source protective refusal |
+| W | `refuse-accepted-accounting-generic` — Protect an accepted Accounting record in Retry |  |  |  |  |  | ✓ | Source protective refusal |
 | W | `requeue-failed-accounting-handoff` — Retry a failed handoff without claiming a posted journal |  |  |  |  |  | ✓ | Source business/master outcome |
-| W | `retry-reviewed-outbound-event` — Requeue one eligible outbound delivery |  |  |  |  |  | ✓ | Source business/master outcome |
+| W | `retry-reviewed-outbound-event` — Retry a reviewed failed delivery |  |  |  |  |  | ✓ | Source business/master outcome |
 | X | `accept-accountable-operations-work` — Accept connected work with an accountable assignee |  |  |  |  |  | ✓ | Source business/master outcome |
 | X | `acknowledge-operational-alert` — Read an alert without treating it as completed work | ✓ |  |  |  |  | ✓ | Source business/master outcome |
-| X | `cap-owner-review` — Follow accountable work through handover and local financial retry |  |  |  |  |  | ✓ | Linked source outcomes in one database |
-| X | `complete-evidenced-operations-work` — Complete work after its real handover |  |  |  |  |  | ✓ | Source business/master outcome |
+| X | `cap-owner-review` — Follow a supply request through handover and Accounting review |  |  |  |  |  | ✓ | Linked source outcomes in one database |
+| X | `complete-evidenced-operations-work` — Complete work after the supplies are handed over |  |  |  |  |  | ✓ | Source business/master outcome |
 | X | `connected-work` — Know where connected work belongs |  |  |  |  |  | ✓ | Source record inspection |
 | X | `reject-duplicate-operations-work` — Reject a connected request without inventing a transaction |  |  |  |  |  | ✓ | Source business/master outcome |
 | X | `submit-workflow-feedback` — Report a specific workflow problem | ✓ |  |  |  |  | ✓ | Source business/master outcome |

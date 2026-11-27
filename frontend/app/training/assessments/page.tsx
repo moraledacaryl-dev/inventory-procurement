@@ -105,6 +105,5 @@ export default function Assessments(){
       </section>}
       <p className="training-final-link"><Link href="/training">Return to your course and practise</Link></p>
     </>}
-    <footer className="training-footer"><Link href="/training/management">Trainer progress review</Link></footer>
   </main>;
 }

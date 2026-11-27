@@ -88,7 +88,7 @@ test('the duty final requires fresh actual inspections and issues a training-onl
   await fillKnowledge(page,knowledge(row));await page.getByRole('button',{name:'Submit final check',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Final check passed',exact:true})).toBeVisible();
   await expect(page.getByText(`TRAINING-${examId}`,{exact:true})).toBeVisible();
-  await expect(page.getByText('This is your training record. Your manager assigns production access separately.',{exact:false})).toBeVisible();
+  await expect(page.getByText('TRAINING ONLY',{exact:true})).toBeVisible();
   await page.screenshot({path:`training-test-results/${info.project.name}-duty-final-certificate.png`,fullPage:true});
 });
 
